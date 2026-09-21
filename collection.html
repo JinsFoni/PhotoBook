@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collection — Photo Collection</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230c0d0f'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' fill='none' stroke='%23f7f7f5' stroke-width='1.6'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#0c0d0f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://images.unsplash.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..800;1,6..96,400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="collections">
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="shell">
+  <header data-header></header>
+
+  <!-- appears once the title scrolls away -->
+  <div class="sticky-bar" data-sticky-bar data-visible="false">
+    <div class="wrap sticky-bar__inner">
+      <span class="sticky-bar__title" data-bar-title></span>
+      <span class="t-small num" data-bar-count style="color:var(--ink-3)"></span>
+      <div class="sticky-bar__end">
+        <span data-bar-fav></span>
+        <button class="btn btn--ghost btn--sm" type="button" data-download-all>Download collection</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="main" id="main" data-collection-root>
+
+    <div class="wrap">
+      <div class="collection-head" data-sticky-trigger>
+        <div>
+          <p class="t-small num" data-eyebrow style="margin-bottom:var(--s4)"></p>
+          <h1 class="collection-head__title" data-title></h1>
+          <p class="collection-head__model" data-model></p>
+          <div class="collection-head__tags" data-tags></div>
+        </div>
+        <div class="collection-head__actions">
+          <span data-head-fav></span>
+          <div data-download-host>
+            <button class="btn" type="button" data-download-all>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"/></svg>
+              <span>Download collection</span>
+            </button>
+            <div class="download-status" data-download-status hidden style="margin-top:var(--s3)">
+              <span class="download-status__track"><span class="download-status__fill" data-download-fill></span></span>
+              <span data-download-label>Preparing…</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:var(--s5);padding-block:var(--s5);margin-top:var(--s7);border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-bottom:var(--s5)">
+        <span class="t-small num" data-photo-count></span>
+        <span class="filters__spacer"></span>
+        <span class="t-small" style="color:var(--ink-3)">Select any frame to open it full screen</span>
+      </div>
+    </div>
+
+    <div class="wrap wrap--wide" style="padding-inline:var(--pad)">
+      <div class="masonry masonry--photos" data-photos></div>
+    </div>
+
+    <div class="wrap" data-photos-empty hidden>
+      <div class="state">
+        <h2 class="state__title">No photos yet.</h2>
+        <p class="state__text">This collection has been created but the frames have not been uploaded.</p>
+        <a class="btn btn--ghost" href="collections.html">Back to collections</a>
+      </div>
+    </div>
+
+    <!-- next in the archive -->
+    <section class="section" data-next-section>
+      <div class="wrap">
+        <div class="section-head">
+          <h2 class="section-title">More from this archive</h2>
+          <span class="section-aside" data-next-aside></span>
+        </div>
+        <div class="grid grid--collections" data-next></div>
+      </div>
+    </section>
+
+    <section class="section" data-notfound hidden>
+      <div class="wrap">
+        <div class="state">
+          <h2 class="state__title">Something went wrong.</h2>
+          <p class="state__text">We couldn't open that collection. The link may be out of date.</p>
+          <a class="btn btn--ghost" href="collections.html">Back to collections</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer data-footer></footer>
+</div>
+
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+window.PAGE_INIT = function () {
+  var A = window.ARCHIVE, P = window.PC;
+  var slug = P.qs("c", "summer-editorial");
+  var c = A.collection(slug);
+
+  if (!c) {
+    document.querySelector("[data-sticky-bar]").hidden = true;
+    document.querySelector("[data-sticky-trigger]").hidden = true;
+    document.querySelector("[data-photos]").hidden = true;
+    document.querySelector("[data-next-section]").hidden = true;
+    document.querySelector("[data-notfound]").hidden = false;
+    document.title = "Not found — Photo Collection";
+    return;
+  }
+
+  var m = A.model(c.model);
+  document.title = c.title + " — Photo Collection";
+
+  document.querySelector("[data-eyebrow]").textContent = c.date;
+  document.querySelector("[data-title]").textContent = c.title;
+  document.querySelector("[data-model]").innerHTML =
+    '<a href="model.html?m=' + m.slug + '">' + m.name + "</a>";
+  document.querySelector("[data-tags]").innerHTML = c.tags.map(function (t) {
+    return '<a class="tag" href="collections.html?tag=' + encodeURIComponent(t) + '">#' + t + "</a>";
+  }).join("");
+
+  var favHtml = P.favButton("collection", c.slug, { labelled: true, title: "Favourite collection" });
+  document.querySelector("[data-head-fav]").innerHTML = favHtml;
+  document.querySelector("[data-bar-fav]").innerHTML = P.favButton("collection", c.slug, { title: "Favourite collection" });
+  document.querySelector("[data-bar-title]").textContent = c.title;
+  document.querySelector("[data-bar-count]").textContent = c.photos.length + " photos";
+
+  document.querySelector("[data-photo-count]").textContent =
+    c.photos.length + " photos · " + m.name;
+
+  /* photo wall — the collection itself is the page */
+  var wall = document.querySelector("[data-photos]");
+  wall.innerHTML = c.photos.map(function (p, i) { return P.photoTile(p, c.slug, i); }).join("");
+  wall.hidden = c.photos.length === 0;
+  document.querySelector("[data-photos-empty]").hidden = c.photos.length > 0;
+
+  /* more from the archive — same model first, then adjacent work */
+  var sameModel = m.works.filter(function (x) { return x.slug !== c.slug; });
+  var others = A.COLLECTIONS.filter(function (x) {
+    return x.slug !== c.slug && x.model !== c.model;
+  }).slice(0, 3);
+  var next = sameModel.concat(others).slice(0, 3);
+  document.querySelector("[data-next]").innerHTML =
+    next.map(function (x) { return P.collectionCard(x, { w: 900 }); }).join("");
+  document.querySelector("[data-next-aside]").textContent = sameModel.length ? "More from " + m.name : "";
+
+  P.fav.bind(document);
+};
+</script>
+</body>
+</html>

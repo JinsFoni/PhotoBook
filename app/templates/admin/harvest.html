@@ -1,0 +1,169 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('Harvest') }} — Photo Collection{% endblock %}
+{% block body %}
+<div class="shell">
+  <header data-header></header>
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title">{{ t('Harvest') }}</h1>
+        <p class="page-head__sub">{{ t('从 buondua.com 抓取写真 → ouo 链接解析 → MediaFire 下载 → 7zz 解压归档。串行队列,一次一个。') }}</p>
+      </div>
+
+      <div class="panel-grid">
+        <nav class="side-nav" aria-label="{{ t('Admin') }}">
+          <a class="side-nav__item" href="/admin">{{ t('Dashboard') }}</a>
+          <a class="side-nav__item" href="/admin/harvest" aria-current="page">{{ t('Harvest') }}</a>
+          <a class="side-nav__item" href="/admin/collections">{{ t('Collections') }}</a>
+          <a class="side-nav__item" href="/admin/models">{{ t('Models') }}</a>
+          <a class="side-nav__item" href="/admin/tags">{{ t('Tags') }}</a>
+          <a class="side-nav__item" href="/admin/users">{{ t('Users') }}</a>
+          <a class="side-nav__item" href="/admin/settings">{{ t('Settings') }}</a>
+          <a class="side-nav__item" href="/">{{ t('← Back to site') }}</a>
+        </nav>
+
+        <div>
+          {% if flash %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)">
+            <p class="state__text" style="margin:0">{{ flash }}</p></div>{% endif %}
+
+          <!-- 双入口 -->
+          <div class="grid grid--2" style="gap:var(--s5)">
+            <section style="border:1px solid var(--line);padding:var(--s5)">
+              <h2 class="t-h3">{{ t('手动提交') }}</h2>
+              <p class="t-small" style="margin:var(--s2) 0 var(--s4)">{{ t('粘贴写真详情页地址(buondua.com 域名),按序号自动去重。') }}</p>
+              <form method="post" action="/admin/harvest/submit" style="display:flex;gap:var(--s3)">
+                <input class="input" type="url" name="url" required
+                       placeholder="https://buondua.com/…-12345" style="flex:1">
+                <button class="btn" type="submit">{{ t('加入队列') }}</button>
+              </form>
+            </section>
+
+            <section style="border:1px solid var(--line);padding:var(--s5)">
+              <h2 class="t-h3">{{ t('扫描新写真') }}</h2>
+              <p class="t-small" style="margin:var(--s2) 0 var(--s4)">
+                {{ t('自动扫描列表页发现新条目(白/黑名单过滤)。定时任务 {on},每 {h}h,从第 {s} 页扫 {p} 页/轮。', on=('<b style="color:var(--accent)">' + t('开启') + '</b>' if conf['harvest.enabled'] else '<b>' + t('关闭') + '</b>'), h=conf['harvest.interval_hours'], s=conf['harvest.start'], p=conf['harvest.pages_per_round']) | safe }}
+              </p>
+              <form method="post" action="/admin/harvest/scan">
+                <button class="btn btn--ghost" type="submit">{{ t('立即扫描') }}</button>
+                <a class="btn btn--quiet btn--sm" href="/admin/settings">{{ t('配置规则') }}</a>
+              </form>
+              <p class="t-small" style="margin-top:var(--s3);color:var(--ink-3)">
+                {{ t('历史累计 {n} 条(永不重复处理)。', n=history_count) }}
+              </p>
+            </section>
+
+            <section style="border:1px solid var(--line);padding:var(--s5);grid-column:1/-1">
+              <h2 class="t-h3">{{ t('导入归档库') }}</h2>
+              <p class="t-small" style="margin:var(--s2) 0 var(--s4)">
+                {{ t('把归档库(library)里的写真搬进平台:图片移到图片库、按模特归档、立即发布。下载完成的写真会自动导入,这里用于手动补导。') }}
+              </p>
+              <form method="post" action="/admin/harvest/import">
+                <button class="btn btn--ghost" type="submit">{{ t('扫描归档库导入') }}</button>
+              </form>
+            </section>
+          </div>
+
+          <!-- 任务列表 -->
+          <div style="margin-top:var(--s7)">
+            <div class="section-head">
+              <h2 class="section-title">{{ t('任务队列') }} <span class="num" style="color:var(--ink-3)" data-queue-info></span></h2>
+              <span class="section-aside t-small num" data-worker-state>{{ t('Worker 运行中') if worker_running else t('Worker 已停止') }}</span>
+            </div>
+
+            <table style="width:100%;border-collapse:collapse">
+              <thead><tr class="t-small" style="text-align:left;color:var(--ink-3);border-bottom:1px solid var(--line)">
+                <th style="padding:var(--s2) 0">#</th><th>{{ t('Serial') }}</th><th>{{ t('标题') }}</th><th>{{ t('模特') }}</th>
+                <th>{{ t('状态') }}</th><th>{{ t('进度') }}</th><th>{{ t('来源') }}</th><th>{{ t('时间') }}</th><th>{{ t('操作') }}</th>
+              </tr></thead>
+              <tbody data-jobs>
+                {% for j in jobs %}
+                <tr data-job-row="{{ j.id }}" style="border-bottom:1px solid var(--line-2)">
+                  <td class="num" style="padding:var(--s2) 0">{{ j.id }}</td>
+                  <td class="num">{{ j.serial }}</td>
+                  <td>{{ (j.title or '—')[:36] }}</td>
+                  <td>{{ j.model_name or '—' }}</td>
+                  <td><span class="num" data-status-badge="{{ j.status }}">{{ j.status }}</span></td>
+                  <td class="num" data-job-progress="{{ j.id }}">{{ (j.bytes_done // 1048576) }}/{{ (j.bytes_total // 1048576) }}MB</td>
+                  <td class="t-small">{{ j.source }}</td>
+                  <td class="num t-small" style="color:var(--ink-3)">{{ j.created_at.strftime('%m-%d %H:%M') if j.created_at else '' }}</td>
+                  <td>
+                    {% if j.status in ('failed', 'skipped') %}
+                    <form method="post" action="/admin/harvest/{{ j.id }}/retry" style="display:inline">
+                      <button class="btn btn--quiet btn--sm" type="submit">{{ t('重试') }}</button></form>
+                    {% elif j.status == 'queued' %}
+                    <form method="post" action="/admin/harvest/{{ j.id }}/cancel" style="display:inline">
+                      <button class="btn btn--quiet btn--sm" type="submit">{{ t('取消') }}</button></form>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+                {% if not jobs %}
+                <tr><td colspan="9" style="padding:var(--s6);color:var(--ink-3)" class="t-small">{{ t('队列为空 — 提交 URL 或立即扫描。') }}</td></tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer data-footer></footer>
+</div>
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+
+{% block scripts %}{% endblock %}
+<script>
+/* 2 秒轮询刷新任务表(§36:不用 SSE/WebSocket) */
+(function () {
+  var tbody = document.querySelector("[data-jobs]");
+  if (!tbody) return;
+
+  function fmtMB(n) { return Math.round((n || 0) / 1048576); }
+
+  function esc(s) { var d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
+
+  function render(jobs, running) {
+    if (!jobs.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="padding:var(--s6);color:var(--ink-3)" class="t-small">' + PC.t("队列为空 — 提交 URL 或立即扫描。") + '</td></tr>';
+    } else {
+      tbody.innerHTML = jobs.map(function (j) {
+        var ops = "";
+        if (j.status === "failed" || j.status === "skipped")
+          ops = '<form method="post" action="/admin/harvest/' + j.id + '/retry" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit">' + PC.t("重试") + '</button></form>';
+        else if (j.status === "queued")
+          ops = '<form method="post" action="/admin/harvest/' + j.id + '/cancel" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit">' + PC.t("取消") + '</button></form>';
+        var prog = (j.status === "downloading" && j.bytesTotal)
+          ? fmtMB(j.bytesDone) + "/" + fmtMB(j.bytesTotal) + "MB"
+          : (j.status === "downloading" ? fmtMB(j.bytesDone) + "MB" : "—");
+        var err = j.error ? '<div class="t-small" style="color:var(--accent);margin-top:2px">' + esc(j.error.slice(0, 80)) + "</div>" : "";
+        return "<tr style=\"border-bottom:1px solid var(--line-2)\">" +
+          '<td class="num" style="padding:var(--s2) 0">' + j.id + "</td>" +
+          '<td class="num">' + j.serial + "</td>" +
+          "<td>" + esc(j.title.slice(0, 36) || "—") + "</td>" +
+          "<td>" + esc(j.model || "—") + "</td>" +
+          '<td><span class="num" data-status-badge="' + j.status + '">' + j.status + "</span>" + err + "</td>" +
+          '<td class="num">' + prog + "</td>" +
+          '<td class="t-small">' + j.source + "</td>" +
+          '<td class="num t-small" style="color:var(--ink-3)">' + (j.createdAt || "") + "</td>" +
+          "<td>" + ops + "</td></tr>";
+      }).join("");
+    }
+    var active = jobs.filter(function (j) { return ["queued", "parsing", "downloading", "extracting"].indexOf(j.status) !== -1; }).length;
+    var info = document.querySelector("[data-queue-info]");
+    if (info) info.textContent = active ? PC.t("{n} 个活动", { n: active }) : "";
+    var ws = document.querySelector("[data-worker-state]");
+    if (ws) ws.textContent = running ? PC.t("Worker 运行中") : PC.t("Worker 已停止");
+  }
+
+  function poll() {
+    fetch("/admin/api/harvest/jobs", { credentials: "same-origin" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) render(d.jobs, d.workerRunning); })
+      .catch(function () {});
+  }
+  poll();
+  setInterval(poll, 2000);
+})();
+</script>
+{% endblock %}

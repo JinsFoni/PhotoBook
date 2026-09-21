@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('Edit') if m else t('New') }} — Photo Collection{% endblock %}
+{% block body %}
+<div class="shell">
+  <header data-header></header>
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title">{{ t('编辑模特') if m else t('新建模特') }}</h1>
+        <p class="page-head__sub">{% if m %}{{ m.name }}{% else %}{{ t('slug 留空则由名字生成') }}{% endif %}</p>
+      </div>
+      <div class="panel-grid">
+        <nav class="side-nav" aria-label="Admin">
+          <a class="side-nav__item" href="/admin/models">← {{ t('Models') }}</a>
+        </nav>
+        <div>
+          {% if error %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)"><p class="state__text" style="margin:0">{{ error }}</p></div>{% endif %}
+          <form method="post" action="{{ action }}" style="max-width:640px">
+            <label class="field"><span class="field__label">{{ t('名字 *') }}</span>
+              <input class="input" name="name" required value="{{ m.name if m else '' }}"></label>
+            <label class="field"><span class="field__label">{{ t('Slug(留空自动)') }}</span>
+              <input class="input" name="slug" value="{{ m.slug if m else '' }}"></label>
+            <label class="field"><span class="field__label">{{ t('艺名') }}</span>
+              <input class="input" name="stage_name" value="{{ m.stage_name or '' if m else '' }}"></label>
+            <div style="display:flex;gap:var(--s4)">
+              <label class="field" style="flex:1"><span class="field__label">{{ t('性别') }}</span>
+                <select class="select" name="gender">
+                  {% for g in ('', 'Female', 'Male') %}
+                  <option value="{{ g }}" {% if m and m.gender == g %}selected{% endif %}>{{ g or '—' }}</option>
+                  {% endfor %}
+                </select></label>
+              <label class="field" style="flex:1"><span class="field__label">{{ t('年龄') }}</span>
+                <input class="input" name="age" value="{{ m.age or '' if m else '' }}"></label>
+            </div>
+            <div style="display:flex;gap:var(--s4)">
+              <label class="field" style="flex:1"><span class="field__label">{{ t('身高') }}</span>
+                <input class="input" name="height" value="{{ m.height or '' if m else '' }}" placeholder="170cm"></label>
+              <label class="field" style="flex:1"><span class="field__label">{{ t('三围') }}</span>
+                <input class="input" name="measurements" value="{{ m.measurements or '' if m else '' }}" placeholder="B84 W58 H86"></label>
+            </div>
+            <label class="field"><span class="field__label">{{ t('经纪公司') }}</span>
+              <input class="input" name="agency" value="{{ m.agency or '' if m else '' }}"></label>
+            <label class="field"><span class="field__label">{{ t('简介') }}</span>
+              <textarea class="input" name="bio" rows="4" placeholder="">{{ m.bio or '' if m else '' }}</textarea></label>
+            <label class="field" style="flex-direction:row;align-items:center;gap:var(--s3)">
+              <input type="checkbox" name="featured" {% if m and m.featured %}checked{% endif %} style="accent-color:var(--accent)">
+              <span class="field__label" style="margin:0">{{ t('首页推荐') }}</span></label>
+            <div style="display:flex;gap:var(--s3);margin-top:var(--s5)">
+              <button class="btn" type="submit">{{ t('保存') }}</button>
+              <a class="btn btn--ghost" href="/admin/models">{{ t('取消') }}</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer data-footer></footer>
+</div>
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+{% endblock %}

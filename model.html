@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model — Photo Collection</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230c0d0f'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' fill='none' stroke='%23f7f7f5' stroke-width='1.6'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#0c0d0f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://images.unsplash.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..800;1,6..96,400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="models">
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="shell">
+  <header data-header></header>
+
+  <main class="main" id="main" data-model-root>
+
+    <!-- Model hero -->
+    <section class="model-hero" data-hero>
+      <img data-hero-img alt="">
+      <div class="model-hero__scrim"></div>
+      <div class="model-hero__inner">
+        <div class="wrap">
+          <h1 class="model-hero__name" data-name></h1>
+          <div class="model-hero__row">
+            <p class="model-hero__stage" data-stage></p>
+            <div class="model-hero__actions">
+              <span class="t-small num" style="color:rgba(255,255,255,.76)" data-hero-count></span>
+              <span data-hero-fav></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Profile: prose left, facts right. Absent fields are not rendered. -->
+    <section class="section">
+      <div class="wrap">
+        <div class="profile-grid">
+          <div>
+            <h2 class="section-title" style="margin-bottom:var(--s5)">About</h2>
+            <p class="lede" data-lede></p>
+            <p class="prose" style="margin-top:var(--s5)" data-bio></p>
+            <div class="chip-row" style="margin-top:var(--s6)" data-tags></div>
+          </div>
+          <div>
+            <dl class="facts" data-facts></dl>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Collections -->
+    <section class="section section--flush-top">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 class="section-title">Collections</h2>
+          <span class="section-aside num" data-collections-count></span>
+        </div>
+        <div class="grid grid--collections" data-collections></div>
+        <div data-collections-empty hidden>
+          <div class="state">
+            <h2 class="state__title">No collections yet.</h2>
+            <p class="state__text">Nothing from this profile has been published. New sittings appear here as soon as they are released.</p>
+            <a class="btn btn--ghost" href="collections.html">Browse the archive</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Not found / error state -->
+    <section class="section" data-notfound hidden>
+      <div class="wrap">
+        <div class="state">
+          <h2 class="state__title">Something went wrong.</h2>
+          <p class="state__text">We couldn't find that profile in the archive. The link may be out of date.</p>
+          <a class="btn btn--ghost" href="models.html">Back to models</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer data-footer></footer>
+</div>
+
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+window.PAGE_INIT = function () {
+  var A = window.ARCHIVE, P = window.PC;
+  var slug = P.qs("m", "yang-chenchen");
+  var m = A.model(slug);
+
+  if (!m) {
+    document.querySelector("[data-hero]").hidden = true;
+    document.querySelectorAll(".section").forEach(function (s) { if (!s.hasAttribute("data-notfound")) s.hidden = true; });
+    document.querySelector("[data-notfound]").hidden = false;
+    document.title = "Not found — Photo Collection";
+    return;
+  }
+
+  document.title = m.name + " — Photo Collection";
+
+  /* hero */
+  document.querySelector("[data-hero-img]").src = A.src(m.hero, { w: 2000, ar: 16 / 9, crop: "faces", q: 78 });
+  document.querySelector("[data-hero-img]").alt = m.name;
+  document.querySelector("[data-name]").textContent = m.name;
+  document.querySelector("[data-stage]").textContent = m.stage ? "Known as " + m.stage : "";
+  document.querySelector("[data-hero-count]").textContent =
+    m.count + (m.count === 1 ? " collection" : " collections") + " · " + m.photoCount + " photos";
+  document.querySelector("[data-hero-fav]").innerHTML = P.favButton("model", m.slug, { labelled: true, title: "Favourite model" });
+
+  /* prose */
+  var sentences = m.bio.split(/(?<=\.)\s+/);
+  document.querySelector("[data-lede]").textContent = sentences[0];
+  document.querySelector("[data-bio]").textContent = sentences.slice(1).join(" ") || m.bio;
+
+  /* tags — only the tags this model actually carries */
+  document.querySelector("[data-tags]").innerHTML = m.tags.map(function (t) {
+    return '<a class="chip" href="collections.html?tag=' + encodeURIComponent(t) + '">' + t + "</a>";
+  }).join("");
+
+  /* facts — a field with no data is not rendered at all */
+  var facts = [
+    ["Gender", m.gender],
+    ["Age", m.age],
+    ["Height", m.height],
+    ["Measurements", m.measurements],
+    ["Agency", m.agency],
+    ["In archive since", m.since],
+    ["Collections", m.count],
+    ["Photos", m.photoCount]
+  ].filter(function (r) { return r[1] !== null && r[1] !== undefined && r[1] !== ""; });
+
+  document.querySelector("[data-facts]").innerHTML = facts.map(function (r) {
+    return '<div class="fact"><dt class="fact__k">' + r[0] + '</dt><dd class="fact__v num">' + r[1] + "</dd></div>";
+  }).join("");
+
+  /* collections */
+  var grid = document.querySelector("[data-collections]");
+  var empty = document.querySelector("[data-collections-empty]");
+  document.querySelector("[data-collections-count]").textContent =
+    m.count ? m.photoCount + " photos" : "";
+  grid.innerHTML = m.works.map(function (c) { return P.collectionCard(c, { w: 900 }); }).join("");
+  grid.hidden = m.count === 0;
+  empty.hidden = m.count > 0;
+
+  P.fav.bind(document);
+};
+</script>
+</body>
+</html>

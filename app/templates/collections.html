@@ -1,0 +1,153 @@
+{% extends '_shell.html' %}
+{% from '_ui.html' import collection_card %}
+{% block title %}{{ t('Collections') }} — Photo Collection{% endblock %}
+
+{% block main %}
+<div class="wrap">
+  <div class="page-head">
+    <h1 class="page-head__title" data-title>{{ t('Collections') }}</h1>
+    <p class="page-head__sub" data-sub>{{ t('Every published sitting in the archive, newest first.') }}</p>
+  </div>
+
+  <div class="filters">
+    <label class="searchbox">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+      <input type="search" data-f-name placeholder="{{ t('Search titles and models') }}" aria-label="{{ t('Search collections') }}">
+    </label>
+
+    <select class="select" data-f-tag aria-label="{{ t('Tag') }}">
+      <option value="">{{ t('Any tag') }}</option>
+    </select>
+
+    <select class="select" data-f-model aria-label="{{ t('Models') }}">
+      <option value="">{{ t('Any model') }}</option>
+    </select>
+
+    <span class="filters__spacer"></span>
+    <span class="filters__count num" data-count></span>
+
+    <select class="select" data-f-sort aria-label="{{ t('Sort') }}">
+      <option value="newest">{{ t('Sort: Newest') }}</option>
+      <option value="oldest">{{ t('Sort: Oldest') }}</option>
+      <option value="title">{{ t('Sort: Title') }}</option>
+      <option value="size">{{ t('Sort: Most photos') }}</option>
+    </select>
+
+    <button class="btn btn--quiet btn--sm" type="button" data-f-reset>{{ t('Reset') }}</button>
+  </div>
+
+  <div class="masonry masonry--collections" data-grid></div>
+
+  <div data-empty hidden>
+    <div class="state">
+      <h2 class="state__title">{{ t('No collections match those filters.') }}</h2>
+      <p class="state__text">{{ t('Try a different tag, or clear the filters to see the whole archive.') }}</p>
+      <button class="btn btn--ghost" type="button" data-f-reset>{{ t('Clear filters') }}</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap"><div data-load-more></div></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* 客户端筛选 + 分批渲染(消除整页刷新) */
+(function () {
+  var D = window.PB_DATA;
+  var grid = document.querySelector("[data-grid]");
+  var empty = document.querySelector("[data-empty]");
+  var more = document.querySelector("[data-load-more]");
+  var f = { name: D.filters.q || "", tag: D.filters.tag || "", model: D.filters.model || "", sort: "newest", page: 1 };
+  var PER = 12;
+
+  var tagSel = document.querySelector("[data-f-tag]");
+  D.tags.forEach(function (t) {
+    tagSel.insertAdjacentHTML("beforeend", '<option value="' + t.name + '">' + t.name + " (" + t.collections + ")</option>");
+  });
+  var modelSel = document.querySelector("[data-f-model]");
+  D.models.forEach(function (m) {
+    modelSel.insertAdjacentHTML("beforeend", '<option value="' + m.slug + '">' + m.name + "</option>");
+  });
+  document.querySelector("[data-f-name]").value = f.name;
+  tagSel.value = f.tag; modelSel.value = f.model;
+
+  function card(c) {
+    return '<article class="collection-card hoverable">' +
+      '<div style="position:relative"><a href="/collections/' + c.slug + '" aria-label="' + PC.escapeHtml(c.title) + '"><div class="frame skeleton" style="aspect-ratio:3/4">' +
+      '<img src="/t/900/' + c.cover + '.webp" alt="' + PC.escapeHtml(c.title) + '" loading="lazy" decoding="async"></div></a>' +
+      '<div class="card__fav reveal"><button class="fav fav--bare" type="button" data-fav="collection" data-fav-key="' + c.slug + '" aria-pressed="false" title="' + PC.t("Favourite collection") + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.2s-7.4-4.5-7.4-9.6A4.3 4.3 0 0 1 12 7.9a4.3 4.3 0 0 1 7.4 2.7c0 5.1-7.4 9.6-7.4 9.6z"/></svg>' +
+      '<span class="sr">' + PC.t("Add to favourites") + '</span></button></div></div>' +
+      '<div class="card__caption"><div class="card__caption-main">' +
+      '<h3 class="card__title"><a href="/collections/' + c.slug + '">' + c.title + "</a></h3>" +
+      '<p class="card__sub"><a href="/models/' + c.model_slug + '">' + c.model_name + "</a><span>" + PC.t("{n} photos", { n: c.count }) + "</span></p>" +
+      "</div></div></article>";
+  }
+
+  function filtered() {
+    var q = f.name.trim().toLowerCase();
+    var list = D.collections.filter(function (c) {
+      if (q && (c.title + " " + c.model_name).toLowerCase().indexOf(q) === -1) return false;
+      if (f.tag && c.tags.indexOf(f.tag) === -1) return false;
+      if (f.model && c.model_slug !== f.model) return false;
+      return true;
+    });
+    if (f.sort === "oldest") list.sort(function (a, b) { return (a.date || "").localeCompare(b.date || ""); });
+    else if (f.sort === "title") list.sort(function (a, b) { return a.title.localeCompare(b.title); });
+    else if (f.sort === "size") list.sort(function (a, b) { return b.count - a.count; });
+    else list.sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); });
+    return list;
+  }
+
+  function render() {
+    var list = filtered();
+    var shown = list.slice(0, f.page * PER);
+    grid.innerHTML = shown.map(card).join("");
+    grid.hidden = list.length === 0;
+    empty.hidden = list.length > 0;
+    document.querySelector("[data-count]").textContent =
+      PC.t(list.length === 1 ? "{n} collection" : "{n} collections", { n: list.length });
+    more.innerHTML = list.length > shown.length
+      ? '<div style="display:flex;justify-content:center;padding-block:var(--s8)"><button class="btn btn--ghost" type="button" data-more>' + PC.t("Load more collections") + '</button></div>'
+      : '<div style="height:var(--s9)"></div>';
+    var b = more.querySelector("[data-more]");
+    if (b) b.addEventListener("click", function () { f.page++; render(); });
+    document.dispatchEvent(new CustomEvent("pc:content"));
+  }
+
+  function syncUrl() {
+    var p = new URLSearchParams();
+    if (f.name) p.set("q", f.name);
+    if (f.tag) p.set("tag", f.tag);
+    if (f.model) p.set("model", f.model);
+    history.replaceState(null, "", p.toString() ? "?" + p : location.pathname);
+  }
+
+  var debounce;
+  document.querySelector("[data-f-name]").addEventListener("input", function (e) {
+    clearTimeout(debounce);
+    var v = e.target.value;
+    debounce = setTimeout(function () { f.name = v; f.page = 1; syncUrl(); render(); }, 180);
+  });
+  tagSel.addEventListener("change", function (e) {
+    f.tag = e.target.value; f.page = 1; syncUrl();
+    document.querySelector("[data-title]").textContent = f.tag ? "#" + f.tag : PC.t("Collections");
+    render();
+  });
+  modelSel.addEventListener("change", function (e) { f.model = e.target.value; f.page = 1; syncUrl(); render(); });
+  document.querySelector("[data-f-sort]").addEventListener("change", function (e) { f.sort = e.target.value; render(); });
+  document.querySelectorAll("[data-f-reset]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      f = { name: "", tag: "", model: "", sort: "newest", page: 1 };
+      document.querySelector("[data-f-name]").value = "";
+      tagSel.value = ""; modelSel.value = "";
+      document.querySelector("[data-title]").textContent = PC.t("Collections");
+      syncUrl(); render();
+    });
+  });
+
+  render();
+})();
+</script>
+{% endblock %}

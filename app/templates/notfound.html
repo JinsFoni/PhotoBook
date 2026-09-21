@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('Not found — Photo Collection') }}{% endblock %}
+{% block body %}
+<div class="shell">
+  <header data-header></header>
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="state" style="margin-top:var(--s10)">
+        <h2 class="state__title">{{ t('Something went wrong.') }}</h2>
+        <p class="state__text">{{ text }}</p>
+        <a class="btn btn--ghost" href="/">{{ t('Back to discovery') }}</a>
+      </div>
+    </div>
+  </main>
+  <footer data-footer></footer>
+</div>
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+{% endblock %}

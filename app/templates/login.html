@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('Sign in') }} — Photo Collection{% endblock %}
+{% block body %}
+<div class="login">
+  <div class="login__visual">
+    <img src="{{ media(login_cover, 1600) if login_cover else '' }}" alt="" fetchpriority="high"
+         onerror="this.style.display='none'">
+    <div class="login__visual-caption">
+      <div>
+        <p class="t-micro" style="color:rgba(255,255,255,.72);letter-spacing:.1em;text-transform:uppercase">{{ t('Now showing') }}</p>
+        <p style="font-family:var(--display);font-size:clamp(22px,2.4vw,34px);line-height:1.1;margin-top:6px">{{ login_title or t('Photo Archive') }}</p>
+        <p class="t-small" style="color:rgba(255,255,255,.78)">{{ login_meta or t('Private archive') }}</p>
+      </div>
+      <p class="t-small num" style="color:rgba(255,255,255,.72);text-align:right">{{ t('Archive') }}<br>2026</p>
+    </div>
+  </div>
+
+  <div class="login__panel">
+    <div class="login__top">
+      <a class="wordmark" href="/">Photo&nbsp;<em>Collection</em></a>
+      <button class="icon-btn" type="button" data-theme-toggle aria-label="{{ t('Switch theme') }}"></button>
+    </div>
+
+    <main class="login__form-wrap" id="main">
+      <h1 class="t-h1 login__title">{{ t('Sign in') }}</h1>
+      <p class="login__note">{{ t('The archive is open to members. Sign in to browse models, collections and downloads.') }}</p>
+
+      {% if error %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)"><p class="state__text" style="margin:0">{{ error }}</p></div>{% endif %}
+
+      <form method="post" action="/login" novalidate>
+        <label class="field">
+          <span class="field__label">{{ t('Username') }}</span>
+          <input class="input" type="text" name="username" autocomplete="username"
+                 placeholder="username" value="{{ username }}" required autofocus>
+        </label>
+
+        <label class="field">
+          <span class="field__label">{{ t('Password') }}</span>
+          <input class="input" type="password" name="password" autocomplete="current-password"
+                 placeholder="••••••••" required>
+        </label>
+
+        <div class="login__row">
+          <label style="display:flex;align-items:center;gap:var(--s2);color:var(--ink-2)">
+            <input type="checkbox" name="remember" checked style="accent-color:var(--accent);width:14px;height:14px">
+            {{ t('Keep me signed in') }}
+          </label>
+        </div>
+
+        <button class="btn btn--block login__submit" type="submit">{{ t('Sign in') }}</button>
+      </form>
+
+      <p class="login__foot">
+        {{ t('No account yet? Ask the archive administrator for access.') }}
+      </p>
+
+      <div class="lang-switch lang-switch--login" role="group" aria-label="{{ t('Language') }}">
+        {% for code, name in LANGUAGES.items() %}
+        <form method="post" action="/language" class="lang-switch__form">
+          <input type="hidden" name="next" value="/login">
+          <button type="submit" name="lang" value="{{ code }}" class="lang-switch__opt{% if lang() == code %} lang-switch__opt--on{% endif %}">{{ name }}</button>
+        </form>
+        {% endfor %}
+      </div>
+    </main>
+  </div>
+</div>
+{% endblock %}

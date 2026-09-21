@@ -1,0 +1,17 @@
+{% from '_ui.html' import icon %}
+{% extends 'base.html' %}
+
+{% block body %}
+<div class="shell">
+  <header data-header></header>
+
+  <main class="main" id="main">
+    {% block main %}{% endblock %}
+  </main>
+
+  <footer data-footer></footer>
+</div>
+
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+{% endblock %}

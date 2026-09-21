@@ -1,0 +1,61 @@
+{% macro icon(name) -%}
+{%- set paths = {
+  'search': '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  'heart': '<path d="M12 20.2s-7.4-4.5-7.4-9.6A4.3 4.3 0 0 1 12 7.9a4.3 4.3 0 0 1 7.4 2.7c0 5.1-7.4 9.6-7.4 9.6z"/>',
+  'download': '<path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"/>',
+  'close': '<path d="M6 6l12 12M18 6L6 18"/>',
+  'left': '<path d="M15 5l-7 7 7 7"/>',
+  'right': '<path d="M9 5l7 7-7 7"/>',
+  'menu': '<path d="M4 8h16M4 16h16"/>',
+  'sun': '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/>',
+  'moon': '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
+  'check': '<path d="M5 13l4 4L19 7"/>',
+  'grid': '<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>',
+  'user': '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
+  'settings': '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2 2M16.5 16.5l2 2M18.5 5.5l-2 2M7.5 16.5l-2 2"/>',
+} -%}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"{{ ' class="' + cls + '"' if cls else '' }}>{{ paths.get(name, '') | safe }}</svg>
+{%- endmacro %}
+
+{% macro frame(rel, w, ar='3/4', h=None, alt='', cls='frame', eager=False) -%}
+<div class="{{ cls }} skeleton" style="aspect-ratio:{{ ar }}">
+  <img src="{{ media(rel, w, h) }}"
+       srcset="{{ media(rel, (w * 0.5) | round | int, h) }} {{ (w * 0.5) | round | int }}w, {{ media(rel, w, h) }} {{ w }}w{% if h %}, {{ media(rel, (w * 1.6) | round | int, h) }} {{ (w * 1.6) | round | int }}w{% endif %}"
+       sizes="(max-width: 760px) 50vw, 25vw"
+       alt="{{ alt }}" loading="{{ 'eager' if eager else 'lazy' }}" decoding="async">
+</div>
+{%- endmacro %}
+
+{% macro fav_button(type, key, cls='', labelled=False, title='') -%}
+<button class="fav{{ ' ' + cls if cls }}" type="button"
+        data-fav="{{ type }}" data-fav-key="{{ key }}" aria-pressed="false" title="{{ title or t('Favourite') }}">
+  {{ icon('heart') }}
+  {%- if labelled %}<span data-fav-label>{{ t('Save') }}</span>{% endif -%}
+  <span class="sr">{{ t('Add to favourites') }}</span>
+</button>
+{%- endmacro %}
+
+{% macro collection_card(c, w=900) -%}
+<article class="collection-card hoverable">
+  <div style="position:relative">
+    <a href="/collections/{{ c.slug }}" aria-label="{{ c.title }}">{{ frame(c.cover, w, '3/4', alt=t('{t} — cover', t=c.title)) }}</a>
+    <div class="card__fav reveal">{{ fav_button('collection', c.slug, 'fav--bare', title=t('Favourite collection')) }}</div>
+  </div>
+  <div class="card__caption"><div class="card__caption-main">
+    <h3 class="card__title"><a href="/collections/{{ c.slug }}">{{ c.title }}</a></h3>
+    <p class="card__sub"><a href="/models/{{ c.model_slug }}">{{ c.model_name }}</a><span>{{ t('{n} photos', n=c.count) }}</span>{% if c.date %}<span>{{ c.date }}</span>{% endif %}</p>
+  </div></div>
+</article>
+{%- endmacro %}
+
+{% macro model_card(m, w=700) -%}
+<article class="model-card hoverable">
+  <div style="position:relative">
+    <a href="/models/{{ m.slug }}" aria-label="{{ m.name }}">{{ frame(m.avatar, w, '3/4', alt=m.name) }}</a>
+    <div class="card__fav reveal">{{ fav_button('model', m.slug, 'fav--bare', title=t('Favourite model')) }}</div>
+  </div>
+  <h3 class="model-card__name"><a href="/models/{{ m.slug }}">{{ m.name }}</a></h3>
+  <p class="model-card__meta">{{ t('{n} collection' if m.count == 1 else '{n} collections', n=m.count) }}</p>
+  {% if m.tags %}<p class="model-card__tags">{{ m.tags | join(', ') }}</p>{% endif %}
+</article>
+{%- endmacro %}

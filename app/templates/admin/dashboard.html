@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('Admin Dashboard') }} — Photo Collection{% endblock %}
+{% block body %}
+<div class="shell">
+  <header data-header></header>
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title">{{ t('Admin Dashboard') }}</h1>
+        <p class="page-head__sub">{{ t('Archive management — content, users and the harvest pipeline.') }}</p>
+      </div>
+
+      <div class="panel-grid">
+        <nav class="side-nav" aria-label="{{ t('Admin') }}">
+          <a class="side-nav__item" href="/admin" aria-current="page">{{ t('Dashboard') }}</a>
+          <a class="side-nav__item" href="/admin/harvest">{{ t('Harvest') }} <span class="num">{{ t('{n} active', n=stats.jobs_active) }}</span></a>
+          <a class="side-nav__item" href="/admin/collections">{{ t('Collections') }}</a>
+          <a class="side-nav__item" href="/admin/models">{{ t('Models') }}</a>
+          <a class="side-nav__item" href="/admin/tags">{{ t('Tags') }}</a>
+          <a class="side-nav__item" href="/admin/users">{{ t('Users') }}</a>
+          <a class="side-nav__item" href="/admin/settings">{{ t('Settings') }}</a>
+          <a class="side-nav__item" href="/">{{ t('← Back to site') }}</a>
+        </nav>
+
+        <div>
+          <div class="stat-row">
+            <div><p class="stat__v num">{{ stats.collections }}</p><p class="stat__k">{{ t('Collections') }}</p></div>
+            <div><p class="stat__v num">{{ stats.models }}</p><p class="stat__k">{{ t('Models') }}</p></div>
+            <div><p class="stat__v num">{{ stats.photos }}</p><p class="stat__k">{{ t('Photos') }}</p></div>
+            <div><p class="stat__v num">{{ stats.users }}</p><p class="stat__k">{{ t('Users') }}</p></div>
+          </div>
+
+          <div class="stat-row" style="margin-top:var(--s4)">
+            <div><p class="stat__v num">{{ stats.jobs_active }}</p><p class="stat__k">{{ t('Harvest queue') }}</p></div>
+            <div><p class="stat__v num">{{ stats.jobs_done }}</p><p class="stat__k">{{ t('Harvested') }}</p></div>
+            <div><p class="stat__v num">{{ stats.jobs_failed }}</p><p class="stat__k">{{ t('Failed') }}</p></div>
+            <div><p class="stat__v num">{{ t('running') if worker_running else t('stopped') }}</p><p class="stat__k">{{ t('Worker') }}</p></div>
+          </div>
+
+          <div style="margin-top:var(--s8)">
+            <div class="section-head">
+              <h2 class="section-title">{{ t('Recent harvest jobs') }}</h2>
+              <a class="section-aside" href="/admin/harvest">{{ t('All jobs') }}</a>
+            </div>
+            {% if recent_jobs %}
+            <table style="width:100%;border-collapse:collapse">
+              <thead><tr class="t-small" style="text-align:left;color:var(--ink-3);border-bottom:1px solid var(--line)">
+                <th style="padding:var(--s2) 0">#</th><th>{{ t('Serial') }}</th><th>{{ t('Title') }}</th><th>{{ t('Status') }}</th><th>{{ t('Time') }}</th>
+              </tr></thead>
+              <tbody>
+                {% for j in recent_jobs %}
+                <tr style="border-bottom:1px solid var(--line-2)">
+                  <td class="num" style="padding:var(--s2) 0">{{ j.id }}</td>
+                  <td class="num">{{ j.serial }}</td>
+                  <td>{{ (j.title or '—')[:44] }}</td>
+                  <td><span class="num" data-status-badge="{{ j.status }}">{{ j.status }}</span></td>
+                  <td class="num t-small" style="color:var(--ink-3)">{{ j.created_at.strftime('%m-%d %H:%M') if j.created_at else '' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div class="state"><h2 class="state__title">{{ t('No jobs yet.') }}</h2>
+              <p class="state__text">{{ t('Run a scan or submit a URL on the 采集下载 page.') }}</p></div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer data-footer></footer>
+</div>
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+{% endblock %}

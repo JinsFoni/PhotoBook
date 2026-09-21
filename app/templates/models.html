@@ -1,0 +1,149 @@
+{% extends '_shell.html' %}
+{% block title %}{{ t('Models') }} — Photo Collection{% endblock %}
+
+{% block main %}
+<div class="wrap">
+  <div class="page-head">
+    <h1 class="page-head__title">{{ t('Models') }}</h1>
+    <p class="page-head__sub">{{ t('Profiles in the archive. Each one collects the sittings we have published with that model.') }}</p>
+  </div>
+
+  <div class="filters">
+    <label class="searchbox">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+      <input type="search" data-f-name placeholder="{{ t('Search by name or stage name') }}" aria-label="{{ t('Search models') }}">
+    </label>
+
+    <select class="select" data-f-gender aria-label="{{ t('Gender') }}">
+      <option value="">{{ t('Any gender') }}</option>
+      <option value="Female">{{ t('Female') }}</option>
+      <option value="Male">{{ t('Male') }}</option>
+    </select>
+
+    <select class="select" data-f-tag aria-label="{{ t('Tag') }}">
+      <option value="">{{ t('Any tag') }}</option>
+    </select>
+
+    <select class="select" data-f-agency aria-label="{{ t('Agency') }}">
+      <option value="">{{ t('Any agency') }}</option>
+    </select>
+
+    <span class="filters__spacer"></span>
+    <span class="filters__count num" data-count></span>
+
+    <select class="select" data-f-sort aria-label="{{ t('Sort') }}">
+      <option value="featured">{{ t('Sort: Recommended') }}</option>
+      <option value="latest">{{ t('Sort: Latest') }}</option>
+      <option value="name">{{ t('Sort: Name') }}</option>
+    </select>
+
+    <button class="btn btn--quiet btn--sm" type="button" data-f-reset>{{ t('Reset') }}</button>
+  </div>
+
+  <div class="grid grid--models" data-grid></div>
+
+  <div data-more></div>
+
+  <div data-empty hidden>
+    <div class="state">
+      <h2 class="state__title">{{ t('No models match those filters.') }}</h2>
+      <p class="state__text">{{ t('Try removing a filter, or search a different name.') }}</p>
+      <button class="btn btn--ghost" type="button" data-f-reset>{{ t('Clear filters') }}</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var D = window.PB_DATA;
+  var grid = document.querySelector("[data-grid]");
+  var empty = document.querySelector("[data-empty]");
+  var more = document.querySelector("[data-more]");
+  var f = { name: D.filters.q || "", gender: D.filters.gender || "", tag: D.filters.tag || "", agency: D.filters.agency || "", sort: "featured", page: 1 };
+  var PER = 8;
+
+  var tagSel = document.querySelector("[data-f-tag]");
+  D.tags.forEach(function (t) { tagSel.insertAdjacentHTML("beforeend", '<option value="' + t + '">' + t + "</option>"); });
+  var agencySel = document.querySelector("[data-f-agency]");
+  D.agencies.forEach(function (a) { agencySel.insertAdjacentHTML("beforeend", '<option value="' + a + '">' + a + "</option>"); });
+  document.querySelector("[data-f-name]").value = f.name;
+  tagSel.value = f.tag; agencySel.value = f.agency;
+
+  function card(m) {
+    return '<article class="model-card hoverable">' +
+      '<div style="position:relative"><a href="/models/' + m.slug + '" aria-label="' + PC.escapeHtml(m.name) + '">' +
+      '<div class="frame skeleton" style="aspect-ratio:3/4">' + (m.avatar ? '<img src="/t/700/' + m.avatar + '.webp" alt="' + PC.escapeHtml(m.name) + '" loading="lazy">' : '') + '</div></a>' +
+      '<div class="card__fav reveal"><button class="fav fav--bare" type="button" data-fav="model" data-fav-key="' + m.slug + '" aria-pressed="false" title="' + PC.t("Favourite model") + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.2s-7.4-4.5-7.4-9.6A4.3 4.3 0 0 1 12 7.9a4.3 4.3 0 0 1 7.4 2.7c0 5.1-7.4 9.6-7.4 9.6z"/></svg>' +
+      '<span class="sr">' + PC.t("Add to favourites") + '</span></button></div></div>' +
+      '<h3 class="model-card__name"><a href="/models/' + m.slug + '">' + m.name + "</a></h3>" +
+      '<p class="model-card__meta">' + PC.t(m.count === 1 ? "{n} collection" : "{n} collections", { n: m.count }) + "</p>" +
+      (m.tags.length ? '<p class="model-card__tags">' + m.tags.join(", ") + "</p>" : "") +
+      "</article>";
+  }
+
+  function filtered() {
+    var q = f.name.trim().toLowerCase();
+    var list = D.models.filter(function (m) {
+      if (q && (m.name + " " + m.stage).toLowerCase().indexOf(q) === -1) return false;
+      if (f.gender && m.gender !== f.gender) return false;
+      if (f.tag && m.tags.indexOf(f.tag) === -1) return false;
+      if (f.agency && m.agency !== f.agency) return false;
+      return true;
+    });
+    if (f.sort === "name") list.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    else if (f.sort === "latest") list.sort(function (a, b) { return 0; });
+    else list.sort(function (a, b) { return (b.featured ? 1 : 0) - (a.featured ? 1 : 0) || b.photoCount - a.photoCount; });
+    return list;
+  }
+
+  function render() {
+    var list = filtered();
+    var shown = list.slice(0, f.page * PER);
+    grid.innerHTML = shown.map(card).join("");
+    empty.hidden = list.length > 0;
+    grid.hidden = list.length === 0;
+    document.querySelector("[data-count]").textContent = PC.t(list.length === 1 ? "{n} model" : "{n} models", { n: list.length });
+    more.innerHTML = list.length > shown.length
+      ? '<div style="display:flex;justify-content:center;padding-block:var(--s8)"><button class="btn btn--ghost" type="button" data-more-btn>' + PC.t("Load more models") + '</button></div>'
+      : '<div style="height:var(--s9)"></div>';
+    var b = more.querySelector("[data-more-btn]");
+    if (b) b.addEventListener("click", function () { f.page++; render(); });
+    document.dispatchEvent(new CustomEvent("pc:content"));
+  }
+
+  function syncUrl() {
+    var p = new URLSearchParams();
+    if (f.name) p.set("q", f.name);
+    if (f.gender) p.set("gender", f.gender);
+    if (f.tag) p.set("tag", f.tag);
+    if (f.agency) p.set("agency", f.agency);
+    history.replaceState(null, "", p.toString() ? "?" + p : location.pathname);
+  }
+
+  var debounce;
+  document.querySelector("[data-f-name]").addEventListener("input", function (e) {
+    clearTimeout(debounce);
+    var v = e.target.value;
+    debounce = setTimeout(function () { f.name = v; f.page = 1; syncUrl(); render(); }, 180);
+  });
+  document.querySelector("[data-f-gender]").addEventListener("change", function (e) { f.gender = e.target.value; f.page = 1; syncUrl(); render(); });
+  tagSel.addEventListener("change", function (e) { f.tag = e.target.value; f.page = 1; syncUrl(); render(); });
+  agencySel.addEventListener("change", function (e) { f.agency = e.target.value; f.page = 1; syncUrl(); render(); });
+  document.querySelector("[data-f-sort]").addEventListener("change", function (e) { f.sort = e.target.value; render(); });
+  document.querySelectorAll("[data-f-reset]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      f = { name: "", gender: "", tag: "", agency: "", sort: "featured", page: 1 };
+      document.querySelector("[data-f-name]").value = "";
+      document.querySelector("[data-f-gender]").value = "";
+      tagSel.value = ""; agencySel.value = "";
+      syncUrl(); render();
+    });
+  });
+
+  render();
+})();
+</script>
+{% endblock %}

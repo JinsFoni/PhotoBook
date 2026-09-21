@@ -1,0 +1,95 @@
+{% extends '_shell.html' %}
+{% from '_ui.html' import collection_card %}
+{% block title %}{{ t('Collections') }} — Photo Collection{% endblock %}
+
+{% block main %}
+<div class="wrap">
+  <div class="collection-head" data-sticky-trigger>
+    <div>
+      <p class="t-small num" data-eyebrow style="margin-bottom:var(--s4)"></p>
+      <h1 class="collection-head__title" data-title></h1>
+      <p class="collection-head__model" data-model></p>
+      <div class="collection-head__tags" data-tags></div>
+    </div>
+    <div class="collection-head__actions">
+      <span data-head-fav></span>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:var(--s5);padding-block:var(--s5);margin-top:var(--s7);border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-bottom:var(--s5)">
+    <span class="t-small num" data-photo-count></span>
+    <span class="filters__spacer"></span>
+    <span class="t-small" style="color:var(--ink-3)">{{ t('Select any frame to open it full screen') }}</span>
+  </div>
+</div>
+
+<div class="wrap wrap--wide">
+  <div class="masonry masonry--photos" data-photos></div>
+</div>
+
+<div class="wrap" data-photos-empty hidden>
+  <div class="state">
+    <h2 class="state__title">{{ t('No photos yet.') }}</h2>
+    <p class="state__text">{{ t('This collection has been created but the frames have not been uploaded.') }}</p>
+    <a class="btn btn--ghost" href="/collections">{{ t('Back to collections') }}</a>
+  </div>
+</div>
+
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 class="section-title">{{ t('More from this archive') }}</h2>
+      <span class="section-aside" data-next-aside></span>
+    </div>
+    <div class="grid grid--collections" data-next></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* 收藏绑定由 app.js 全局处理;这里做灯箱数据 */
+(function () {
+  var c = window.PB_DATA;
+  document.title = c.title + " — Photo Collection";
+  document.querySelector("[data-eyebrow]").textContent = c.date || "";
+  document.querySelector("[data-title]").textContent = c.title;
+  document.querySelector("[data-model]").innerHTML = '<a href="/models/' + c.model_slug + '">' + c.model_name + "</a>";
+  document.querySelector("[data-tags]").innerHTML = (c.tags || []).map(function (t) {
+    return '<a class="tag" href="/collections?tag=' + encodeURIComponent(t) + '">#' + t + "</a>";
+  }).join("");
+  document.querySelector("[data-head-fav]").innerHTML =
+    '<button class="fav" type="button" data-fav="collection" data-fav-key="' + c.slug + '" aria-pressed="false" title="' + PC.t("Favourite collection") + '">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.2s-7.4-4.5-7.4-9.6A4.3 4.3 0 0 1 12 7.9a4.3 4.3 0 0 1 7.4 2.7c0 5.1-7.4 9.6-7.4 9.6z"/></svg>' +
+    '<span data-fav-label>' + PC.t("Save") + '</span></button>';
+  document.querySelector("[data-photo-count]").textContent = PC.t("{n} photos · {m}", { n: c.count, m: c.model_name });
+
+  /* 照片墙 */
+  var wall = document.querySelector("[data-photos]");
+  wall.innerHTML = (c.photos || []).map(function (p, i) {
+    var ar = (p.w && p.h) ? (p.w + "/" + p.h) : "3/4";
+    return '<div class="photo-tile">' +
+      '<div class="frame skeleton" style="aspect-ratio:' + ar + '">' +
+      '<img src="/t/700/' + p.file + '.webp" alt="" loading="lazy" decoding="async"></div>' +
+      '<button class="photo-tile__hit" type="button" data-photo-index="' + i + '" aria-label="' + PC.t("Open photo {n} full screen", { n: i + 1 }) + '"></button>' +
+      '<span class="photo-tile__idx" aria-hidden="true">' + String(i + 1).padStart(2, "0") + "</span></div>";
+  }).join("");
+  wall.hidden = !(c.photos || []).length;
+  document.querySelector("[data-photos-empty]").hidden = !!(c.photos || []).length;
+
+  /* 推荐 */
+  document.querySelector("[data-next]").innerHTML = (c.next || []).map(function (x) {
+    return '<article class="collection-card hoverable">' +
+      '<div style="position:relative"><a href="/collections/' + x.slug + '" aria-label="' + PC.escapeHtml(x.title) + '"><div class="frame skeleton" style="aspect-ratio:3/4">' +
+      '<img src="/t/900/' + x.cover + '.webp" alt="" loading="lazy"></div></a></div>' +
+      '<div class="card__caption"><div class="card__caption-main">' +
+      '<h3 class="card__title"><a href="/collections/' + x.slug + '">' + x.title + "</a></h3>" +
+      '<p class="card__sub"><a href="/models/' + x.model_slug + '">' + x.model_name + "</a><span>" + PC.t("{n} photos", { n: x.count }) + "</span></p>" +
+      "</div></div></article>";
+  }).join("");
+  document.querySelector("[data-next-aside]").textContent = c.next_aside ? PC.t("More from {name}", { name: c.next_aside }) : "";
+
+  document.dispatchEvent(new CustomEvent("pc:content"));
+})();
+</script>
+{% endblock %}

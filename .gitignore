@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# 运行数据与用户内容(不入库:库文件、图片、下载暂存)
+data/
+media/
+library/
+
+# 环境
+.env
+.DS_Store

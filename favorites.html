@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Favourites — Photo Collection</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230c0d0f'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' fill='none' stroke='%23f7f7f5' stroke-width='1.6'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#0c0d0f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://images.unsplash.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..800;1,6..96,400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="favorites">
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="shell">
+  <header data-header></header>
+
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title">Favourites</h1>
+        <p class="page-head__sub">Everything you have kept. Models, collections and single frames, in one place.</p>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Favourite types">
+        <button class="tab" role="tab" id="tab-model" aria-controls="panel-model" aria-selected="true">
+          Models<span class="tab__count num" data-fav-count="model">0</span>
+        </button>
+        <button class="tab" role="tab" id="tab-collection" aria-controls="panel-collection" aria-selected="false">
+          Collections<span class="tab__count num" data-fav-count="collection">0</span>
+        </button>
+        <button class="tab" role="tab" id="tab-photo" aria-controls="panel-photo" aria-selected="false">
+          Photos<span class="tab__count num" data-fav-count="photo">0</span>
+        </button>
+      </div>
+
+      <div class="section section--tight">
+        <div role="tabpanel" id="panel-model" aria-labelledby="tab-model" data-panel="model">
+          <div class="grid grid--models" data-grid="model"></div>
+        </div>
+
+        <div role="tabpanel" id="panel-collection" aria-labelledby="tab-collection" data-panel="collection" hidden>
+          <div class="masonry masonry--collections" data-grid="collection"></div>
+        </div>
+
+        <div role="tabpanel" id="panel-photo" aria-labelledby="tab-photo" data-panel="photo" hidden>
+          <div class="masonry masonry--photos" data-grid="photo"></div>
+        </div>
+
+        <div data-empty hidden>
+          <div class="state">
+            <h2 class="state__title" data-empty-title>No favourites yet.</h2>
+            <p class="state__text" data-empty-text></p>
+            <a class="btn btn--ghost" href="discovery.html">Start browsing</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer data-footer></footer>
+</div>
+
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+window.PAGE_INIT = function () {
+  var A = window.ARCHIVE, P = window.PC;
+  var active = P.qs("tab", "model");
+
+  var COPY = {
+    model: {
+      empty: "No favourite models yet.",
+      text: "Save a model from any profile or listing and their full archive will be waiting here."
+    },
+    collection: {
+      empty: "No favourite collections yet.",
+      text: "Save a collection while you browse and it will appear here for quick access."
+    },
+    photo: {
+      empty: "No favourite photos yet.",
+      text: "Open any frame full screen and save it — single frames you keep are collected here."
+    }
+  };
+
+  function renderTab() {
+    document.querySelectorAll("[role=tab]").forEach(function (t) {
+      t.setAttribute("aria-selected", t.id === "tab-" + active ? "true" : "false");
+    });
+    document.querySelectorAll("[data-panel]").forEach(function (p) {
+      p.hidden = p.dataset.panel !== active;
+    });
+
+    var grid = document.querySelector('[data-grid="' + active + '"]');
+    var empty = document.querySelector("[data-empty]");
+    var items = [];
+
+    if (active === "model") {
+      items = A.MODELS.filter(function (m) { return P.fav.has("model", m.slug); });
+      grid.innerHTML = items.map(function (m) { return P.modelCard(m, { w: 700 }); }).join("");
+    } else if (active === "collection") {
+      items = A.COLLECTIONS.filter(function (c) { return P.fav.has("collection", c.slug); });
+      grid.innerHTML = items.map(function (c) { return P.collectionCard(c, { w: 900 }); }).join("");
+    } else {
+      items = A.allPhotos().filter(function (p) { return P.fav.has("photo", p.collection + ":" + p.index); });
+      grid.innerHTML = items.map(function (p) {
+        var c = A.collection(p.collection);
+        return '<div class="photo-tile" style="position:relative">' +
+          '<button type="button" style="display:block;width:100%" data-fav-photo="' + p.collection + ":" + p.index + '"' +
+          ' aria-label="Open ' + c.title + " photo " + (p.index + 1) + '">' +
+          P.frame({ id: p.id, ar: p.ar }, { w: 700, alt: "" }) +
+          "</button>" +
+          '<div style="position:absolute;top:var(--s2);right:var(--s2)">' +
+          P.favButton("photo", p.collection + ":" + p.index, { cls: "fav--on-image", title: "Remove from favourites" }) +
+          "</div>" +
+          '<p class="t-small" style="margin-top:6px;color:var(--ink-3)">' + c.title + " · " + (p.index + 1) + "</p>" +
+          "</div>";
+      }).join("");
+
+      grid.querySelectorAll("[data-fav-photo]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var parts = b.dataset.favPhoto.split(":");
+          var c = A.collection(parts[0]);
+          P.lightbox.open({
+            photos: c.photos,
+            index: Number(parts[1]),
+            title: c.title + " — " + A.model(c.model).name,
+            collection: c.slug
+          });
+        });
+      });
+    }
+
+    grid.hidden = items.length === 0;
+    empty.hidden = items.length > 0;
+    document.querySelector("[data-empty-title]").textContent = COPY[active].empty;
+    document.querySelector("[data-empty-text]").textContent = COPY[active].text;
+
+    P.fav.bind(grid);
+  }
+
+  document.querySelectorAll("[role=tab]").forEach(function (t) {
+    t.addEventListener("click", function () {
+      active = t.id.replace("tab-", "");
+      history.replaceState(null, "", "?tab=" + active);
+      renderTab();
+    });
+  });
+
+  /* removing a favourite from this page re-renders it immediately */
+  document.addEventListener("pc:fav", function () { renderTab(); });
+
+  renderTab();
+};
+</script>
+</body>
+</html>

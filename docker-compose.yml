@@ -1,0 +1,14 @@
+services:
+  photobook:
+    build: .
+    container_name: photobook
+    restart: unless-stopped
+    ports:
+      - "${PHOTOBOOK_PORT:-8777}:8777"
+    environment:
+      HARVEST_ENABLED: ${HARVEST_ENABLED:-0}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data/db:/data/db          # SQLite 数据库
+      - ./data/media:/data/media    # 演示图与缩略图缓存
+      - ./data/library:/data/library  # 采集归档根目录

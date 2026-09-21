@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('Admin Settings') }} — Photo Collection{% endblock %}
+{% block body %}
+<div class="shell">
+  <header data-header></header>
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title">{{ t('Settings') }}</h1>
+        <p class="page-head__sub">{{ t('采集参数即时生效,存于 settings 表。') }}</p>
+      </div>
+      <div class="panel-grid">
+        <nav class="side-nav" aria-label="{{ t('Admin') }}">
+          <a class="side-nav__item" href="/admin">{{ t('Dashboard') }}</a>
+          <a class="side-nav__item" href="/admin/harvest">{{ t('Harvest') }}</a>
+          <a class="side-nav__item" href="/admin/collections">{{ t('Collections') }}</a>
+          <a class="side-nav__item" href="/admin/models">{{ t('Models') }}</a>
+          <a class="side-nav__item" href="/admin/tags">{{ t('Tags') }}</a>
+          <a class="side-nav__item" href="/admin/users">{{ t('Users') }}</a>
+          <a class="side-nav__item" href="/admin/settings" aria-current="page">{{ t('Settings') }}</a>
+          <a class="side-nav__item" href="/">{{ t('← Back to site') }}</a>
+        </nav>
+        <div>
+          {% if flash %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)"><p class="state__text" style="margin:0">{{ flash }}</p></div>{% endif %}
+
+          <form method="post" action="/admin/settings" style="max-width:680px">
+            <h2 class="t-h3" style="margin-bottom:var(--s4)">{{ t('采集') }}</h2>
+            <label class="field" style="flex-direction:row;align-items:center;gap:var(--s3)">
+              <input type="checkbox" name="harvest.enabled" value="1" {% if conf['harvest.enabled'] %}checked{% endif %} style="accent-color:var(--accent)">
+              <span class="field__label" style="margin:0">{{ t('定时扫描开启') }}</span></label>
+
+            <div style="display:flex;gap:var(--s4)">
+              <label class="field" style="flex:1"><span class="field__label">{{ t('扫描间隔(小时)') }}</span>
+                <input class="input" name="harvest.interval_hours" type="number" min="1" max="72"
+                       value="{{ conf['harvest.interval_hours'] }}"></label>
+              <label class="field" style="flex:1"><span class="field__label">{{ t('每轮扫描页数') }}</span>
+                <input class="input" name="harvest.pages_per_round" type="number" min="1" max="20"
+                       value="{{ conf['harvest.pages_per_round'] }}"></label>
+            </div>
+            <label class="field"><span class="field__label">{{ t('起始页(从新到旧)') }}</span>
+              <input class="input" name="harvest.start" type="number" min="0" value="{{ conf['harvest.start'] }}"></label>
+
+            <label class="field"><span class="field__label">{{ t('白名单(每行一个关键词,留空 = 全收)') }}</span>
+              <textarea class="input" name="harvest.whitelist" rows="4">{{ conf['harvest.whitelist'] }}</textarea></label>
+            <label class="field"><span class="field__label">{{ t('黑名单(标题或标签命中即跳过)') }}</span>
+              <textarea class="input" name="harvest.blacklist" rows="4">{{ conf['harvest.blacklist'] }}</textarea></label>
+
+            <label class="field"><span class="field__label">{{ t('模特名排除词(逗号分隔,按词匹配)') }}</span>
+              <textarea class="input" name="harvest.model_exclude" rows="5">{{ conf['harvest.model_exclude'] }}</textarea>
+              <span class="t-small" style="color:var(--ink-3)">{{ t('从写真标签里挑模特名时,命中这些词就跳过(出品方/分类标签)。全部命中则归入「未分类」。') }}</span></label>
+
+            <label class="field"><span class="field__label">{{ t('未分类模特目录名') }}</span>
+              <input class="input" name="harvest.unsorted_dir" value="{{ conf['harvest.unsorted_dir'] }}"></label>
+
+            <div style="border-top:1px solid var(--line);margin-top:var(--s5);padding-top:var(--s5)">
+              <h2 class="t-h3" style="margin-bottom:var(--s4)">{{ t('站点') }}</h2>
+              <label class="field"><span class="field__label">{{ t('默认语言') }}</span>
+                <select class="select" name="site.language">
+                  {% for code, name in LANGUAGES.items() %}
+                  <option value="{{ code }}" {% if conf['site.language'] == code %}selected{% endif %}>{{ name }}</option>
+                  {% endfor %}
+                </select></label>
+              <p class="t-small" style="color:var(--ink-3);margin-bottom:var(--s4)">{{ t('未登录访客与无个人设置用户看到的界面语言。') }}</p>
+            </div>
+
+            <div style="border-top:1px solid var(--line);margin-top:var(--s5);padding-top:var(--s5)">
+              <h2 class="t-h3" style="margin-bottom:var(--s2)">{{ t('归档根目录') }}</h2>
+              <p class="t-small" style="color:var(--ink-3);margin-bottom:var(--s4)">
+                {{ t('当前:{d} — 通过环境变量 LIBRARY_DIR 修改,页面不可改(避免运行中换根)。', d=conf['library.dir']) }}
+              </p>
+            </div>
+
+            <button class="btn" type="submit">{{ t('保存设置') }}</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer data-footer></footer>
+</div>
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+{% endblock %}

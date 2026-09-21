@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — Photo Collection</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230c0d0f'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' fill='none' stroke='%23f7f7f5' stroke-width='1.6'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#0c0d0f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://images.unsplash.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..800;1,6..96,400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="login">
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="login">
+  <!-- the archive introduces itself before asking for anything -->
+  <div class="login__visual">
+    <img src="https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=1600&q=76&auto=format&fit=crop&crop=entropy"
+         alt="" fetchpriority="high">
+    <div class="login__visual-caption">
+      <div>
+        <p class="t-micro" style="color:rgba(255,255,255,.72);letter-spacing:.1em;text-transform:uppercase">Now showing</p>
+        <p style="font-family:var(--display);font-size:clamp(22px,2.4vw,34px);line-height:1.1;margin-top:6px">Summer Editorial</p>
+        <p class="t-small" style="color:rgba(255,255,255,.78)">Yang Chenchen · 14 frames</p>
+      </div>
+      <p class="t-small num" style="color:rgba(255,255,255,.72);text-align:right">Archive<br>2026</p>
+    </div>
+  </div>
+
+  <div class="login__panel">
+    <div class="login__top">
+      <a class="wordmark" href="discovery.html">Photo&nbsp;<em>Collection</em></a>
+      <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch theme"></button>
+    </div>
+
+    <main class="login__form-wrap" id="main">
+      <h1 class="t-h1 login__title">Sign in</h1>
+      <p class="login__note">The archive is open to members. Sign in to browse models, collections and downloads.</p>
+
+      <form data-login novalidate>
+        <label class="field">
+          <span class="field__label">Email</span>
+          <input class="input" type="email" name="email" autocomplete="email"
+                 placeholder="you@example.com" value="lin.wei@example.com" required>
+        </label>
+
+        <label class="field">
+          <span class="field__label">Password</span>
+          <input class="input" type="password" name="password" autocomplete="current-password"
+                 placeholder="••••••••" value="archive2026" required>
+        </label>
+
+        <div class="login__row">
+          <label style="display:flex;align-items:center;gap:var(--s2);color:var(--ink-2)">
+            <input type="checkbox" checked style="accent-color:var(--accent);width:14px;height:14px">
+            Keep me signed in
+          </label>
+          <a href="#" style="border-bottom:1px solid var(--line-2)">Forgot password</a>
+        </div>
+
+        <button class="btn btn--block login__submit" type="submit">Sign in</button>
+      </form>
+
+      <p class="login__foot">
+        No account yet? <a href="#" style="border-bottom:1px solid var(--line-2);color:var(--ink-2)">Request access</a>.
+        Access is reviewed by the archive administrator.
+      </p>
+    </main>
+  </div>
+</div>
+
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+window.PAGE_INIT = function () {
+  document.querySelector("[data-login]").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = "Signing in…";
+    setTimeout(function () { window.location.href = "discovery.html"; }, 620);
+  });
+};
+</script>
+</body>
+</html>

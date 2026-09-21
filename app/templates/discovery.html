@@ -1,0 +1,179 @@
+{% extends '_shell.html' %}
+{% from '_ui.html' import icon, frame, fav_button, collection_card, model_card %}
+{% block title %}{{ t('Discovery') }} — Photo Collection{% endblock %}
+
+{% block main %}
+<!-- Hero -->
+<section class="hero" aria-label="{{ t('Featured collection') }}">
+  <div class="hero__stage" data-hero-stage>
+    <img class="hero__img" data-active="false" alt="">
+    <img class="hero__img" data-active="false" alt="">
+  </div>
+  <div class="hero__scrim"></div>
+  <div class="hero__caption">
+    <div class="wrap">
+      <div class="hero__caption-inner">
+        <div>
+          <p class="hero__eyebrow" data-hero-eyebrow>{{ t('Featured collection') }}</p>
+          <h1 class="hero__title"><a data-hero-title href="#"></a></h1>
+          <p class="hero__model"><a data-hero-model href="#"></a></p>
+        </div>
+        <div class="hero__side">
+          <span class="num" data-hero-count></span>
+          <span data-hero-frames></span>
+          <a class="btn btn--sm" data-hero-cta href="#">{{ t('View collection') }}</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Contact sheet -->
+<section class="sheet" aria-label="{{ t('Contact sheet') }}">
+  <div class="wrap">
+    <div class="sheet__meta">
+      <span class="num" data-sheet-index></span>
+      <span>{{ t('Select a frame to preview it above') }}</span>
+      <span style="display:flex;gap:var(--s2)">
+        <button class="btn btn--quiet btn--sm" type="button" data-sheet-prev>{{ t('Previous set') }}</button>
+        <button class="btn btn--quiet btn--sm" type="button" data-sheet-next>{{ t('Next set') }}</button>
+      </span>
+    </div>
+    <div class="sheet__strip" data-sheet role="group" aria-label="{{ t('Frames in the featured collection') }}"></div>
+  </div>
+</section>
+
+<!-- Latest -->
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 class="section-title">{{ t('Latest Collections') }}</h2>
+      <a class="section-aside" href="/collections">{{ t('All collections') }}</a>
+    </div>
+    <div class="grid grid--editorial" data-latest>
+      {% for c in data.latest[:6] %}{{ collection_card(c, 1200) }}{% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- Featured models -->
+<section class="section section--tight">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 class="section-title">{{ t('Featured Models') }}</h2>
+      <a class="section-aside" href="/models">{{ t('All models') }}</a>
+    </div>
+    <div class="grid grid--models-5" data-models>
+      {% for m in data.models[:5] %}{{ model_card(m, 700) }}{% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- Explore -->
+<section class="section section--tight">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 class="section-title">{{ t('Explore') }}</h2>
+      <span class="section-aside" data-explore-count>{{ t('{n} collections · {m} models', n=data.stats.collections, m=data.stats.models) }}</span>
+    </div>
+
+    <div class="grid grid--3">
+      <a href="/models" style="display:block;padding-top:var(--s4);border-top:1px solid var(--line-2)">
+        <p class="t-h3" style="margin-bottom:var(--s2)">{{ t('Browse Models') }}</p>
+        <p class="t-small">{{ t('{n} models', n=data.stats.models) }}</p>
+        <p class="t-small" style="color:var(--ink-3)">{{ t('Editorial and portrait profiles') }}</p></a>
+      <a href="/collections" style="display:block;padding-top:var(--s4);border-top:1px solid var(--line-2)">
+        <p class="t-h3" style="margin-bottom:var(--s2)">{{ t('Browse Collections') }}</p>
+        <p class="t-small">{{ t('{n} collections', n=data.stats.collections) }}</p>
+        <p class="t-small" style="color:var(--ink-3)">{{ t('Every published sitting') }}</p></a>
+      <a href="/collections" style="display:block;padding-top:var(--s4);border-top:1px solid var(--line-2)">
+        <p class="t-h3" style="margin-bottom:var(--s2)">{{ t('Browse Tags') }}</p>
+        <p class="t-small">{{ t('{n} tags', n=data.tags | length) }}</p>
+        <p class="t-small" style="color:var(--ink-3)">{{ t('Start from a theme') }}</p></a>
+    </div>
+
+    <div style="margin-top:var(--s8);padding-top:var(--s5);border-top:1px solid var(--line)">
+      <p class="t-small" style="margin-bottom:var(--s4)">{{ t('Browse by tag') }}</p>
+      <div class="chip-row">
+        {% for tag in data.tags %}
+        <a class="chip" href="/collections?tag={{ tag.name | urlencode }}">{{ tag.name }}
+          <span style='color:var(--ink-3);margin-left:6px' class='num'>{{ tag.collections }}</span></a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Hero + contact sheet — SSR 数据驱动 */
+(function () {
+  var featured = window.PB_DATA.featured || [];
+  if (!featured.length) return;
+  var fi = 0, layer = 0, pending = 0;
+  var layers = document.querySelectorAll(".hero__img");
+  var strip = document.querySelector("[data-sheet]");
+  var BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+  layers.forEach(function (l) { l.src = BLANK; l.setAttribute("aria-hidden", "true"); });
+
+  function heroUrl(photo) { return "/media/" + photo.file; }
+
+  function showHero(photo) {
+    var token = ++pending;
+    var img = new Image();
+    img.src = heroUrl(photo);
+    img.onload = function () {
+      if (token !== pending) return;
+      var next = layers[layer];
+      next.src = img.src;
+      layers.forEach(function (l) { l.dataset.active = "false"; });
+      next.dataset.active = "true";
+      layer = layer === 0 ? 1 : 0;
+    };
+  }
+
+  function renderSheet() {
+    var c = featured[fi];
+    strip.innerHTML = c.photos.slice(0, 12).map(function (p, i) {
+      return '<button class="sheet__frame" type="button" data-frame="' + i + '"' +
+        ' style="--d:' + (i * 24) + 'ms" aria-current="' + (i === 0) + '"' +
+        ' aria-label="' + PC.t('Preview frame {i} of {title}', {i: i + 1, title: c.title}) + '">' +
+        '<img src="/t/260x173/' + p.file + '.webp" alt="" loading="lazy"></button>';
+    }).join("");
+    strip.querySelectorAll("[data-frame]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        strip.querySelectorAll("[data-frame]").forEach(function (x) { x.setAttribute("aria-current", "false"); });
+        b.setAttribute("aria-current", "true");
+        showHero(c.photos[Number(b.dataset.frame)]);
+      });
+    });
+  }
+
+  function renderHero() {
+    var c = featured[fi];
+    document.querySelector("[data-hero-title]").textContent = c.title;
+    document.querySelector("[data-hero-title]").href = "/collections/" + c.slug;
+    document.querySelector("[data-hero-model]").textContent = c.model_name;
+    document.querySelector("[data-hero-model]").href = "/models/" + c.model_slug;
+    document.querySelector("[data-hero-cta]").href = "/collections/" + c.slug;
+    document.querySelector("[data-hero-count]").textContent =
+      PC.t("Featured {i} / {n}", { i: String(fi + 1).padStart(2, "0"), n: String(featured.length).padStart(2, "0") });
+    document.querySelector("[data-hero-frames]").textContent = PC.t("{n} frames", { n: c.count });
+    document.querySelector("[data-sheet-index]").textContent =
+      PC.t("Featured {i} / {n}", { i: String(fi + 1).padStart(2, "0"), n: String(featured.length).padStart(2, "0") });
+  }
+
+  function setFeatured(n) {
+    fi = (n + featured.length) % featured.length;
+    renderHero();
+    renderSheet();
+    showHero(featured[fi].photos[0]);
+  }
+
+  document.querySelector("[data-sheet-prev]").addEventListener("click", function () { setFeatured(fi - 1); });
+  document.querySelector("[data-sheet-next]").addEventListener("click", function () { setFeatured(fi + 1); });
+  setFeatured(0);
+})();
+</script>
+{% endblock %}

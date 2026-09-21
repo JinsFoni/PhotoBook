@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Discovery — Photo Collection</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230c0d0f'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' fill='none' stroke='%23f7f7f5' stroke-width='1.6'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#0c0d0f">
+<meta name="description" content="A digital archive of editorial photography.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://images.unsplash.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..800;1,6..96,400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="discovery">
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="shell">
+  <header data-header></header>
+
+  <main class="main" id="main">
+
+    <!-- Hero: featured collection, previewed frame by frame -->
+    <section class="hero" aria-label="Featured collection">
+      <div class="hero__stage" data-hero-stage>
+        <img class="hero__img" data-active="false" alt="">
+        <img class="hero__img" data-active="false" alt="">
+      </div>
+      <div class="hero__scrim"></div>
+      <div class="hero__caption">
+        <div class="wrap">
+          <div class="hero__caption-inner">
+            <div>
+              <p class="hero__eyebrow" data-hero-eyebrow>Featured collection</p>
+              <h1 class="hero__title"><a data-hero-title href="#"></a></h1>
+              <p class="hero__model"><a data-hero-model href="#"></a></p>
+            </div>
+            <div class="hero__side">
+              <span class="num" data-hero-count></span>
+              <span data-hero-frames></span>
+              <a class="btn btn--sm" data-hero-cta href="#">View collection</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Contact sheet: the featured set, frame by frame -->
+    <section class="sheet" aria-label="Contact sheet">
+      <div class="wrap">
+        <div class="sheet__meta">
+          <span class="num" data-sheet-index>Featured 01 / 04</span>
+          <span>Select a frame to preview it above</span>
+          <span style="display:flex;gap:var(--s2)">
+            <button class="btn btn--quiet btn--sm" type="button" data-sheet-prev>Previous set</button>
+            <button class="btn btn--quiet btn--sm" type="button" data-sheet-next>Next set</button>
+          </span>
+        </div>
+        <div class="sheet__strip" data-sheet role="group" aria-label="Frames in the featured collection"></div>
+      </div>
+    </section>
+
+    <!-- Latest collections -->
+    <section class="section">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 class="section-title">Latest Collections</h2>
+          <a class="section-aside" href="collections.html">All collections</a>
+        </div>
+        <div class="grid grid--editorial" data-latest></div>
+      </div>
+    </section>
+
+    <!-- Featured models -->
+    <section class="section section--tight">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 class="section-title">Featured Models</h2>
+          <a class="section-aside" href="models.html">All models</a>
+        </div>
+        <div class="grid grid--models-5" data-models></div>
+      </div>
+    </section>
+
+    <!-- Explore -->
+    <section class="section section--tight">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 class="section-title">Explore</h2>
+          <span class="section-aside" data-explore-count></span>
+        </div>
+
+        <div class="grid grid--3" data-explore></div>
+
+        <div style="margin-top:var(--s8);padding-top:var(--s5);border-top:1px solid var(--line)">
+          <p class="t-small" style="margin-bottom:var(--s4)">Browse by tag</p>
+          <div class="chip-row" data-tags></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer data-footer></footer>
+</div>
+
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+window.PAGE_INIT = function () {
+  var A = window.ARCHIVE, P = window.PC;
+
+  /* ---------- hero + contact sheet -------------------------------------- */
+  var featured = A.FEATURED;
+  var fi = 0, pi = 0, layer = 0;
+  var layers = document.querySelectorAll(".hero__img");
+  var stage = document.querySelector("[data-hero-stage]");
+  var strip = document.querySelector("[data-sheet]");
+  var pending = 0;
+
+  /* a 1px stand-in, so the inactive layer never requests the page URL as an image */
+  var BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+  layers.forEach(function (l) { l.src = BLANK; l.setAttribute("aria-hidden", "true"); });
+
+  function heroUrl(photo) { return A.src(photo.id, { w: 2200, ar: 16 / 9, crop: "entropy", q: 76 }); }
+
+  function showHero(photo, instant) {
+    var token = ++pending;
+    var img = new Image();
+    img.src = heroUrl(photo);
+    img.onload = function () {
+      if (token !== pending) return;
+      var next = layers[layer];
+      next.src = img.src;
+      next.alt = "";
+      layers.forEach(function (l) { l.dataset.active = "false"; });
+      next.dataset.active = "true";
+      layer = layer === 0 ? 1 : 0;
+    };
+    if (instant && img.complete) img.onload();
+  }
+
+  function renderSheet() {
+    var c = featured[fi];
+    strip.innerHTML = c.photos.map(function (p, i) {
+      return '<button class="sheet__frame" type="button" data-frame="' + i + '"' +
+        ' style="--d:' + (i * 24) + 'ms" aria-current="' + (i === pi) + '"' +
+        ' aria-pressed="' + (i === pi) + '"' +
+        ' aria-label="Preview frame ' + (i + 1) + ' of ' + c.title + '">' +
+        '<img src="' + A.src(p.id, { w: 260, ar: 1.5, crop: "entropy" }) + '" alt="" loading="lazy">' +
+        "</button>";
+    }).join("");
+
+    strip.querySelectorAll("[data-frame]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        pi = Number(b.dataset.frame);
+        renderSheet();
+        showHero(c.photos[pi]);
+      });
+    });
+  }
+
+  function renderHero() {
+    var c = featured[fi], m = A.model(c.model);
+    document.querySelector("[data-hero-title]").textContent = c.title;
+    document.querySelector("[data-hero-title]").href = "collection.html?c=" + c.slug;
+    document.querySelector("[data-hero-model]").textContent = m.name;
+    document.querySelector("[data-hero-model]").href = "model.html?m=" + m.slug;
+    document.querySelector("[data-hero-cta]").href = "collection.html?c=" + c.slug;
+    document.querySelector("[data-hero-count]").textContent = "Featured " + String(fi + 1).padStart(2, "0") + " / " + String(featured.length).padStart(2, "0");
+    document.querySelector("[data-hero-frames]").textContent = c.photos.length + " frames";
+    document.querySelector("[data-sheet-index]").textContent = "Featured " + String(fi + 1).padStart(2, "0") + " / " + String(featured.length).padStart(2, "0");
+  }
+
+  function setFeatured(n) {
+    fi = (n + featured.length) % featured.length;
+    pi = 0;
+    renderHero();
+    renderSheet();
+    showHero(featured[fi].photos[0]);
+  }
+
+  document.querySelector("[data-sheet-prev]").addEventListener("click", function () { setFeatured(fi - 1); });
+  document.querySelector("[data-sheet-next]").addEventListener("click", function () { setFeatured(fi + 1); });
+
+  setFeatured(0);
+  /* keep the sheet honest when the hero itself is the featured photo */
+  stage.addEventListener("dblclick", function () {
+    window.location.href = "collection.html?c=" + featured[fi].slug;
+  });
+
+  /* ---------- latest collections ---------------------------------------- */
+  /* Three equal columns. The uneven rhythm now comes from the crop heights
+     rather than the widths, so the row bottoms stagger instead of the gutters. */
+  var pattern = [
+    { ar: "3/4" }, { ar: "4/5" }, { ar: "1/1" },
+    { ar: "4/5" }, { ar: "1/1" }, { ar: "3/4" }
+  ];
+  var latest = A.COLLECTIONS.slice(0, 6);
+  document.querySelector("[data-latest]").innerHTML = latest.map(function (c, i) {
+    var m = A.model(c.model), p = pattern[i];
+    return '<article class="collection-card hoverable span-4">' +
+      '<div style="position:relative">' +
+      P.frame({ id: c.cover.id, ar: p.ar }, { w: 1200, crop: "entropy", alt: c.title + " — cover" }) +
+      '<div class="card__fav reveal">' + P.favButton("collection", c.slug, { cls: "fav--on-image" }) + "</div>" +
+      "</div>" +
+      '<div class="card__caption"><div class="card__caption-main">' +
+      '<h3 class="card__title"><a href="collection.html?c=' + c.slug + '">' + c.title + "</a></h3>" +
+      '<p class="card__sub"><a href="model.html?m=' + m.slug + '">' + m.name + "</a><span>" + c.photos.length + " photos</span><span>" + c.date + "</span></p>" +
+      "</div></div></article>";
+  }).join("");
+
+  /* ---------- featured models ------------------------------------------- */
+  document.querySelector("[data-models]").innerHTML =
+    A.MODELS.slice(0, 5).map(function (m) { return P.modelCard(m, { w: 700 }); }).join("");
+
+  /* ---------- explore --------------------------------------------------- */
+  var explore = [
+    { href: "models.html", title: "Browse Models", count: A.MODELS.length + " models", note: "Editorial and portrait profiles" },
+    { href: "collections.html", title: "Browse Collections", count: A.COLLECTIONS.length + " collections", note: "Every published sitting" },
+    { href: "collections.html?tag=Fashion", title: "Browse Tags", count: A.TAGS.length + " tags", note: "Start from a theme" }
+  ];
+  document.querySelector("[data-explore]").innerHTML = explore.map(function (e) {
+    return '<a href="' + e.href + '" style="display:block;padding-top:var(--s4);border-top:1px solid var(--line-2)">' +
+      '<p class="t-h3" style="margin-bottom:var(--s2)">' + e.title + "</p>" +
+      '<p class="t-small">' + e.count + "</p>" +
+      '<p class="t-small" style="color:var(--ink-3)">' + e.note + "</p></a>";
+  }).join("");
+  document.querySelector("[data-explore-count]").textContent =
+    A.COLLECTIONS.length + " collections · " + A.MODELS.length + " models";
+
+  document.querySelector("[data-tags]").innerHTML = A.TAGS.map(function (t) {
+    return '<a class="chip" href="collections.html?tag=' + encodeURIComponent(t.name) + '">' + t.name +
+      " <span style='color:var(--ink-3);margin-left:6px' class='num'>" + t.collections + "</span></a>";
+  }).join("");
+};
+</script>
+</body>
+</html>

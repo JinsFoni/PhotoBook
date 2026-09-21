@@ -1,0 +1,108 @@
+{% extends '_shell.html' %}
+{% block title %}{{ t('Profile') }} — Photo Collection{% endblock %}
+
+{% block main %}
+<div class="wrap">
+  <div class="profile-head">
+    <div class="profile-head__avatar" style="background:var(--paper-2);display:flex;align-items:center;justify-content:center">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" style="width:40%;height:40%"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
+    </div>
+    <div>
+      <h1 class="profile-head__name">{{ user.username }}</h1>
+      <p class="profile-head__meta">{{ user.role }} · {{ t('Member of the archive') }}</p>
+    </div>
+    <div class="profile-head__actions">
+      <a class="btn btn--ghost" href="/favorites">{{ t('View favourites') }}</a>
+    </div>
+  </div>
+
+  <div class="panel-grid">
+    <nav class="side-nav" aria-label="{{ t('Account') }}">
+      <a class="side-nav__item" href="#overview" aria-current="page">{{ t('Overview') }}</a>
+      <a class="side-nav__item" href="/favorites?tab=model">{{ t('Favourite models') }}</a>
+      <a class="side-nav__item" href="/favorites?tab=collection">{{ t('Favourite collections') }}</a>
+      <a class="side-nav__item" href="/favorites?tab=photo">{{ t('Favourite photos') }}</a>
+      <a class="side-nav__item" href="#settings">{{ t('Settings') }}</a>
+      {% if user.role == 'admin' %}<a class="side-nav__item" href="/admin">{{ t('Admin Dashboard') }}</a>{% endif %}
+      <a class="side-nav__item" href="/logout">{{ t('Log out') }}</a>
+    </nav>
+
+    <div>
+      <section id="overview">
+        <div class="stat-row">
+          <div><p class="stat__v num" data-stat="model">{{ counts.model }}</p><p class="stat__k">{{ t('Models saved') }}</p></div>
+          <div><p class="stat__v num" data-stat="collection">{{ counts.collection }}</p><p class="stat__k">{{ t('Collections saved') }}</p></div>
+          <div><p class="stat__v num" data-stat="photo">{{ counts.photo }}</p><p class="stat__k">{{ t('Photos saved') }}</p></div>
+        </div>
+
+        <div style="margin-top:var(--s8)">
+          <div class="section-head">
+            <h2 class="section-title">{{ t('Recently saved') }}</h2>
+            <a class="section-aside" href="/favorites">{{ t('All favourites') }}</a>
+          </div>
+          <div class="grid grid--collections" data-recent>
+            {% for c in recent %}
+            <article class="collection-card hoverable">
+              <div style="position:relative">
+                <a href="/collections/{{ c.slug }}">
+                  <div class="frame skeleton" style="aspect-ratio:3/4"><img src="/t/900/{{ c.cover }}.webp" alt="" loading="lazy"></div>
+                </a>
+              </div>
+              <div class="card__caption"><div class="card__caption-main">
+                <h3 class="card__title"><a href="/collections/{{ c.slug }}">{{ c.title }}</a></h3>
+                <p class="card__sub"><span>{{ t('{n} photos', n=c.count) }}</span></p>
+              </div></div>
+            </article>
+            {% endfor %}
+          </div>
+          {% if recent_empty %}
+          <div class="state">
+            <h2 class="state__title">{{ t('Nothing saved yet.') }}</h2>
+            <p class="state__text">{{ t('Favourites you keep while browsing show up here.') }}</p>
+            <a class="btn btn--ghost" href="/">{{ t('Browse the archive') }}</a>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section id="settings" style="margin-top:var(--s10)">
+        <div class="section-head"><h2 class="section-title">{{ t('Settings') }}</h2></div>
+
+        <div class="setting-row">
+          <div>
+            <p class="setting-row__label">{{ t('Appearance') }}</p>
+            <p class="setting-row__desc">{{ t('The archive opens in Gallery (dark) by default. Editorial (light) keeps the interface quiet against white.') }}</p>
+          </div>
+          <div style="display:flex;gap:var(--s3);align-items:center">
+            <span class="t-small" data-theme-label></span>
+            <button class="switch" type="button" role="switch" aria-checked="true" data-theme-switch aria-label="{{ t('Dark theme') }}"></button>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div>
+            <p class="setting-row__label">{{ t('Language') }}</p>
+            <p class="setting-row__desc">{{ t('Interface language. Choice is saved to your account and takes effect at once.') }}</p>
+          </div>
+          <form method="post" action="/language">
+            <input type="hidden" name="next" value="/profile#settings">
+            <div class="lang-switch" role="group" aria-label="{{ t('Language') }}">
+              {% for code, name in LANGUAGES.items() %}
+              <button type="submit" name="lang" value="{{ code }}" class="lang-switch__opt{% if lang() == code %} lang-switch__opt--on{% endif %}">{{ name }}</button>
+              {% endfor %}
+            </div>
+          </form>
+        </div>
+
+        <div class="setting-row" style="border-bottom:0">
+          <div>
+            <p class="setting-row__label">{{ t('Session') }}</p>
+            <p class="setting-row__desc">{{ t('Signed in as {u} ({r}).', u=user.username, r=user.role) }}</p>
+          </div>
+          <a class="btn btn--ghost btn--sm" href="/logout">{{ t('Log out') }}</a>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

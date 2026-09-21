@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('Edit') if c else t('New') }} — Photo Collection{% endblock %}
+{% block body %}
+<div class="shell">
+  <header data-header></header>
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title">{{ t('编辑写真') if c else t('新建写真') }}</h1>
+        <p class="page-head__sub">{% if c %}{{ c.title }}{% else %}{{ t('创建后可再编辑照片与标签') }}{% endif %}</p>
+      </div>
+      <div class="panel-grid">
+        <nav class="side-nav" aria-label="Admin">
+          <a class="side-nav__item" href="/admin/collections">← {{ t('Collections') }}</a>
+        </nav>
+        <div>
+          {% if error %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)"><p class="state__text" style="margin:0">{{ error }}</p></div>{% endif %}
+          <form method="post" action="{{ action }}" style="max-width:640px">
+            <label class="field"><span class="field__label">{{ t('标题 *') }}</span>
+              <input class="input" name="title" required value="{{ c.title if c else '' }}"></label>
+            <label class="field"><span class="field__label">{{ t('Slug(留空自动)') }}</span>
+              <input class="input" name="slug" value="{{ c.slug if c else '' }}" placeholder="auto-from-title"></label>
+            <label class="field"><span class="field__label">{{ t('模特') }}</span>
+              <select class="select" name="model_id">
+                <option value="">—</option>
+                {% for m in models %}<option value="{{ m.id }}" {% if c and c.model_id == m.id %}selected{% endif %}>{{ m.name }}</option>{% endfor %}
+              </select></label>
+            <label class="field"><span class="field__label">{{ t('发布日期(YYYY.MM.DD)') }}</span>
+              <input class="input" name="published_at" value="{{ c.published_at if c and c.published_at else '' }}" placeholder="2026.02.14"></label>
+            <label class="field"><span class="field__label">{{ t('状态') }}</span>
+              <select class="select" name="status">
+                {% for st in ('published', 'draft', 'hidden') %}
+                <option value="{{ st }}" {% if c and c.status == st %}selected{% endif %}>{{ st }}</option>
+                {% endfor %}
+              </select></label>
+            <label class="field" style="flex-direction:row;align-items:center;gap:var(--s3)">
+              <input type="checkbox" name="featured" {% if c and c.featured %}checked{% endif %} style="accent-color:var(--accent)">
+              <span class="field__label" style="margin:0">{{ t('首页推荐') }}</span></label>
+            <div style="display:flex;gap:var(--s3);margin-top:var(--s5)">
+              <button class="btn" type="submit">{{ t('保存') }}</button>
+              <a class="btn btn--ghost" href="/admin/collections">{{ t('取消') }}</a>
+              {% if c %}<a class="btn btn--quiet" href="/collections/{{ c.slug }}">{{ t('前台查看') }}</a>{% endif %}
+            </div>
+          </form>
+
+          {% if c %}
+          <div style="margin-top:var(--s8);border-top:1px solid var(--line);padding-top:var(--s5)">
+            <h2 class="t-h3">{{ t('标签') }}</h2>
+            <form method="post" action="/admin/collections/{{ c.id }}/tags" style="display:flex;gap:var(--s3);margin:var(--s3) 0;max-width:480px">
+              <input class="input" name="tag" placeholder="{{ t('输入标签名') }}" required>
+              <button class="btn btn--sm" type="submit">{{ t('添加') }}</button>
+            </form>
+            <div class="chip-row">
+              {% for tag in c.tags %}
+              <form method="post" action="/admin/collections/{{ c.id }}/tags/{{ tag.id }}/delete" style="display:inline">
+                <button class="chip" type="submit" title="{{ t('点击移除') }}">{{ tag.name }} ×</button>
+              </form>
+              {% endfor %}
+              {% if not c.tags %}<p class="t-small" style="color:var(--ink-3)">{{ t('暂无标签') }}</p>{% endif %}
+            </div>
+
+            <h2 class="t-h3" style="margin-top:var(--s7)">{{ t('照片({n})', n=c.photos | length) }}</h2>
+            {% if c.photos %}
+            <p class="t-small" style="color:var(--ink-3)">{{ t('文件位于 /media 下,按顺序排序。导入管线(采集归档)自动追加。') }}</p>
+            {% else %}
+            <p class="t-small" style="color:var(--ink-3)">{{ t('暂无照片 — 由采集导入管线或手动上传添加。') }}</p>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer data-footer></footer>
+</div>
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+{% endblock %}

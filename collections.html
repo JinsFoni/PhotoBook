@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collections — Photo Collection</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230c0d0f'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' fill='none' stroke='%23f7f7f5' stroke-width='1.6'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#0c0d0f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://images.unsplash.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..800;1,6..96,400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="collections">
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="shell">
+  <header data-header></header>
+
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title" data-title>Collections</h1>
+        <p class="page-head__sub" data-sub>Every published sitting in the archive, newest first.</p>
+      </div>
+
+      <div class="filters">
+        <label class="searchbox">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+          <input type="search" data-f-name placeholder="Search titles and models" aria-label="Search collections">
+        </label>
+
+        <select class="select" data-f-tag aria-label="Tag">
+          <option value="">Any tag</option>
+        </select>
+
+        <select class="select" data-f-model aria-label="Model">
+          <option value="">Any model</option>
+        </select>
+
+        <span class="filters__spacer"></span>
+        <span class="filters__count num" data-count></span>
+
+        <select class="select" data-f-sort aria-label="Sort">
+          <option value="newest">Sort: Newest</option>
+          <option value="oldest">Sort: Oldest</option>
+          <option value="title">Sort: Title</option>
+          <option value="size">Sort: Most photos</option>
+        </select>
+
+        <button class="btn btn--quiet btn--sm" type="button" data-f-reset>Reset</button>
+      </div>
+
+      <div class="masonry masonry--collections" data-grid></div>
+
+      <div data-empty hidden>
+        <div class="state">
+          <h2 class="state__title">No collections match those filters.</h2>
+          <p class="state__text">Try a different tag, or clear the filters to see the whole archive.</p>
+          <button class="btn btn--ghost" type="button" data-f-reset>Clear filters</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap"><div data-load-more></div></div>
+  </main>
+
+  <footer data-footer></footer>
+</div>
+
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+window.PAGE_INIT = function () {
+  var A = window.ARCHIVE, P = window.PC;
+  var grid = document.querySelector("[data-grid]");
+  var empty = document.querySelector("[data-empty]");
+  var more = document.querySelector("[data-load-more]");
+
+  var f = {
+    name: P.qs("q", ""),
+    tag: P.qs("tag", ""),
+    model: P.qs("model", ""),
+    sort: "newest",
+    page: 1
+  };
+  var PER = 12;
+
+  var tagSel = document.querySelector("[data-f-tag]");
+  A.TAGS.forEach(function (t) {
+    tagSel.insertAdjacentHTML("beforeend", '<option value="' + t.name + '">' + t.name + " (" + t.collections + ")</option>");
+  });
+  var modelSel = document.querySelector("[data-f-model]");
+  A.MODELS.forEach(function (m) {
+    modelSel.insertAdjacentHTML("beforeend", '<option value="' + m.slug + '">' + m.name + "</option>");
+  });
+
+  document.querySelector("[data-f-name]").value = f.name;
+  tagSel.value = f.tag;
+  modelSel.value = f.model;
+
+  if (f.tag) {
+    document.querySelector("[data-title]").textContent = "#" + f.tag;
+    document.querySelector("[data-sub]").textContent =
+      A.TAGS.filter(function (t) { return t.name === f.tag; }).map(function (t) {
+        return t.collections + " collections · " + t.models + " models";
+      })[0] || "";
+  }
+
+  function filtered() {
+    var q = f.name.trim().toLowerCase();
+    var list = A.COLLECTIONS.filter(function (c) {
+      if (q && (c.title + " " + A.model(c.model).name).toLowerCase().indexOf(q) === -1) return false;
+      if (f.tag && c.tags.indexOf(f.tag) === -1) return false;
+      if (f.model && c.model !== f.model) return false;
+      return true;
+    });
+    if (f.sort === "oldest") list.sort(function (a, b) { return a.date.localeCompare(b.date); });
+    else if (f.sort === "title") list.sort(function (a, b) { return a.title.localeCompare(b.title); });
+    else if (f.sort === "size") list.sort(function (a, b) { return b.photos.length - a.photos.length; });
+    else list.sort(function (a, b) { return b.date.localeCompare(a.date); });
+    return list;
+  }
+
+  function render() {
+    var list = filtered();
+    var shown = list.slice(0, f.page * PER);
+    grid.innerHTML = shown.map(function (c) { return P.collectionCard(c, { w: 900 }); }).join("");
+    P.fav.bind(grid);
+    grid.hidden = list.length === 0;
+    empty.hidden = list.length > 0;
+    document.querySelector("[data-count]").textContent =
+      list.length + (list.length === 1 ? " collection" : " collections");
+    more.innerHTML = list.length > shown.length
+      ? '<div style="display:flex;justify-content:center;padding-block:var(--s8)">' +
+        '<button class="btn btn--ghost" type="button" data-more>Load more collections</button></div>'
+      : '<div style="height:var(--s9)"></div>';
+    var b = more.querySelector("[data-more]");
+    if (b) b.addEventListener("click", function () { f.page++; render(); });
+  }
+
+  function syncUrl() {
+    var p = new URLSearchParams();
+    if (f.name) p.set("q", f.name);
+    if (f.tag) p.set("tag", f.tag);
+    if (f.model) p.set("model", f.model);
+    history.replaceState(null, "", p.toString() ? "?" + p : location.pathname);
+  }
+
+  var debounce;
+  document.querySelector("[data-f-name]").addEventListener("input", function (e) {
+    clearTimeout(debounce);
+    var v = e.target.value;
+    debounce = setTimeout(function () { f.name = v; f.page = 1; syncUrl(); render(); }, 180);
+  });
+  tagSel.addEventListener("change", function (e) {
+    f.tag = e.target.value; f.page = 1; syncUrl();
+    document.querySelector("[data-title]").textContent = f.tag ? "#" + f.tag : "Collections";
+    render();
+  });
+  modelSel.addEventListener("change", function (e) { f.model = e.target.value; f.page = 1; syncUrl(); render(); });
+  document.querySelector("[data-f-sort]").addEventListener("change", function (e) { f.sort = e.target.value; render(); });
+
+  document.querySelectorAll("[data-f-reset]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      f = { name: "", tag: "", model: "", sort: "newest", page: 1 };
+      document.querySelector("[data-f-name]").value = "";
+      tagSel.value = "";
+      modelSel.value = "";
+      document.querySelector("[data-title]").textContent = "Collections";
+      document.querySelector("[data-sub]").textContent = "Every published sitting in the archive, newest first.";
+      syncUrl();
+      render();
+    });
+  });
+
+  render();
+};
+</script>
+</body>
+</html>

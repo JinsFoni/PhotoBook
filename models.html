@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Models — Photo Collection</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230c0d0f'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' fill='none' stroke='%23f7f7f5' stroke-width='1.6'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#0c0d0f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://images.unsplash.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..800;1,6..96,400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="models">
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="shell">
+  <header data-header></header>
+
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title">Models</h1>
+        <p class="page-head__sub">Profiles in the archive. Each one collects the sittings we have published with that model.</p>
+      </div>
+
+      <div class="filters">
+        <label class="searchbox">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+          <input type="search" data-f-name placeholder="Search by name or stage name" aria-label="Search models">
+        </label>
+
+        <select class="select" data-f-gender aria-label="Gender">
+          <option value="">Any gender</option>
+          <option value="Female">Female</option>
+          <option value="Male">Male</option>
+        </select>
+
+        <select class="select" data-f-tag aria-label="Tag">
+          <option value="">Any tag</option>
+        </select>
+
+        <select class="select" data-f-agency aria-label="Agency">
+          <option value="">Any agency</option>
+        </select>
+
+        <span class="filters__spacer"></span>
+        <span class="filters__count num" data-count></span>
+
+        <select class="select" data-f-sort aria-label="Sort">
+          <option value="featured">Sort: Recommended</option>
+          <option value="latest">Sort: Latest</option>
+          <option value="name">Sort: Name</option>
+        </select>
+
+        <button class="btn btn--quiet btn--sm" type="button" data-f-reset>Reset</button>
+      </div>
+
+      <div class="grid grid--models" data-grid></div>
+
+      <div data-empty hidden>
+        <div class="state">
+          <h2 class="state__title">No models match those filters.</h2>
+          <p class="state__text">Try removing a filter, or search a different name.</p>
+          <button class="btn btn--ghost" type="button" data-f-reset>Clear filters</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap"><div data-load-more></div></div>
+  </main>
+
+  <footer data-footer></footer>
+</div>
+
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+window.PAGE_INIT = function () {
+  var A = window.ARCHIVE, P = window.PC;
+  var grid = document.querySelector("[data-grid]");
+  var empty = document.querySelector("[data-empty]");
+  var more = document.querySelector("[data-load-more]");
+  var f = {
+    name: P.qs("q", ""),
+    gender: P.qs("gender", ""),
+    tag: P.qs("tag", ""),
+    agency: P.qs("agency", ""),
+    sort: "featured",
+    page: 1
+  };
+  var PER = 8;
+
+  /* options that only exist because the data has them */
+  var tagSel = document.querySelector("[data-f-tag]");
+  var tags = [];
+  A.MODELS.forEach(function (m) { m.tags.forEach(function (t) { if (tags.indexOf(t) === -1) tags.push(t); }); });
+  tags.sort().forEach(function (t) {
+    tagSel.insertAdjacentHTML("beforeend", '<option value="' + t + '">' + t + "</option>");
+  });
+
+  var agencySel = document.querySelector("[data-f-agency]");
+  A.AGENCIES.forEach(function (a) {
+    agencySel.insertAdjacentHTML("beforeend", '<option value="' + a + '">' + a + "</option>");
+  });
+
+  document.querySelector("[data-f-name]").value = f.name;
+  tagSel.value = f.tag;
+  agencySel.value = f.agency;
+
+  function filtered() {
+    var q = f.name.trim().toLowerCase();
+    var list = A.MODELS.filter(function (m) {
+      if (q && (m.name + " " + m.stage).toLowerCase().indexOf(q) === -1) return false;
+      if (f.gender && m.gender !== f.gender) return false;
+      if (f.tag && m.tags.indexOf(f.tag) === -1) return false;
+      if (f.agency && m.agency !== f.agency) return false;
+      return true;
+    });
+    if (f.sort === "name") list.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    else if (f.sort === "latest") list.sort(function (a, b) { return (b.latest || "").localeCompare(a.latest || ""); });
+    else list.sort(function (a, b) { return (b.featured ? 1 : 0) - (a.featured ? 1 : 0) || b.photoCount - a.photoCount; });
+    return list;
+  }
+
+  function render() {
+    var list = filtered();
+    var shown = list.slice(0, f.page * PER);
+    grid.innerHTML = shown.map(function (m) { return P.modelCard(m, { w: 700 }); }).join("");
+    P.fav.bind(grid);
+    empty.hidden = list.length > 0;
+    grid.hidden = list.length === 0;
+    document.querySelector("[data-count]").textContent =
+      list.length + (list.length === 1 ? " model" : " models");
+    more.innerHTML = list.length > shown.length
+      ? '<div style="display:flex;justify-content:center;padding-block:var(--s8)">' +
+        '<button class="btn btn--ghost" type="button" data-more>Load more models</button></div>'
+      : '<div style="height:var(--s9)"></div>';
+    var b = more.querySelector("[data-more]");
+    if (b) b.addEventListener("click", function () { f.page++; render(); });
+  }
+
+  function syncUrl() {
+    var p = new URLSearchParams();
+    if (f.name) p.set("q", f.name);
+    if (f.gender) p.set("gender", f.gender);
+    if (f.tag) p.set("tag", f.tag);
+    if (f.agency) p.set("agency", f.agency);
+    history.replaceState(null, "", p.toString() ? "?" + p : location.pathname);
+  }
+
+  var debounce;
+  document.querySelector("[data-f-name]").addEventListener("input", function (e) {
+    clearTimeout(debounce);
+    var v = e.target.value;
+    debounce = setTimeout(function () { f.name = v; f.page = 1; syncUrl(); render(); }, 180);
+  });
+  document.querySelector("[data-f-gender]").addEventListener("change", function (e) { f.gender = e.target.value; f.page = 1; syncUrl(); render(); });
+  tagSel.addEventListener("change", function (e) { f.tag = e.target.value; f.page = 1; syncUrl(); render(); });
+  agencySel.addEventListener("change", function (e) { f.agency = e.target.value; f.page = 1; syncUrl(); render(); });
+  document.querySelector("[data-f-sort]").addEventListener("change", function (e) { f.sort = e.target.value; render(); });
+
+  document.querySelectorAll("[data-f-reset]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      f = { name: "", gender: "", tag: "", agency: "", sort: "featured", page: 1 };
+      document.querySelector("[data-f-name]").value = "";
+      document.querySelector("[data-f-gender]").value = "";
+      tagSel.value = "";
+      agencySel.value = "";
+      syncUrl();
+      render();
+    });
+  });
+
+  document.querySelector("[data-f-gender]").value = f.gender;
+  render();
+};
+</script>
+</body>
+</html>

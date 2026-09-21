@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Profile — Photo Collection</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230c0d0f'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' fill='none' stroke='%23f7f7f5' stroke-width='1.6'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#0c0d0f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://images.unsplash.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..800;1,6..96,400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="profile">
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="shell">
+  <header data-header></header>
+
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="profile-head">
+        <img class="profile-head__avatar" data-avatar alt="">
+        <div>
+          <h1 class="profile-head__name" data-name></h1>
+          <p class="profile-head__meta" data-meta></p>
+        </div>
+        <div class="profile-head__actions">
+          <a class="btn btn--ghost" href="favorites.html">View favourites</a>
+        </div>
+      </div>
+
+      <div class="panel-grid">
+        <nav class="side-nav" aria-label="Account">
+          <a class="side-nav__item" href="#overview" aria-current="page">Overview</a>
+          <a class="side-nav__item" href="favorites.html?tab=model">Favourite models</a>
+          <a class="side-nav__item" href="favorites.html?tab=collection">Favourite collections</a>
+          <a class="side-nav__item" href="favorites.html?tab=photo">Favourite photos</a>
+          <a class="side-nav__item" href="#settings">Settings</a>
+          <a class="side-nav__item" href="index.html">Log out</a>
+        </nav>
+
+        <div>
+          <section id="overview">
+            <div class="stat-row">
+              <div>
+                <p class="stat__v num" data-stat="model">0</p>
+                <p class="stat__k">Models saved</p>
+              </div>
+              <div>
+                <p class="stat__v num" data-stat="collection">0</p>
+                <p class="stat__k">Collections saved</p>
+              </div>
+              <div>
+                <p class="stat__v num" data-stat="photo">0</p>
+                <p class="stat__k">Photos saved</p>
+              </div>
+            </div>
+
+            <div style="margin-top:var(--s8)">
+              <div class="section-head">
+                <h2 class="section-title">Recently saved</h2>
+                <a class="section-aside" href="favorites.html">All favourites</a>
+              </div>
+              <div class="grid grid--collections" data-recent></div>
+              <div data-recent-empty hidden>
+                <div class="state">
+                  <h2 class="state__title">Nothing saved yet.</h2>
+                  <p class="state__text">Favourites you keep while browsing show up here, so you can pick up where you left off.</p>
+                  <a class="btn btn--ghost" href="discovery.html">Browse the archive</a>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="settings" style="margin-top:var(--s10)">
+            <div class="section-head">
+              <h2 class="section-title">Settings</h2>
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <p class="setting-row__label">Appearance</p>
+                <p class="setting-row__desc">The archive opens in Gallery (dark) by default. Editorial (light) keeps the interface quiet against white.</p>
+              </div>
+              <div style="display:flex;gap:var(--s3);align-items:center">
+                <span class="t-small" data-theme-label></span>
+                <button class="switch" type="button" role="switch" aria-checked="true" data-theme-switch aria-label="Dark theme"></button>
+              </div>
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <p class="setting-row__label">Download quality</p>
+                <p class="setting-row__desc">Applies to single downloads and collection ZIPs.</p>
+              </div>
+              <select class="select" aria-label="Download quality">
+                <option>Original</option>
+                <option selected>Large</option>
+                <option>Medium</option>
+              </select>
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <p class="setting-row__label">Email notifications</p>
+                <p class="setting-row__desc">A short note when a model you follow publishes a new collection.</p>
+              </div>
+              <button class="switch" type="button" role="switch" aria-checked="true" aria-label="Email notifications"></button>
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <p class="setting-row__label">Save browsing history</p>
+                <p class="setting-row__desc">Keeps your recently viewed collections on this device only.</p>
+              </div>
+              <button class="switch" type="button" role="switch" aria-checked="false" aria-label="Save browsing history"></button>
+            </div>
+
+            <div class="setting-row" style="border-bottom:0">
+              <div>
+                <p class="setting-row__label">Session</p>
+                <p class="setting-row__desc">Signed in on this device. Signing out clears your local favourites.</p>
+              </div>
+              <a class="btn btn--ghost btn--sm" href="index.html">Log out</a>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer data-footer></footer>
+</div>
+
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+window.PAGE_INIT = function () {
+  var A = window.ARCHIVE, P = window.PC;
+
+  document.querySelector("[data-avatar]").src = A.src(A.USER.avatar, { w: 320, ar: 1, crop: "faces" });
+  document.querySelector("[data-avatar]").alt = A.USER.name;
+  document.querySelector("[data-name]").textContent = A.USER.name;
+  document.querySelector("[data-meta]").textContent =
+    A.USER.email + " · Member since " + A.USER.since;
+
+  function stats() {
+    var c = P.fav.counts();
+    document.querySelectorAll("[data-stat]").forEach(function (el) {
+      el.textContent = c[el.dataset.stat];
+    });
+  }
+
+  function recent() {
+    var saved = A.COLLECTIONS.filter(function (c) { return P.fav.has("collection", c.slug); });
+    if (!saved.length) {
+      /* fall back to what the member has been looking at: newest published */
+      saved = A.COLLECTIONS.slice(0, 3);
+    }
+    document.querySelector("[data-recent]").innerHTML =
+      saved.slice(0, 3).map(function (c) { return P.collectionCard(c, { w: 900 }); }).join("");
+    document.querySelector("[data-recent]").hidden = saved.length === 0;
+    document.querySelector("[data-recent-empty]").hidden = saved.length > 0;
+    P.fav.bind(document);
+  }
+
+  /* theme switch mirrors the header toggle */
+  var sw = document.querySelector("[data-theme-switch]");
+  function paintSwitch() {
+    var dark = document.documentElement.getAttribute("data-theme") === "dark";
+    sw.setAttribute("aria-checked", dark ? "true" : "false");
+    document.querySelector("[data-theme-label]").textContent = dark ? "Gallery" : "Editorial";
+  }
+  sw.addEventListener("click", function () {
+    /* the header toggle carries the theme logic; if the viewport has hidden it,
+       fall back to the same store the header uses */
+    var headerToggle = document.querySelector(".header [data-theme-toggle]");
+    if (headerToggle) headerToggle.click();
+    paintSwitch();
+  });
+  document.addEventListener("pc:theme", paintSwitch);
+  paintSwitch();
+
+  /* generic switches */
+  document.querySelectorAll('.switch:not([data-theme-switch])').forEach(function (s) {
+    s.addEventListener("click", function () {
+      s.setAttribute("aria-checked", s.getAttribute("aria-checked") === "true" ? "false" : "true");
+    });
+  });
+
+  document.addEventListener("pc:fav", function () { stats(); recent(); });
+  stats();
+  recent();
+};
+</script>
+</body>
+</html>

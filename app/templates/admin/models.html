@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('Admin Models') }} — Photo Collection{% endblock %}
+{% block body %}
+<div class="shell">
+  <header data-header></header>
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title">{{ t('Models') }}</h1>
+        <p class="page-head__sub">{{ t('档案中的模特资料。') }}</p>
+      </div>
+      <div class="panel-grid">
+        <nav class="side-nav" aria-label="{{ t('Admin') }}">
+          <a class="side-nav__item" href="/admin">{{ t('Dashboard') }}</a>
+          <a class="side-nav__item" href="/admin/harvest">{{ t('Harvest') }}</a>
+          <a class="side-nav__item" href="/admin/collections">{{ t('Collections') }}</a>
+          <a class="side-nav__item" href="/admin/models" aria-current="page">{{ t('Models') }}</a>
+          <a class="side-nav__item" href="/admin/tags">{{ t('Tags') }}</a>
+          <a class="side-nav__item" href="/admin/users">{{ t('Users') }}</a>
+          <a class="side-nav__item" href="/admin/settings">{{ t('Settings') }}</a>
+          <a class="side-nav__item" href="/">{{ t('← Back to site') }}</a>
+        </nav>
+        <div>
+          {% if error %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)"><p class="state__text" style="margin:0">{{ error }}</p></div>{% endif %}
+          <div class="section-head">
+            <h2 class="section-title">{{ t('{n} models in total', n=models | length) }}</h2>
+            <a class="btn btn--sm" href="/admin/models/new">{{ t('+ New model') }}</a>
+          </div>
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr class="t-small" style="text-align:left;color:var(--ink-3);border-bottom:1px solid var(--line)">
+              <th style="padding:var(--s2) 0">ID</th><th>{{ t('Name') }}</th><th>Slug</th><th>{{ t('Stage name') }}</th><th>{{ t('Collections') }}</th><th>{{ t('Featured') }}</th><th>{{ t('操作') }}</th>
+            </tr></thead>
+            <tbody>
+              {% for m in models %}
+              <tr style="border-bottom:1px solid var(--line-2)">
+                <td class="num" style="padding:var(--s2) 0">{{ m.id }}</td>
+                <td><a href="/models/{{ m.slug }}">{{ m.name }}</a></td>
+                <td class="num t-small">{{ m.slug }}</td>
+                <td>{{ m.stage_name or '—' }}</td>
+                <td class="num">{{ col_counts.get(m.id, 0) }}</td>
+                <td>{{ '★' if m.featured else '' }}</td>
+                <td style="white-space:nowrap">
+                  <a class="btn btn--quiet btn--sm" href="/admin/models/{{ m.id }}/edit">{{ t('编辑') }}</a>
+                  <form method="post" action="/admin/models/{{ m.id }}/delete" style="display:inline"
+                        onsubmit="return confirm('{{ t('删除模特 {n}?其写真将一并删除。', n=m.name) }}')">
+                    <button class="btn btn--quiet btn--sm" type="submit">{{ t('删') }}</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer data-footer></footer>
+</div>
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('Admin Tags') }} — Photo Collection{% endblock %}
+{% block body %}
+<div class="shell">
+  <header data-header></header>
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title">{{ t('Tags') }}</h1>
+        <p class="page-head__sub">{{ t('主题标签,用于筛选与发现。') }}</p>
+      </div>
+      <div class="panel-grid">
+        <nav class="side-nav" aria-label="{{ t('Admin') }}">
+          <a class="side-nav__item" href="/admin">{{ t('Dashboard') }}</a>
+          <a class="side-nav__item" href="/admin/harvest">{{ t('Harvest') }}</a>
+          <a class="side-nav__item" href="/admin/collections">{{ t('Collections') }}</a>
+          <a class="side-nav__item" href="/admin/models">{{ t('Models') }}</a>
+          <a class="side-nav__item" href="/admin/tags" aria-current="page">{{ t('Tags') }}</a>
+          <a class="side-nav__item" href="/admin/users">{{ t('Users') }}</a>
+          <a class="side-nav__item" href="/admin/settings">{{ t('Settings') }}</a>
+          <a class="side-nav__item" href="/">{{ t('← Back to site') }}</a>
+        </nav>
+        <div>
+          <form method="post" action="/admin/tags/new" style="display:flex;gap:var(--s3);max-width:480px;margin-bottom:var(--s6)">
+            <input class="input" name="name" placeholder="{{ t('新标签名') }}" required>
+            <button class="btn" type="submit">{{ t('添加') }}</button>
+          </form>
+          {% if tags %}
+          <div class="chip-row">
+            {% for tag in tags %}
+            <form method="post" action="/admin/tags/{{ tag.id }}/delete" style="display:inline"
+                  onsubmit="return confirm('{{ t('删除标签 {n}?', n=tag.name) }}')">
+              <button class="chip" type="submit">{{ tag.name }} ×</button>
+            </form>
+            {% endfor %}
+          </div>
+          {% else %}<p class="t-small" style="color:var(--ink-3)">{{ t('暂无标签。') }}</p>{% endif %}
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer data-footer></footer>
+</div>
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+{% endblock %}
