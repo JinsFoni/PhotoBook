@@ -13,6 +13,7 @@ os.environ.setdefault("DATA_DIR", os.path.join(TMP, "data"))
 os.environ.setdefault("MEDIA_DIR", os.path.join(TMP, "media"))
 os.environ.setdefault("LIBRARY_DIR", os.path.join(TMP, "library"))
 os.environ.setdefault("HARVEST_ENABLED", "0")
+os.environ.setdefault("SEED_DEMO", "1")  # 测试依赖种子内容(demo 写真/模特)
 os.environ.setdefault("PHOTOBOOK_SECRET", "test-secret")
 os.environ.setdefault("PHOTOBOOK_PORT", "8777")
 

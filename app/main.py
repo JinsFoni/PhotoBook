@@ -137,29 +137,28 @@ def _seed() -> None:
             if admin_user:
                 admin_user.role = "admin"
                 s.commit()
-        # demo 内容(仅在空库时导入一次)
-        if not s.scalars(select(User).where(User.username == "__seeded__")).all() \
-                and not s.scalars(select(User).where(User.username == "seed-mark")).all():
-            pass
-        _seed_content(s)
-        _backfill_model_avatars(s)
+        # 种子内容(仅 SEED_DEMO=true 时导入;空库时一次)
+        if settings.seed_demo:
+            _seed_content(s)
+            _backfill_model_avatars(s)
         _backfill_photo_dims(s)
     finally:
         s.commit()
         s.close()
 
-    # 演示图片(离线 NAS 自动退化为占位图)
-    try:
-        from .seed_images import ensure_demo_images
-        ensure_demo_images(settings.media_dir)
-    except Exception:
-        log.exception("demo images failed")
-    # 模特头像文件(旧库自愈;ensure_demo_images 内部也会调,两者均幂等)
-    try:
-        from .seed_images import ensure_demo_avatars
-        ensure_demo_avatars(settings.media_dir)
-    except Exception:
-        log.exception("demo avatars failed")
+    if settings.seed_demo:
+        # 演示图片(离线 NAS 自动退化为占位图)
+        try:
+            from .seed_images import ensure_demo_images
+            ensure_demo_images(settings.media_dir)
+        except Exception:
+            log.exception("demo images failed")
+        # 模特头像文件(旧库自愈;ensure_demo_images 内部也会调,两者均幂等)
+        try:
+            from .seed_images import ensure_demo_avatars
+            ensure_demo_avatars(settings.media_dir)
+        except Exception:
+            log.exception("demo avatars failed")
 
 
 def _backfill_photo_dims(s) -> None:

@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     media_dir: Path = Path("./media")      # 平台图片库 + 缩略图缓存
     library_dir: Path = Path("./library")  # 采集归档库(素材库)
 
+    # ---- 种子内容 -------------------------------------------------------
+    # 导入内置 demo 写真(23 个示例集合 + 8 位示例模特,需联网拉图)。
+    # 生产环境保持 False;pytest 在 conftest.py 里显式开为 True。
+    seed_demo: bool = False
+
     # ---- 采集(默认值,可在管理后台的 settings 表覆盖) ---------------------
     harvest_enabled: bool = True
     harvest_interval_hours: float = 6.0
