@@ -1498,12 +1498,15 @@ table { border-collapse: collapse; }
   box-shadow: var(--shadow-lb, none);
 }
 .lightbox__img[data-ready="true"] { opacity: 1; transform: none; }
-.lightbox__img[data-zoomed="true"] { max-width: none; max-height: none; cursor: zoom-out; }
-
-/* 放大模式:图回到文档流(1:1 原图尺寸),stage 可滚动平移;
-   safe center → 溢出方向回退到起点,保证四边都能滚到 */
-.lightbox[data-zoom="true"] .lightbox__stage { overflow: auto; place-items: safe center; }
+.lightbox__img[data-zoomed="true"] { max-width: none; max-height: none; cursor: grab; }
+.lightbox[data-zoom="true"] .lightbox__stage { cursor: grab; user-select: none; }
 .lightbox[data-zoom="true"] .lightbox__img { position: static; }
+
+/* 放大平移:内联 width/height = fit×1.5,拖拽写内联 transform(边界钳制在 JS);
+   拖拽中禁止选中/原生图片拖拽,避免松手后黏着选区 */
+.lightbox[data-zoom="true"] .lightbox__stage.dragging,
+.lightbox[data-zoom="true"] .lightbox__stage.dragging * { user-select: none; }
+.lightbox[data-zoom="true"] .lightbox__img { -webkit-user-drag: none; }
 
 .lightbox__nav {
   position: absolute;

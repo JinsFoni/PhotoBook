@@ -392,7 +392,9 @@ window.PC = (function () {
   }
 
   /* ---------- lightbox -------------------------------------------------- */
-  var lb = { photos: [], index: 0, title: "", collection: "", zoom: false, hi: false, el: null };
+  var LB_ZOOM = 1.5; /* 放大倍数: fit 尺寸 ×1.5(可调) */
+  var lb = { photos: [], index: 0, title: "", collection: "", zoom: false, hi: false, el: null,
+             pan: { x: 0, y: 0 }, dragging: false, dragMoved: false, dragStart: null, tstart: null };
 
   function lightboxSrc(p, w) {
     if (!w) return "/media/" + p.file;             /* 真原图:下载 / 1:1 放大 */
@@ -434,12 +436,43 @@ window.PC = (function () {
       '<div class="lightbox__progress"><i data-lb-progress></i></div>';
     document.body.appendChild(el);
     lb.el = el;
+    el.querySelector("[data-lb-img]").setAttribute("draggable", "false"); /* 防原生拖图 */
 
     el.querySelector("[data-lb-close]").addEventListener("click", close);
     el.querySelector("[data-lb-prev]").addEventListener("click", function () { go(-1); });
     el.querySelector("[data-lb-next]").addEventListener("click", function () { go(1); });
     el.querySelector("[data-lb-img]").addEventListener("click", toggleZoom);
     el.addEventListener("click", function (e) { if (e.target === el) close(); });
+
+    /* 放大后按住左键拖拽平移(transform);未放大不拦截,
+       点击与拖拽靠移动阈值区分,拖后释放的 click 不触发缩放切换 */
+    var stage = el.querySelector(".lightbox__stage");
+    var onDragMove = function (e) {
+      if (!lb.dragging || !lb.zoom) return;
+      var b = panBounds();
+      lb.pan.x = Math.min(b.x, Math.max(-b.x, lb.tstart.px + e.clientX - lb.tstart.x));
+      lb.pan.y = Math.min(b.y, Math.max(-b.y, lb.tstart.py + e.clientY - lb.tstart.y));
+      lb.dragMoved = true;
+      lb.el.querySelector("[data-lb-img]").style.transform =
+        "translate(" + lb.pan.x + "px," + lb.pan.y + "px)";
+    };
+    var onDragEnd = function () {
+      if (!lb.dragging) return;
+      lb.dragging = false;
+      stage.style.cursor = "";
+      /* click 事件在 mouseup 后触发;延后一拍清标志,让该次 click 被忽略 */
+      setTimeout(function () { lb.dragMoved = false; }, 0);
+    };
+    stage.addEventListener("mousedown", function (e) {
+      if (!lb.zoom || e.button !== 0 || e.target.closest("button, a")) return;
+      lb.dragging = true;
+      lb.dragMoved = false;
+      lb.tstart = { x: e.clientX, y: e.clientY, px: lb.pan.x, py: lb.pan.y };
+      stage.style.cursor = "grabbing";
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove", onDragMove);
+    window.addEventListener("mouseup", onDragEnd);
 
     /* swipe */
     var sx = 0, sy = 0, tracking = false;
@@ -532,21 +565,48 @@ window.PC = (function () {
     else { full.onload = swap; }
   }
 
-  function toggleZoom() {
-    lb.zoom = !lb.zoom;
+  /* 平移边界:图超出 stage 的部分的一半(网格居中,transform 从中心偏移);
+     图没超出则锁 0。避免把图拖飞 */
+  function panBounds() {
     var img = lb.el.querySelector("[data-lb-img]");
-    img.dataset.zoomed = lb.zoom ? "true" : "false";
-    img.style.cursor = lb.zoom ? "zoom-out" : "zoom-in";
-    /* 容器同步驱动 CSS 放大模式(stage 可滚动平移);取消放大时回到顶部 */
-    lb.el.dataset.zoom = lb.zoom ? "true" : "false";
-    /* 放大才需要真原图 1:1;fit 显示用高清版已足够,不必提前拉 10–25MB */
-    if (lb.zoom) upgradeOriginal(lb.photos[lb.index], img);
-    if (!lb.zoom) {
-      var st = lb.el.querySelector(".lightbox__stage");
-      st.scrollTop = 0;
-      st.scrollLeft = 0;
-    }
+    var st = lb.el.querySelector(".lightbox__stage");
+    return {
+      x: Math.max(0, (img.offsetWidth - st.clientWidth) / 2),
+      y: Math.max(0, (img.offsetHeight - st.clientHeight) / 2),
+    };
   }
+
+  /* 退出放大:清除内联尺寸/平移,回到 fit 显示 */
+  function zoomOff(img) {
+    lb.zoom = false;
+    lb.pan = { x: 0, y: 0 };
+    img.style.width = "";
+    img.style.height = "";
+    img.style.transform = "";
+    img.dataset.zoomed = "false";
+    img.style.cursor = "zoom-in";
+    lb.el.dataset.zoom = "false";
+  }
+
+  /* 放大 = fit 尺寸 × LB_ZOOM(替代原先的 1:1 原图,倍数太大);
+     平移不再用 stage 滚动,改按住左键拖拽(transform) */
+  function toggleZoom() {
+    if (lb.dragMoved) return; /* 拖拽结束时的 click 不算缩放切换 */
+    var img = lb.el.querySelector("[data-lb-img]");
+    if (lb.zoom) { zoomOff(img); return; }
+    lb.zoom = true;
+    var r = img.getBoundingClientRect(); /* fit 显示尺寸 */
+    img.style.width = Math.round(r.width * LB_ZOOM) + "px";
+    img.style.height = Math.round(r.height * LB_ZOOM) + "px";
+    img.dataset.zoomed = "true";
+    img.style.cursor = "grab";
+    lb.el.dataset.zoom = "true";
+    lb.pan = { x: 0, y: 0 };
+    /* 放大才需要真原图 1:1 细节;fit 显示用高清版已足够 */
+    upgradeOriginal(lb.photos[lb.index], img);
+  }
+
+  /* 鼠标拖拽过程中抑制原生图片拖拽与文本选择 */
 
   function paint() {
     var el = lb.el;
@@ -558,6 +618,11 @@ window.PC = (function () {
     img.dataset.zoomed = "false";
     img.dataset.full = "false"; /* 切图后重新升级高清版 */
     lb.hi = false;              /* 切图后真原图需重新按需加载 */
+    lb.zoom = false;
+    lb.pan = { x: 0, y: 0 };
+    img.style.width = "";       /* 清除放大模式内联尺寸/平移 */
+    img.style.height = "";
+    img.style.transform = "";
     el.dataset.zoom = "false"; /* 切图/重开时退出放大模式(容器+图同步复位) */
     img.style.cursor = "zoom-in";
 
