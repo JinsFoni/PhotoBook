@@ -328,7 +328,7 @@ table { border-collapse: collapse; }
 }
 .header--immersive.header--solid .wordmark,
 .header--immersive.header--solid .nav__link,
-.header--immersive.header--solid .icon-btn { color: var(--ink-2); }
+.header--immersive.header--solid .icon-btn { color: var(--ink); }
 .header--immersive.header--solid .wordmark em,
 .header--immersive.header--solid .nav__link:hover,
 .header--immersive.header--solid .nav__link[aria-current="page"] { color: var(--ink); }
