@@ -310,7 +310,7 @@ table { border-collapse: collapse; }
 /* 沉浸式(仅首页): 顶栏压在 Hero 轮播上, backdrop-filter 直接
    实时模糊下方的轮播图作背景, 文字/图标转白保证可读 */
 .header--immersive {
-  background: rgba(8, 9, 10, 0.14);
+  background: rgba(8, 9, 10, 0.06);
   border-bottom: none;
 }
 .header--immersive .wordmark,
