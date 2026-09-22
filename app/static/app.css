@@ -1045,12 +1045,13 @@ table { border-collapse: collapse; }
   gap: var(--s3);
   align-items: flex-end;
 }
-/* 组切换: 细箭头图标钮, 置于 "进入写真集" 上方, 右缘与按钮对齐;
-   左列文字左对齐, 右列整体右对齐 */
+/* 组切换: 细箭头图标钮, 置于 "进入写真集" 上方,
+   与按钮同宽(space-between), 左右两缘分别对齐 */
 .hero__pager {
   display: flex;
   gap: var(--s1);
-  align-self: flex-end;
+  align-self: stretch;
+  justify-content: space-between;
 }
 .hero__pager .icon-btn {
   color: rgba(255, 255, 255, 0.85);
