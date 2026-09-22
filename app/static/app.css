@@ -307,10 +307,12 @@ table { border-collapse: collapse; }
   -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
-/* 沉浸式(仅首页): 顶栏压在 Hero 轮播上, backdrop-filter 直接
-   实时模糊下方的轮播图作背景, 文字/图标转白保证可读 */
+/* 沉浸式(仅首页): 顶栏完全透底, 文字/图标转白;
+   滚动后切回实底玻璃(与全站一致) */
 .header--immersive {
-  background: rgba(8, 9, 10, 0.14);
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-bottom: none;
 }
 .header--immersive .wordmark,
