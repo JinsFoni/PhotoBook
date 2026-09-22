@@ -307,10 +307,12 @@ table { border-collapse: collapse; }
   -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
-/* 沉浸式(仅首页): 顶栏压在 Hero 轮播上, backdrop-filter 直接
-   实时模糊下方的轮播图作背景, 文字/图标转白保证可读 */
+/* 沉浸式(仅首页): 顶栏统一为轻霜玻璃(灯箱同源深色薄霜),
+   文字/图标保持白;滚动只切 header--solid 类, 样式不再变化 */
 .header--immersive {
-  background: rgba(8, 9, 10, 0.06);
+  background: rgba(8, 9, 10, 0.35);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
   border-bottom: none;
 }
 .header--immersive .wordmark,
@@ -322,13 +324,6 @@ table { border-collapse: collapse; }
 .header--immersive .nav__link::after { background: #fff; }
 .header--immersive .avatar-btn { outline: 1px solid rgba(255, 255, 255, 0.55); }
 
-/* 滚动后: 回到普通实底玻璃(与全站一致) */
-/* 滚动后: 轻霜玻璃(灯箱同源深色), 不再用 90% 实底;文字保持白 */
-.header--immersive.header--solid {
-  background: rgba(8, 9, 10, 0.35);
-  backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
-}
 
 .header__inner {
   height: var(--header-h);
