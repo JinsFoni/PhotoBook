@@ -324,6 +324,14 @@ table { border-collapse: collapse; }
 .header--immersive .nav__link::after { background: #fff; }
 .header--immersive .avatar-btn { outline: 1px solid rgba(255, 255, 255, 0.55); }
 
+/* 首页: hero 上移顶到页面最上沿, 轮播图的模糊背景层延伸到顶栏
+   后面(毛玻璃透出图片而非纯黑底色);前景整图区域经 .hero__stage
+   下移顶栏高, 仍在顶栏下方开始, 构图不变 */
+.shell--immersive .hero {
+  margin-top: calc(var(--header-h) * -1);
+  padding-top: var(--header-h);
+}
+.shell--immersive .hero__stage--immersive { top: var(--header-h); }
 
 .header__inner {
   height: var(--header-h);

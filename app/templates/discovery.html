@@ -5,7 +5,7 @@
 {% block main %}
 <!-- Hero -->
 <section class="hero" aria-label="{{ t('Featured collection') }}">
-  <div class="hero__stage" data-hero-stage>
+  <div class="hero__stage{% if shell_immersive %} hero__stage--immersive{% endif %}" data-hero-stage>
     <img class="hero__bg" data-active="false" alt="" aria-hidden="true">
     <img class="hero__bg" data-active="false" alt="" aria-hidden="true">
     <img class="hero__img" data-active="false" alt="">
