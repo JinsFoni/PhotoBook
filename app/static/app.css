@@ -1019,7 +1019,7 @@ table { border-collapse: collapse; }
 }
 .hero__caption-inner {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
   gap: var(--s6);
   padding-top: var(--s5);
@@ -1034,6 +1034,8 @@ table { border-collapse: collapse; }
   text-overflow: ellipsis;
 }
 .hero__title a:hover { opacity: 0.82; }
+/* 视觉基线补偿: 文字行底部含下伸部, 撑一段与按钮底缘精确对齐 */
+.hero__baseline { display: block; height: 5.5px; }
 .hero__model {
   font-size: var(--fs-lead);
   color: rgba(255, 255, 255, 0.86);
