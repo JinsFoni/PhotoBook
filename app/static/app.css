@@ -219,9 +219,8 @@ table { border-collapse: collapse; }
   flex-direction: column;
 }
 
-/* 首页: Hero 上移到顶栏底下(顶栏 sticky+z60 在上层), 顶栏透出轮播图;
-   其余页面不动 */
-.shell--immersive .hero { margin-top: calc(var(--header-h) * -1); }
+/* 首页顶栏为沉浸式样式(毛玻璃+白字);Hero 仍在顶栏下方,
+   滚动时内容从顶栏下穿过被实时模糊(毛玻璃可见) */
 
 .main { flex: 1; }
 
