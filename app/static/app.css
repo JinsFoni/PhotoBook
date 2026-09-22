@@ -777,6 +777,10 @@ table { border-collapse: collapse; }
   font-size: var(--fs-h3);
   line-height: 1.2;
   letter-spacing: -0.005em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .card__title a { transition: opacity var(--t-fast) var(--ease); }
 .card__title a:hover { opacity: 0.6; }
