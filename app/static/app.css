@@ -1019,17 +1019,10 @@ table { border-collapse: collapse; }
 }
 .hero__caption-inner {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--s6);
   padding-top: var(--s5);
-}
-.hero__eyebrow {
-  font-size: var(--fs-small);
-  letter-spacing: var(--track-nav);
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.78);
-  margin-bottom: var(--s3);
 }
 .hero__title {
   font-family: var(--display);
@@ -1052,10 +1045,11 @@ table { border-collapse: collapse; }
   gap: var(--s3);
   align-items: flex-end;
 }
-/* 组切换: 细箭头图标钮, 置于 "进入写真集" 上方 */
+/* 组切换: 细箭头图标钮, 置于 "进入写真集" 上方, 与按钮中线对齐 */
 .hero__pager {
   display: flex;
   gap: var(--s1);
+  align-self: center;
 }
 .hero__pager .icon-btn {
   color: rgba(255, 255, 255, 0.85);
