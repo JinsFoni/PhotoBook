@@ -1068,12 +1068,18 @@ table { border-collapse: collapse; }
   color: #fff;
 }
 .hero__side .btn:hover { background: #fff; color: #000; border-color: #fff; }
-/* 进入写真集: 图标钮(右箭头), 与上方切换钮行同宽对齐 */
+/* 进入写真集: 图标钮(右箭头), 与上方切换钮同宽(34px)对齐右缘 */
 .hero__side .hero__cta {
-  width: 100px;
+  width: 34px;
   padding-inline: 0;
 }
 .hero__side .hero__cta svg { width: 18px; height: 18px; }
+/* 悬停效果与切换钮一致: 不变纯白, 只提亮边框与图标 */
+.hero__side .hero__cta:hover {
+  background: transparent;
+  color: rgba(255, 255, 255, 1);
+  border-color: #fff;
+}
 
 /* the contact sheet — the page's one bold move */
 .sheet {
