@@ -48,6 +48,8 @@ def serve_thumb(spec: str, request: Request) -> Response:
     w = min(int(m.group(1)), 2400)
     if w < 16:
         raise HTTPException(404)
+    # 大尺寸(灯箱预览)用高质量,网格小图保持 q78 省体积
+    q = 88 if w >= 1600 else 78
     h = int(m.group(2)) if m.group(2) else None
     if h is not None and h < 16:
         raise HTTPException(404)
@@ -60,7 +62,7 @@ def serve_thumb(spec: str, request: Request) -> Response:
     if not src.is_file():
         raise HTTPException(404)
 
-    cache = settings.media_dir / CACHE_DIR / f"{w}x{h or 0}" / f"{rel}.webp"
+    cache = settings.media_dir / CACHE_DIR / f"{w}x{h or 0}q{q}" / f"{rel}.webp"
     if cache.is_file():
         return FileResponse(cache, media_type="image/webp",
                             headers={"Cache-Control": "public, max-age=31536000, immutable"})
@@ -86,7 +88,7 @@ def serve_thumb(spec: str, request: Request) -> Response:
             th = h if h else int(tw * sh / sw)
             im = im.resize((tw, th), Image.LANCZOS)
             buf = io.BytesIO()
-            im.save(buf, "WEBP", quality=78, method=4)
+            im.save(buf, "WEBP", quality=q, method=4)
     except Exception as e:
         raise HTTPException(500, f"thumbnail failed: {e}")
 

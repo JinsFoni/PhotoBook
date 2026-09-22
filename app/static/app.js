@@ -493,6 +493,22 @@ window.PC = (function () {
     paint();
   }
 
+  /* 原图升级:后台加载 + 异步解码完才上屏(不闪柏、不卡顿)。
+     decode() 不阻塞主线程;老浏览器无此接口则回退 onload。
+     过期竞态防护:加载期间已切走则丢弃 */
+  function upgradeFull(p, img) {
+    if (img.dataset.full === "true" || !p) return;
+    var full = new Image();
+    full.src = lightboxSrc(p);
+    var swap = function () {
+      if (lb.photos[lb.index] !== p || img.dataset.full === "true") return;
+      img.src = full.src;
+      img.dataset.full = "true";
+    };
+    if (full.decode) { full.decode().then(swap, swap); }
+    else { full.onload = swap; }
+  }
+
   function toggleZoom() {
     lb.zoom = !lb.zoom;
     var img = lb.el.querySelector("[data-lb-img]");
@@ -500,18 +516,8 @@ window.PC = (function () {
     img.style.cursor = lb.zoom ? "zoom-out" : "zoom-in";
     /* 容器同步驱动 CSS 放大模式(stage 可滚动平移);取消放大时回到顶部 */
     lb.el.dataset.zoom = lb.zoom ? "true" : "false";
-    /* 放大时后台升级到原图 1:1;fit 位图保持显示直到原图解码完,不闪烁。
-       切图后 data-full 复位,重新升级 */
-    if (lb.zoom && img.dataset.full !== "true") {
-      var p = lb.photos[lb.index];
-      var full = new Image();
-      full.src = lightboxSrc(p);
-      full.onload = function () {
-        if (lb.photos[lb.index] !== p || img.dataset.full === "true") return;
-        img.src = full.src;
-        img.dataset.full = "true";
-      };
-    }
+    /* 放大时确保原图已就位(打开后已自动升级,通常此处已完成) */
+    if (lb.zoom) upgradeFull(lb.photos[lb.index], img);
     if (!lb.zoom) {
       var st = lb.el.querySelector(".lightbox__stage");
       st.scrollTop = 0;
@@ -527,7 +533,7 @@ window.PC = (function () {
     var img = el.querySelector("[data-lb-img]");
     img.dataset.ready = "false";
     img.dataset.zoomed = "false";
-    img.dataset.full = "false"; /* 切图后放大时重新升级原图 */
+    img.dataset.full = "false"; /* 切图后重新升级原图 */
     el.dataset.zoom = "false"; /* 切图/重开时退出放大模式(容器+图同步复位) */
     img.style.cursor = "zoom-in";
 
@@ -537,8 +543,9 @@ window.PC = (function () {
       if (q) { var pre = new Image(); pre.src = lightboxSrc(q, 1800); }
     });
 
-    /* fit 显示用 1800w 缩放版(约 490 万像素,解码开销为原图 1/7):
-       22MP 原图全尺寸解码是切图卡顿根源。过期响应丢弃(已切走则不上屏) */
+    /* fit 显示先用 1800w 预览图秒显(22MP 原图全尺寸解码是切图卡顿根源);
+       随后自动后台升级原图——点击查看大图即为原图,无需再手动点击。
+       过期响应丢弃(已切走则不上屏) */
     var view = new Image();
     view.src = lightboxSrc(p, 1800);
     view.onload = function () {
@@ -546,6 +553,7 @@ window.PC = (function () {
       img.src = view.src;
       img.alt = lb.title ? t("{title} — photo {n}", { title: lb.title, n: lb.index + 1 }) : t("Photo {n}", { n: lb.index + 1 });
       img.dataset.ready = "true";
+      upgradeFull(p, img); /* 预览上屏后立即升级原图 */
     };
 
     var title = el.querySelector("[data-lb-title]");
