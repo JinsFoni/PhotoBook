@@ -1227,9 +1227,13 @@ table { border-collapse: collapse; }
 .collection-head__title {
   font-family: var(--display);
   font-size: clamp(32px, 5.2vw, 76px);
-  line-height: 1;
+  line-height: 1.06;
   letter-spacing: -0.025em;
   max-width: 20ch;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .collection-head__model {
   margin-top: var(--s4);
