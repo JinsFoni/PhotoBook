@@ -946,16 +946,31 @@ table { border-collapse: collapse; }
 }
 .hero__stage { position: absolute; inset: 0; }
 
+/* 竖图全宽横幅的完整呈现方案:前景 contain 整张显示(不裁切);
+   背景同图放大模糊压暗,填补两侧空白(影楼画册常用) */
+.hero__bg,
 .hero__img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
   opacity: 0;
   transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
+}
+
+.hero__bg {
+  object-fit: cover;
+  transform: scale(1.15);
+  filter: blur(46px) brightness(0.55) saturate(1.12);
+}
+
+.hero__img {
+  object-fit: contain;
+  background: rgba(8, 9, 10, 0.42); /* 图比横幅窄时透出的底色与背景自然融合 */
   transform: scale(1.015);
 }
+
+.hero__bg[data-active="true"],
 .hero__img[data-active="true"] { opacity: 1; transform: none; }
 
 .hero__scrim {

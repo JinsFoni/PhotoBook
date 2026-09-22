@@ -6,6 +6,8 @@
 <!-- Hero -->
 <section class="hero" aria-label="{{ t('Featured collection') }}">
   <div class="hero__stage" data-hero-stage>
+    <img class="hero__bg" data-active="false" alt="" aria-hidden="true">
+    <img class="hero__bg" data-active="false" alt="" aria-hidden="true">
     <img class="hero__img" data-active="false" alt="">
     <img class="hero__img" data-active="false" alt="">
   </div>
@@ -112,12 +114,16 @@
   var featured = window.PB_DATA.featured || [];
   if (!featured.length) return;
   var fi = 0, layer = 0, pending = 0;
-  var layers = document.querySelectorAll(".hero__img");
+  var bgs = document.querySelectorAll(".hero__bg");
+  var fgs = document.querySelectorAll(".hero__img");
   var strip = document.querySelector("[data-sheet]");
   var BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-  layers.forEach(function (l) { l.src = BLANK; l.setAttribute("aria-hidden", "true"); });
+  bgs.forEach(function (l) { l.src = BLANK; });
+  fgs.forEach(function (l) { l.src = BLANK; l.setAttribute("aria-hidden", "true"); });
 
-  function heroUrl(photo) { return "/media/" + photo.file; }
+  /* 高清档(≤2400w)而非原图:完整显示且首屏快;
+     前景 contain 完整呈现,背景同图模糊压暗填两侧 */
+  function heroUrl(photo) { return "/t/2400/" + photo.file + ".webp"; }
 
   function showHero(photo) {
     var token = ++pending;
@@ -125,11 +131,14 @@
     img.src = heroUrl(photo);
     img.onload = function () {
       if (token !== pending) return;
-      var next = layers[layer];
-      next.src = img.src;
-      layers.forEach(function (l) { l.dataset.active = "false"; });
-      next.dataset.active = "true";
-      layer = layer === 0 ? 1 : 0;
+      var i = layer;
+      bgs[i].src = img.src;
+      fgs[i].src = img.src;
+      bgs.forEach(function (l) { l.dataset.active = "false"; });
+      fgs.forEach(function (l) { l.dataset.active = "false"; });
+      bgs[i].dataset.active = "true";
+      fgs[i].dataset.active = "true";
+      layer = i === 0 ? 1 : 0;
     };
   }
 
