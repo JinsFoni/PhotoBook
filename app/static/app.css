@@ -1068,9 +1068,10 @@ table { border-collapse: collapse; }
   color: #fff;
 }
 .hero__side .btn:hover { background: #fff; color: #000; border-color: #fff; }
-/* 进入写真集: 图标钮(右箭头), 与上方切换钮同宽(34px)对齐右缘 */
+/* 进入写真集: 图标钮(右箭头), 宽度与上方切换钮行(两个钮+间距)一致,
+   左右两缘对齐 */
 .hero__side .hero__cta {
-  width: 34px;
+  width: calc(34px * 2 + var(--s1));
   padding-inline: 0;
 }
 .hero__side .hero__cta svg { width: 18px; height: 18px; }
