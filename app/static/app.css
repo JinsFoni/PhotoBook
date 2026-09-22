@@ -1049,9 +1049,23 @@ table { border-collapse: collapse; }
   color: rgba(255, 255, 255, 0.78);
   display: flex;
   flex-direction: column;
-  gap: var(--s2);
+  gap: var(--s3);
   align-items: flex-end;
 }
+/* 组切换: 细箭头图标钮, 置于 "进入写真集" 上方 */
+.hero__pager {
+  display: flex;
+  gap: var(--s1);
+}
+.hero__pager .icon-btn {
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+}
+.hero__pager .icon-btn:hover { color: #fff; border-color: #fff; }
+.hero__pager .icon-btn svg { width: 16px; height: 16px; }
 .hero__side .btn {
   border-color: rgba(255, 255, 255, 0.42);
   background: transparent;
@@ -1069,7 +1083,7 @@ table { border-collapse: collapse; }
   gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;
-  padding-block: var(--s4);
+  padding-top: var(--s4);
 }
 .sheet__strip::-webkit-scrollbar { display: none; }
 
@@ -1107,16 +1121,6 @@ table { border-collapse: collapse; }
   transition: transform var(--t-ui) var(--ease);
 }
 .sheet__frame[aria-current="true"]::after { transform: scaleX(1); }
-
-.sheet__meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s4);
-  padding-bottom: var(--s4);
-  font-size: var(--fs-small);
-  color: var(--ink-3);
-}
 
 @keyframes sheet-in {
   to { opacity: 1; transform: none; }

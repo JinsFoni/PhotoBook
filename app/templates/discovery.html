@@ -21,8 +21,11 @@
           <p class="hero__model"><a data-hero-model href="#"></a></p>
         </div>
         <div class="hero__side">
-          <span class="num" data-hero-count></span>
-          <span data-hero-frames></span>
+          {% from '_ui.html' import icon %}
+          <div class="hero__pager">
+            <button class="icon-btn" type="button" data-sheet-prev aria-label="{{ t('Previous set') }}">{{ icon('left') }}</button>
+            <button class="icon-btn" type="button" data-sheet-next aria-label="{{ t('Next set') }}">{{ icon('right') }}</button>
+          </div>
           <a class="btn btn--sm" data-hero-cta href="#">{{ t('View collection') }}</a>
         </div>
       </div>
@@ -33,14 +36,6 @@
 <!-- Contact sheet -->
 <section class="sheet" aria-label="{{ t('Contact sheet') }}">
   <div class="wrap">
-    <div class="sheet__meta">
-      <span class="num" data-sheet-index></span>
-      <span>{{ t('Select a frame to preview it above') }}</span>
-      <span style="display:flex;gap:var(--s2)">
-        <button class="btn btn--quiet btn--sm" type="button" data-sheet-prev>{{ t('Previous set') }}</button>
-        <button class="btn btn--quiet btn--sm" type="button" data-sheet-next>{{ t('Next set') }}</button>
-      </span>
-    </div>
     <div class="sheet__strip" data-sheet role="group" aria-label="{{ t('Frames in the featured collection') }}"></div>
   </div>
 </section>
@@ -166,11 +161,6 @@
     document.querySelector("[data-hero-model]").textContent = c.model_name;
     document.querySelector("[data-hero-model]").href = "/models/" + c.model_slug;
     document.querySelector("[data-hero-cta]").href = "/collections/" + c.slug;
-    document.querySelector("[data-hero-count]").textContent =
-      PC.t("Featured {i} / {n}", { i: String(fi + 1).padStart(2, "0"), n: String(featured.length).padStart(2, "0") });
-    document.querySelector("[data-hero-frames]").textContent = PC.t("{n} frames", { n: c.count });
-    document.querySelector("[data-sheet-index]").textContent =
-      PC.t("Featured {i} / {n}", { i: String(fi + 1).padStart(2, "0"), n: String(featured.length).padStart(2, "0") });
   }
 
   function setFeatured(n) {
