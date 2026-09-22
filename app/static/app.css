@@ -323,17 +323,12 @@ table { border-collapse: collapse; }
 .header--immersive .avatar-btn { outline: 1px solid rgba(255, 255, 255, 0.55); }
 
 /* 滚动后: 回到普通实底玻璃(与全站一致) */
+/* 滚动后: 轻霜玻璃(灯箱同源深色), 不再用 90% 实底;文字保持白 */
 .header--immersive.header--solid {
-  background: var(--scrim);
+  background: rgba(8, 9, 10, 0.35);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
 }
-.header--immersive.header--solid .wordmark,
-.header--immersive.header--solid .nav__link,
-.header--immersive.header--solid .icon-btn { color: var(--ink); }
-.header--immersive.header--solid .wordmark em,
-.header--immersive.header--solid .nav__link:hover,
-.header--immersive.header--solid .nav__link[aria-current="page"] { color: var(--ink); }
-.header--immersive.header--solid .nav__link::after { background: var(--ink); }
-.header--immersive.header--solid .avatar-btn { outline: none; }
 
 .header__inner {
   height: var(--header-h);
