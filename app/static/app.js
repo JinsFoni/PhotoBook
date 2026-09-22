@@ -758,16 +758,6 @@ window.PC = (function () {
     renderChrome();
     applyTheme(); /* theme buttons live in chrome */
     bindChrome();
-    /* 沉浸式顶栏: 首页未滚动时透出 Hero 轮播(毛玻璃实时模糊),
-       滚过一屏顶后切回实底玻璃;其他页面不受影响 */
-    var header = document.querySelector("[data-header]");
-    if (header && header.classList.contains("header--immersive")) {
-      var onScroll = function () {
-        header.classList.toggle("header--solid", window.scrollY > 24);
-      };
-      window.addEventListener("scroll", onScroll, { passive: true });
-      onScroll();
-    }
     fav.bind();
     syncAll();
     bindPhotoTiles();

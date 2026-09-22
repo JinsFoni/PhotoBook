@@ -307,8 +307,8 @@ table { border-collapse: collapse; }
   -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
-/* 沉浸式(仅首页): 顶栏统一为轻霜玻璃(灯箱同源深色薄霜),
-   文字/图标保持白;滚动只切 header--solid 类, 样式不再变化 */
+/* 沉浸式(仅首页): 顶栏恒定轻霜玻璃(灯箱同源深色薄霜),
+   文字/图标保持白, 全程无状态切换 */
 .header--immersive {
   background: rgba(8, 9, 10, 0.35);
   backdrop-filter: blur(24px) saturate(140%);
