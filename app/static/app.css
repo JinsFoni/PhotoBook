@@ -219,6 +219,10 @@ table { border-collapse: collapse; }
   flex-direction: column;
 }
 
+/* 首页: Hero 上移到顶栏底下(顶栏 sticky+z60 在上层), 顶栏透出轮播图;
+   其余页面不动 */
+.shell--immersive .hero { margin-top: calc(var(--header-h) * -1); }
+
 .main { flex: 1; }
 
 .wrap {
@@ -302,8 +306,35 @@ table { border-collapse: collapse; }
   background: var(--scrim);
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border-bottom: 1px solid var(--line);
 }
+
+/* 沉浸式(仅首页): 顶栏压在 Hero 轮播上, backdrop-filter 直接
+   实时模糊下方的轮播图作背景, 文字/图标转白保证可读 */
+.header--immersive {
+  background: rgba(8, 9, 10, 0.14);
+  border-bottom: none;
+}
+.header--immersive .wordmark,
+.header--immersive .nav__link,
+.header--immersive .icon-btn { color: rgba(255, 255, 255, 0.92); }
+.header--immersive .wordmark em,
+.header--immersive .nav__link:hover,
+.header--immersive .nav__link[aria-current="page"] { color: #fff; }
+.header--immersive .nav__link::after { background: #fff; }
+.header--immersive .avatar-btn { outline: 1px solid rgba(255, 255, 255, 0.55); }
+
+/* 滚动后: 回到普通实底玻璃(与全站一致) */
+.header--immersive.header--solid {
+  background: var(--scrim);
+}
+.header--immersive.header--solid .wordmark,
+.header--immersive.header--solid .nav__link,
+.header--immersive.header--solid .icon-btn { color: var(--ink-2); }
+.header--immersive.header--solid .wordmark em,
+.header--immersive.header--solid .nav__link:hover,
+.header--immersive.header--solid .nav__link[aria-current="page"] { color: var(--ink); }
+.header--immersive.header--solid .nav__link::after { background: var(--ink); }
+.header--immersive.header--solid .avatar-btn { outline: none; }
 
 .header__inner {
   height: var(--header-h);

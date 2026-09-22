@@ -2,7 +2,7 @@
 {% extends 'base.html' %}
 
 {% block body %}
-<div class="shell">
+<div class="shell{% if shell_immersive %} shell--immersive{% endif %}">
   <header data-header></header>
 
   <main class="main" id="main">

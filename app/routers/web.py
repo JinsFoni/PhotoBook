@@ -100,6 +100,7 @@ async def discovery(request: Request, s: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "discovery.html", {
         "user": user, "page": "discovery", "data": payload,
         "data_json": json.dumps(payload, ensure_ascii=False),
+        "shell_immersive": True,  # 顶栏压在 Hero 轮播上(沉浸式)
     })
 
 
