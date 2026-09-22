@@ -26,13 +26,16 @@ log = logging.getLogger("photobook")
 async def lifespan(app: FastAPI):
     init_db()
     _seed()
+    from .services import media
     from .services.harvest import worker
     if settings.harvest_enabled:
         worker.start_worker()
+    media.preheat_all()  # daemon 线程预热缩略图,不阻塞启动
     log.info("PhotoBook started — http://%s:%s", settings.host, settings.port)
     yield
     from .services.harvest import worker
     worker.stop_worker()
+    media._preheat_done.set()  # 通知预热线程提前退出
 
 
 app = FastAPI(title="Photo Collection", lifespan=lifespan)

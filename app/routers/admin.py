@@ -9,6 +9,8 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+
+from ..services import media
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
@@ -420,7 +422,9 @@ async def admin_harvest_jobs_api(s: Session = Depends(get_db)):
         "source": j.source,
         "createdAt": j.created_at.strftime("%m-%d %H:%M") if j.created_at else "",
     } for j in jobs],
-        "workerRunning": harvest_worker.worker_running()}
+        "workerRunning": harvest_worker.worker_running(),
+        "preheatRunning": media.preheat_running(),
+        "preheatProgress": media.preheat_progress()}
 
 
 # ---- 设置 -----------------------------------------------------------------------

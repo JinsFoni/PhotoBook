@@ -392,11 +392,18 @@ window.PC = (function () {
   }
 
   /* ---------- lightbox -------------------------------------------------- */
-  var lb = { photos: [], index: 0, title: "", collection: "", zoom: false, el: null };
+  var lb = { photos: [], index: 0, title: "", collection: "", zoom: false, hi: false, el: null };
 
   function lightboxSrc(p, w) {
-    if (!w) return "/media/" + p.file;             /* 原图:下载/放大看细节 */
+    if (!w) return "/media/" + p.file;             /* 真原图:下载 / 1:1 放大 */
     return "/t/" + w + "/" + p.file + ".webp";     /* 缩放版:服务端只缩不放,磁盘缓存 */
+  }
+
+  /* 高清版目标宽:铺满最长边 ×1.5,夹在 [1800,2400] —— 24MP 原图缩到此尺寸
+     后与真原图在屏幕上肉眼无差,但体积从 10–25MB 降到约 1–2MB */
+  function hiWidth() {
+    var m = Math.max(window.innerWidth || 0, window.innerHeight || 0);
+    return Math.min(2400, Math.max(1800, Math.round(m * 1.5)));
   }
 
   function lightboxEl() {
@@ -493,15 +500,31 @@ window.PC = (function () {
     paint();
   }
 
-  /* 原图升级:后台加载 + 异步解码完才上屏(不闪柏、不卡顿)。
-     decode() 不阻塞主线程;老浏览器无此接口则回退 onload。
-     过期竞态防护:加载期间已切走则丢弃 */
+  /* 高清升级:后台加载 ≤2400w 高清版(约 1–2MB),异步解码完才上屏(不闪烁、
+     不卡顿);decode() 不阻塞主线程,老浏览器回退 onload。
+     过期竞态防护:加载期间已切走则丢弃。真原图(10–25MB)仅在
+     1:1 放大时由 upgradeOriginal 按需加载 */
   function upgradeFull(p, img) {
     if (img.dataset.full === "true" || !p) return;
+    var hi = new Image();
+    hi.src = lightboxSrc(p, hiWidth());
+    var swap = function () {
+      if (lb.photos[lb.index] !== p || img.dataset.full === "true") return;
+      img.src = hi.src;
+      img.dataset.full = "true";
+    };
+    if (hi.decode) { hi.decode().then(swap, swap); }
+    else { hi.onload = swap; }
+  }
+
+  /* 1:1 放大专用:按需加载真原图并替换(高清版用于 fit 显示已足够) */
+  function upgradeOriginal(p, img) {
+    if (!p || lb.hi) return;
     var full = new Image();
     full.src = lightboxSrc(p);
     var swap = function () {
-      if (lb.photos[lb.index] !== p || img.dataset.full === "true") return;
+      if (lb.photos[lb.index] !== p) return;
+      lb.hi = true;
       img.src = full.src;
       img.dataset.full = "true";
     };
@@ -516,8 +539,8 @@ window.PC = (function () {
     img.style.cursor = lb.zoom ? "zoom-out" : "zoom-in";
     /* 容器同步驱动 CSS 放大模式(stage 可滚动平移);取消放大时回到顶部 */
     lb.el.dataset.zoom = lb.zoom ? "true" : "false";
-    /* 放大时确保原图已就位(打开后已自动升级,通常此处已完成) */
-    if (lb.zoom) upgradeFull(lb.photos[lb.index], img);
+    /* 放大才需要真原图 1:1;fit 显示用高清版已足够,不必提前拉 10–25MB */
+    if (lb.zoom) upgradeOriginal(lb.photos[lb.index], img);
     if (!lb.zoom) {
       var st = lb.el.querySelector(".lightbox__stage");
       st.scrollTop = 0;
@@ -533,7 +556,8 @@ window.PC = (function () {
     var img = el.querySelector("[data-lb-img]");
     img.dataset.ready = "false";
     img.dataset.zoomed = "false";
-    img.dataset.full = "false"; /* 切图后重新升级原图 */
+    img.dataset.full = "false"; /* 切图后重新升级高清版 */
+    lb.hi = false;              /* 切图后真原图需重新按需加载 */
     el.dataset.zoom = "false"; /* 切图/重开时退出放大模式(容器+图同步复位) */
     img.style.cursor = "zoom-in";
 
@@ -543,8 +567,8 @@ window.PC = (function () {
       if (q) { var pre = new Image(); pre.src = lightboxSrc(q, 1800); }
     });
 
-    /* fit 显示先用 1800w 预览图秒显(22MP 原图全尺寸解码是切图卡顿根源);
-       随后自动后台升级原图——点击查看大图即为原图,无需再手动点击。
+    /* fit 显示先用 1800w 预览图秒显(24MP 原图全尺寸解码是切图卡顿根源);
+       随后自动后台升级 ≤2400w 高清版——点开即高清,无需任何操作。
        过期响应丢弃(已切走则不上屏) */
     var view = new Image();
     view.src = lightboxSrc(p, 1800);
@@ -553,7 +577,7 @@ window.PC = (function () {
       img.src = view.src;
       img.alt = lb.title ? t("{title} — photo {n}", { title: lb.title, n: lb.index + 1 }) : t("Photo {n}", { n: lb.index + 1 });
       img.dataset.ready = "true";
-      upgradeFull(p, img); /* 预览上屏后立即升级原图 */
+      upgradeFull(p, img); /* 预览上屏后立即升级高清版 */
     };
 
     var title = el.querySelector("[data-lb-title]");

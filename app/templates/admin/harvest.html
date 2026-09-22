@@ -68,6 +68,7 @@
             <div class="section-head">
               <h2 class="section-title">{{ t('任务队列') }} <span class="num" style="color:var(--ink-3)" data-queue-info></span></h2>
               <span class="section-aside t-small num" data-worker-state>{{ t('Worker 运行中') if worker_running else t('Worker 已停止') }}</span>
+              <span class="section-aside t-small num" data-preheat-state style="margin-left:var(--s3);color:var(--ink-3)"></span>
             </div>
 
             <table style="width:100%;border-collapse:collapse">
@@ -123,7 +124,7 @@
 
   function esc(s) { var d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
 
-  function render(jobs, running) {
+  function render(jobs, running, preheat) {
     if (!jobs.length) {
       tbody.innerHTML = '<tr><td colspan="9" style="padding:var(--s6);color:var(--ink-3)" class="t-small">' + PC.t("队列为空 — 提交 URL 或立即扫描。") + '</td></tr>';
     } else {
@@ -154,12 +155,21 @@
     if (info) info.textContent = active ? PC.t("{n} 个活动", { n: active }) : "";
     var ws = document.querySelector("[data-worker-state]");
     if (ws) ws.textContent = running ? PC.t("Worker 运行中") : PC.t("Worker 已停止");
+    var ps = document.querySelector("[data-preheat-state]");
+    if (ps) {
+      var ph = (preheat && preheat.progress) || {};
+      if (preheat && preheat.running && ph.total) {
+        ps.textContent = PC.t("缩略图预热中 {done}/{n}", { done: ph.done, n: ph.total });
+      } else {
+        ps.textContent = "";
+      }
+    }
   }
 
   function poll() {
     fetch("/admin/api/harvest/jobs", { credentials: "same-origin" })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d) render(d.jobs, d.workerRunning); })
+      .then(function (d) { if (d) render(d.jobs, d.workerRunning, { running: d.preheatRunning, progress: d.preheatProgress }); })
       .catch(function () {});
   }
   poll();
