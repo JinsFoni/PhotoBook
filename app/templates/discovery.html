@@ -48,7 +48,7 @@
       <a class="section-aside" href="/collections">{{ t('All collections') }}</a>
     </div>
     <div class="grid grid--editorial" data-latest>
-      {% for c in data.latest[:6] %}{{ collection_card(c, 1200) }}{% endfor %}
+      {% for c in data.latest[:5] %}{{ collection_card(c, 1200) }}{% endfor %}
     </div>
   </div>
 </section>

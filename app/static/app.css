@@ -845,9 +845,9 @@ table { border-collapse: collapse; }
 .grid--2 { grid-template-columns: repeat(2, 1fr); }
 .grid--3 { grid-template-columns: repeat(3, 1fr); }
 
-/* editorial: deliberately uneven spans */
+/* editorial: 最新写真集一行 5 张等宽 */
 .grid--editorial {
-  grid-template-columns: repeat(12, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: var(--gutter);
 }
 .span-4 { grid-column: span 4; }
@@ -896,6 +896,8 @@ table { border-collapse: collapse; }
   .grid--photos { grid-template-columns: repeat(3, 1fr); }
   .masonry { column-count: 3; }
   .masonry--collections { grid-template-columns: repeat(3, 1fr); }
+  /* 中屏:一行 3 张(5 卡排 3+2,避免 4+1 落单) */
+  .grid--editorial { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 760px) {
   .grid--models,
