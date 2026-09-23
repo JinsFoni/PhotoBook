@@ -70,12 +70,13 @@
     var ar = (p.w && p.h) ? (p.w + "/" + p.h) : "3/4";
     return '<div class="photo-tile">' +
       '<div class="frame skeleton" style="aspect-ratio:' + ar + '">' +
-      '<img src="/t/700/' + p.file + '.webp" alt="" loading="lazy" decoding="async"></div>' +
+      '<img src="/t/1800/' + p.file + '.webp" alt="" loading="lazy" decoding="async"></div>' +
       '<button class="photo-tile__hit" type="button" data-photo-index="' + i + '" aria-label="' + PC.t("Open photo {n} full screen", { n: i + 1 }) + '"></button>' +
       '<span class="photo-tile__idx" aria-hidden="true">' + String(i + 1).padStart(2, "0") + "</span></div>";
   }).join("");
   wall.hidden = !(c.photos || []).length;
   document.querySelector("[data-photos-empty]").hidden = !!(c.photos || []).length;
+  if (window.PC && PC.layoutPhotoWall) PC.layoutPhotoWall(wall); /* 宽高比已知,立即按行分组 */
 
   /* 推荐 */
   document.querySelector("[data-next]").innerHTML = (c.next || []).map(function (x) {

@@ -666,6 +666,102 @@ window.PC = (function () {
     dl.setAttribute("download", (p.file || "").split("/").pop());
   }
 
+  /* ---------- justified photo wall -------------------------------------- */
+  /* 按行排序且无缝拼接: 先按目标行高估算总行数,再把图片按累计宽度中点
+     均衡分到每一行,每行等高缩放至铺满容器宽 — 含末行,无行尾空白。
+     每行末张用 flexGrow 吸收取整余量,右缘严格对齐。 */
+  function targetRowHeight(w) { return w > 1180 ? 345 : w > 760 ? 365 : 255; }
+
+  function layoutPhotoWall(root) {
+    (root || document).querySelectorAll(".masonry--photos").forEach(function (wall) {
+      var tiles = Array.prototype.filter.call(wall.children, function (el) {
+        return el.classList.contains("photo-tile");
+      });
+      if (!tiles.length) return;
+
+      /* 读取每张的宽高比(真实尺寸 → 模板 aspect-ratio 兑底) */
+      var photos = tiles.map(function (tile) {
+        var ar = 3 / 4;
+        var img = tile.querySelector("img");
+        if (img && img.naturalWidth && img.naturalHeight) {
+          ar = img.naturalWidth / img.naturalHeight;
+        } else {
+          var f = tile.querySelector(".frame");
+          if (f && f.style.aspectRatio) {
+            var m = f.style.aspectRatio.split("/");
+            if (m.length === 2 && +m[0] > 0) ar = +m[0] / +m[1];
+          }
+        }
+        return { tile: tile, ar: ar };
+      });
+
+      var gap = 14;
+      function relayout() {
+        var avail = wall.clientWidth;
+        if (!avail) return; /* 收藏页隐藏面板: 展示时 ResizeObserver 再触发 */
+        var targetH = targetRowHeight(avail);
+        var n = photos.length;
+
+        /* 每张在目标行高下的占位宽(含列间距) → 估算行数,行数一定后
+           末行与其他行一样按铺满分配,不再留白 */
+        var slots = photos.map(function (p, i) { return targetH * p.ar + (i ? gap : 0); });
+        var totalW = slots.reduce(function (s, x) { return s + x; }, 0);
+        var R = Math.max(1, Math.round(totalW / (avail + gap)));
+        var chunk = totalW / R;
+
+        /* 中点归属: 第 i 张按累计宽度中点落入第 floor(mid/chunk) 行,
+           各行宽度都接近容器宽,高度都贴近目标行高 */
+        var acc = 0;
+        var rows = [[]];
+        for (var i = 0; i < n; i++) {
+          var r = Math.min(R - 1, Math.floor((acc + slots[i] / 2) / chunk));
+          while (rows.length <= r) rows.push([]);
+          rows[r].push(photos[i]);
+          acc += slots[i];
+        }
+
+        rows.forEach(function (row) {
+          var A = row.reduce(function (s, p) { return s + p.ar; }, 0);
+          var h = (avail - gap * (row.length - 1)) / A;
+          var capped = h > targetH * 1.75; /* 极端比例兑底: 单行过高时封顶 */
+          if (capped) h = targetH * 1.75;
+          var sumW = 0;
+          row.forEach(function (p) { sumW += Math.floor(h * p.ar); });
+          row.forEach(function (p, idx) {
+            var t = p.tile;
+            t.style.width = Math.floor(h * p.ar) + "px";
+            t.style.flexGrow = !capped && idx === row.length - 1 ? "1" : "";
+            t.style.marginRight = "";
+            t.style.marginInline = "";
+            var frame = t.firstElementChild;
+            if (frame) frame.style.height = Math.round(h) + "px";
+          });
+          if (capped) {
+            if (row.length === 1) {
+              row[0].tile.style.marginInline = "auto"; /* 单张全景居中 */
+            } else {
+              /* 封顶行剩余宽度均摊进图间距,行仍铺满,观感刻意而非残缺 */
+              var extra = (avail - sumW - gap * (row.length - 1)) / (row.length - 1);
+              row.slice(0, -1).forEach(function (p) {
+                p.tile.style.marginRight = extra + "px";
+              });
+            }
+          }
+        });
+      }
+
+      relayout();
+      if (window.ResizeObserver) {
+        if (wall.__photoRO) wall.__photoRO.disconnect();
+        var ro = new ResizeObserver(function () { relayout(); });
+        ro.observe(wall);
+        wall.__photoRO = ro;
+      } else {
+        window.addEventListener("resize", relayout);
+      }
+    });
+  }
+
   /* ---------- masonry binding ------------------------------------------- */
   function bindPhotoTiles(root) {
     var data = window.PB_DATA;
@@ -761,6 +857,7 @@ window.PC = (function () {
     fav.bind();
     syncAll();
     bindPhotoTiles();
+    layoutPhotoWall();
     revealImages();
     loadFavs();
     watchForNewMedia();
@@ -778,6 +875,7 @@ window.PC = (function () {
       requestAnimationFrame(function () {
         queued = false;
         revealImages();
+        layoutPhotoWall();
         fav.bind();
         syncAll();
         bindPhotoTiles();
@@ -796,6 +894,7 @@ window.PC = (function () {
     fav: fav,
     lightbox: { open: open, close: close },
     bindPhotoTiles: bindPhotoTiles,
+    layoutPhotoWall: layoutPhotoWall,
     revealImages: revealImages,
     escapeHtml: escapeHtml,
     state: state
