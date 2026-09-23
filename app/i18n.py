@@ -326,6 +326,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "zh-CN": "浏览时收藏的内容会显示在这里。",
         "zh-TW": "瀏覽時收藏的內容會顯示在這裡。"},
     "Appearance": {"zh-CN": "外观", "zh-TW": "外觀"},
+    "Avatar": {"zh-CN": "头像", "zh-TW": "頭像"},
+    "Pick a lens emblem for your account. Each one is generated, no upload needed.": {
+        "zh-CN": "为账户挑一枚镜头徽记。每枚都是即时生成, 无需上传。",
+        "zh-TW": "為帳戶挑一枚鏡頭徽記。每枚都是即時生成, 無需上傳。"},
+    "Use this avatar": {"zh-CN": "使用这个头像", "zh-TW": "使用這個頭像"},
     "The archive opens in Gallery (dark) by default. Editorial (light) keeps the interface quiet against white.": {
         "zh-CN": "档案馆默认以画廊(深色)打开。素雅(浅色)在白色背景下更安静。",
         "zh-TW": "檔案館預設以藝廊(深色)開啟。素雅(淺色)在白色背景下更安靜。"},

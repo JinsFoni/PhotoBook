@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from ..auth import require_login
-from ..db import Collection, Favorite, Model, Photo, Tag
-from ..database import get_db
+from ..db import Collection, Favorite, Model, Photo, Tag, User
+from ..database import SessionLocal, get_db
 from ..i18n import t
 from ..templating import templates
 
@@ -236,6 +236,10 @@ async def favorites_page(request: Request, s: Session = Depends(get_db), tab: st
 
 # ---- Profile ----------------------------------------------------------------
 
+# 头像选择器可选项: 用户名本身 + 6 个预设种子(与色板一一对应观感)
+AVATAR_SEEDS = ["lens-brass", "lens-celadon", "lens-violet", "lens-amber", "lens-steel", "lens-crimson"]
+
+
 @router.get("/profile")
 async def profile_page(request: Request, s: Session = Depends(get_db)):
     user = request.state.user
@@ -252,5 +256,25 @@ async def profile_page(request: Request, s: Session = Depends(get_db)):
         "user": user, "page": "profile",
         "counts": {k: len(v) for k, v in favs.items()},
         "recent": recent, "recent_empty": not recent,
+        "avatar_seeds": AVATAR_SEEDS,
         "data_json": json.dumps(payload, ensure_ascii=False),
     })
+
+
+@router.post("/avatar")
+async def set_avatar(request: Request, seed: str = Form(""), next: str = Form("")):
+    """设置头像种子(生成式头像, 无上传)。"""
+    user = request.state.user
+    seed = seed.strip()[:64]
+    s = SessionLocal()
+    try:
+        u = s.get(User, user.id)
+        if u:
+            u.avatar_seed = seed
+            s.commit()
+    finally:
+        s.close()
+    nxt = next or "/profile#settings"
+    if not nxt.startswith("/"):
+        nxt = "/profile#settings"
+    return RedirectResponse(nxt, 303)

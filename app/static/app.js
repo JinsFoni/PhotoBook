@@ -227,8 +227,11 @@ window.PC = (function () {
         '<a class="icon-btn" href="/favorites" aria-label="' + t("Favourites") + '">' + icon("heart") +
         '<span class="icon-btn__dot" data-fav-dot hidden></span></a>' +
         '<button class="icon-btn" type="button" data-theme-toggle aria-label="' + t("Switch theme") + '"></button>' +
-        '<a class="avatar-btn" href="/profile" aria-label="' + t("Your profile") + '"><span class="avatar-btn__initial">' +
-        escapeHtml((ME.name || "?").charAt(0).toUpperCase()) + "</span></a>" +
+        '<a class="avatar-btn" href="/profile" aria-label="' + t("Your profile") + '">' +
+        (ME.avatar
+          ? '<img src="' + ME.avatar + '" alt="" width="30" height="30">'
+          : '<span class="avatar-btn__initial">' + escapeHtml((ME.name || "?").charAt(0).toUpperCase()) + "</span>") +
+        "</a>" +
         "</div></div>";
     }
 

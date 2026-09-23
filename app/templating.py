@@ -32,10 +32,13 @@ def media_orig(rel: str | None) -> str:
 
 def boot_json(request: Request) -> str:
     """chrome 启动上下文:用户、路径、统计、标签、语言(每响应一次轻查询)。"""
+    from .services.avatar import avatar_data_uri
+
     user = getattr(request.state, "user", None)
     lang = getattr(request.state, "lang", None) or i18n.get_language()
     boot: dict = {
-        "user": {"name": user.username if user else "", "role": user.role if user else ""},
+        "user": {"name": user.username if user else "", "role": user.role if user else "",
+                 "avatar": avatar_data_uri(user.avatar_seed or user.username) if user else ""},
         "path": request.url.path,
         "lang": lang,
         "i18n": i18n.js_strings(lang),
@@ -65,6 +68,8 @@ def boot_json(request: Request) -> str:
 
 templates.env.globals["media"] = media_url
 templates.env.globals["media_orig"] = media_orig
+from .services.avatar import avatar_data_uri as _avatar_uri  # noqa: E402
+templates.env.globals["avatar"] = _avatar_uri
 templates.env.globals["app_name"] = "Photo Collection"
 templates.env.globals["boot_json"] = boot_json
 templates.env.globals["t"] = i18n.translate

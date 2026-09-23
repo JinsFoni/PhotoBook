@@ -423,8 +423,20 @@ table { border-collapse: collapse; }
   margin-left: var(--s2);
   overflow: hidden;
   background: var(--paper-3);
+  border-radius: 50%;
+  display: block;
 }
-.avatar-btn img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar-btn__initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
 
 .header__burger { display: none; }
 
@@ -1390,9 +1402,11 @@ table { border-collapse: collapse; }
 .profile-head__avatar {
   width: 132px;
   height: 132px;
-  object-fit: cover;
+  border-radius: 50%;
+  overflow: hidden;
   background: var(--paper-3);
 }
+.profile-head__avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .profile-head__name { font-family: var(--display); font-size: var(--fs-h1); line-height: 1; }
 .profile-head__meta { margin-top: var(--s3); color: var(--ink-3); font-size: var(--fs-meta); }
 @media (max-width: 760px) {
@@ -1455,6 +1469,29 @@ table { border-collapse: collapse; }
 }
 .setting-row__label { font-size: var(--fs-body); }
 .setting-row__desc { font-size: var(--fs-small); color: var(--ink-3); margin-top: 2px; max-width: 46ch; }
+
+/* 头像选择器: 一排圆形徽记, 当前项描边 */
+.avatar-picker {
+  display: flex;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+.avatar-picker__opt {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--paper-3);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+}
+.avatar-picker__opt img { width: 100%; height: 100%; display: block; }
+.avatar-picker__opt:hover { transform: scale(1.06); }
+.avatar-picker__opt--on { outline-color: var(--accent); }
 
 .switch {
   width: 46px;

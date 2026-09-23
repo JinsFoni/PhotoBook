@@ -4,8 +4,8 @@
 {% block main %}
 <div class="wrap">
   <div class="profile-head">
-    <div class="profile-head__avatar" style="background:var(--paper-2);display:flex;align-items:center;justify-content:center">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" style="width:40%;height:40%"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
+    <div class="profile-head__avatar">
+      <img src="{{ avatar(user.avatar_seed or user.username) }}" alt="" width="132" height="132">
     </div>
     <div>
       <h1 class="profile-head__name">{{ user.username }}</h1>
@@ -67,6 +67,24 @@
 
       <section id="settings" style="margin-top:var(--s10)">
         <div class="section-head"><h2 class="section-title">{{ t('Settings') }}</h2></div>
+
+        <div class="setting-row">
+          <div>
+            <p class="setting-row__label">{{ t('Avatar') }}</p>
+            <p class="setting-row__desc">{{ t('Pick a lens emblem for your account. Each one is generated, no upload needed.') }}</p>
+          </div>
+          <form method="post" action="/avatar" class="avatar-picker">
+            <input type="hidden" name="next" value="/profile#settings">
+            {% for seed in avatar_seeds %}
+            <button type="submit" name="seed" value="{{ seed }}"
+                    class="avatar-picker__opt{% if (user.avatar_seed or user.username) == seed %} avatar-picker__opt--on{% endif %}"
+                    aria-label="{{ t('Use this avatar') }}: {{ seed }}"
+                    {% if (user.avatar_seed or user.username) == seed %}aria-pressed="true"{% endif %}>
+              <img src="{{ avatar(seed) }}" alt="" width="48" height="48" loading="lazy">
+            </button>
+            {% endfor %}
+          </form>
+        </div>
 
         <div class="setting-row">
           <div>
