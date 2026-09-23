@@ -823,7 +823,7 @@ table { border-collapse: collapse; }
   display: grid;
   gap: var(--gutter) var(--gutter);
 }
-.grid--models { grid-template-columns: repeat(4, 1fr); }
+.grid--models { grid-template-columns: repeat(5, 1fr); }
 .grid--models-5 { grid-template-columns: repeat(5, 1fr); }
 .grid--collections { grid-template-columns: repeat(3, 1fr); }
 .grid--photos { grid-template-columns: repeat(4, 1fr); }
@@ -863,7 +863,16 @@ table { border-collapse: collapse; }
   gap: 14px;
 }
 .masonry--photos > * { margin-bottom: 0; }
-.masonry--collections { column-count: 4; }
+/* 写真集卡片: 全部统一 3:4 封面, 用 grid 行优先排列(01→02→03 横向走),
+   行行对齐; 同步覆盖 favorites 收藏 tab 与 model 页相关写真集。 */
+.masonry--collections {
+  column-count: auto;
+  column-gap: normal;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--gutter);
+}
+.masonry--collections > * { margin-bottom: 0; }
 
 @media (max-width: 1180px) {
   .grid--models { grid-template-columns: repeat(3, 1fr); }
@@ -871,7 +880,7 @@ table { border-collapse: collapse; }
   .grid--collections { grid-template-columns: repeat(2, 1fr); }
   .grid--photos { grid-template-columns: repeat(3, 1fr); }
   .masonry { column-count: 3; }
-  .masonry--collections { column-count: 3; }
+  .masonry--collections { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 760px) {
   .grid--models,
@@ -881,7 +890,7 @@ table { border-collapse: collapse; }
   .grid--2,
   .grid--3 { grid-template-columns: 1fr; }
   .masonry { column-count: 2; }
-  .masonry--collections { column-count: 2; }
+  .masonry--collections { grid-template-columns: repeat(2, 1fr); }
 
   .grid--editorial { grid-template-columns: repeat(2, 1fr); gap: var(--s5) var(--gutter); }
   .span-4,
