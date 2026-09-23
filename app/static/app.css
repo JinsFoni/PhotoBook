@@ -28,7 +28,10 @@
   --lightbox-bg: rgba(250, 250, 249, 0.97);
 
   /* type */
-  --display: "Bodoni Moda", "Times New Roman", serif;
+  /* 标题: EB Garamond 西文书卷气衬线 + 霞鹜文楷屏显版 (楷体,
+     基于 Klee One, 汉字/假名同源风格统一, 自带拉丁字重可兑底)
+     — 文艺书卷风 (原 Bodoni Moda 不覆盖 CJK, 汉字走系统回退) */
+  --display: "EB Garamond", "LXGW WenKai Screen", "Times New Roman", serif;
   --ui: "Archivo", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
 
   --fs-micro: 11px;
@@ -987,7 +990,7 @@ table { border-collapse: collapse; }
   position: relative;
   background: var(--void);
   overflow: hidden;
-  height: clamp(420px, 78vh, 860px);
+  height: clamp(480px, 86vh, 960px);
 }
 .hero__stage { position: absolute; inset: 0; }
 
@@ -1106,7 +1109,6 @@ table { border-collapse: collapse; }
 
 /* the contact sheet — the page's one bold move */
 .sheet {
-  border-bottom: 1px solid var(--line);
   background: var(--paper);
 }
 .sheet__strip {
@@ -1139,19 +1141,6 @@ table { border-collapse: collapse; }
 }
 .sheet__frame:hover img { opacity: 0.86; transform: scale(1.05); }
 .sheet__frame[aria-current="true"] img { opacity: 1; }
-.sheet__frame::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: var(--accent);
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform var(--t-ui) var(--ease);
-}
-.sheet__frame[aria-current="true"]::after { transform: scaleX(1); }
 
 @keyframes sheet-in {
   to { opacity: 1; transform: none; }
