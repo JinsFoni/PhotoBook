@@ -447,16 +447,22 @@ window.PC = (function () {
     el.querySelector("[data-lb-prev]").addEventListener("click", function () { go(-1); });
     el.querySelector("[data-lb-next]").addEventListener("click", function () { go(1); });
     el.querySelector("[data-lb-img]").addEventListener("click", toggleZoom);
-    el.addEventListener("click", function (e) { if (e.target === el) close(); });
+    /* 点击背景空白关闭;拖拽后释放的 click 不算(dragMoved 守卫) */
+    el.addEventListener("click", function (e) { if (e.target === el && !lb.dragMoved) close(); });
 
-    /* 放大后按住左键拖拽平移(transform);未放大不拦截,
-       点击与拖拽靠移动阈值区分,拖后释放的 click 不触发缩放切换 */
-    var stage = el.querySelector(".lightbox__stage");
+    /* 放大后按住左键拖拽平移(transform);未放大不拦截。
+       监听挂在整个 lightbox 上: 竖图放大后图片下部会溢出 stage、
+       被 foot 栏盖住, 只监听 stage 时那部分图拖不动。
+       点击与拖拽靠移动阈值区分, 拖后释放的 click 不触发缩放/关闭 */
     var onDragMove = function (e) {
       if (!lb.dragging || !lb.zoom) return;
       var b = panBounds();
-      lb.pan.x = Math.min(b.x, Math.max(-b.x, lb.tstart.px + e.clientX - lb.tstart.x));
-      lb.pan.y = Math.min(b.y, Math.max(-b.y, lb.tstart.py + e.clientY - lb.tstart.y));
+      var nx = lb.tstart.px + e.clientX - lb.tstart.x;
+      var ny = lb.tstart.py + e.clientY - lb.tstart.y;
+      /* 图随鼠标(grab 隐喻): y 上移(ny<0)受底部溢出量限制, 下移受顶部;
+         x 同理。图完全在 stage 内时四向全 0, 居中锁死。 */
+      lb.pan.x = nx > 0 ? Math.min(b.left, nx) : Math.max(-b.right, nx);
+      lb.pan.y = ny > 0 ? Math.min(b.up, ny) : Math.max(-b.down, ny);
       lb.dragMoved = true;
       lb.el.querySelector("[data-lb-img]").style.transform =
         "translate(" + lb.pan.x + "px," + lb.pan.y + "px)";
@@ -464,16 +470,16 @@ window.PC = (function () {
     var onDragEnd = function () {
       if (!lb.dragging) return;
       lb.dragging = false;
-      stage.style.cursor = "";
+      el.removeAttribute("data-dragging");
       /* click 事件在 mouseup 后触发;延后一拍清标志,让该次 click 被忽略 */
       setTimeout(function () { lb.dragMoved = false; }, 0);
     };
-    stage.addEventListener("mousedown", function (e) {
+    el.addEventListener("mousedown", function (e) {
       if (!lb.zoom || e.button !== 0 || e.target.closest("button, a")) return;
       lb.dragging = true;
       lb.dragMoved = false;
       lb.tstart = { x: e.clientX, y: e.clientY, px: lb.pan.x, py: lb.pan.y };
-      stage.style.cursor = "grabbing";
+      el.setAttribute("data-dragging", "true");
       e.preventDefault();
     });
     window.addEventListener("mousemove", onDragMove);
@@ -570,14 +576,22 @@ window.PC = (function () {
     else { full.onload = swap; }
   }
 
-  /* 平移边界:图超出 stage 的部分的一半(网格居中,transform 从中心偏移);
-     图没超出则锁 0。避免把图拖飞 */
+  /* 平移边界: 竖图放大后顶部贴 stage 顶、底部向下溢出(上下不对称);
+     横图放大后居中双向溢出。用当前 rect 减去已应用的 pan 还原基准位置
+     (拖拽中 transform 无过渡, rect 无滞后)。图没超出则锁 0。 */
   function panBounds() {
     var img = lb.el.querySelector("[data-lb-img]");
     var st = lb.el.querySelector(".lightbox__stage");
+    var stR = st.getBoundingClientRect();
+    var r = img.getBoundingClientRect();
+    var pan = lb.pan || { x: 0, y: 0 };
+    var baseTop = r.top - pan.y, baseBottom = r.bottom - pan.y;
+    var baseLeft = r.left - pan.x, baseRight = r.right - pan.x;
     return {
-      x: Math.max(0, (img.offsetWidth - st.clientWidth) / 2),
-      y: Math.max(0, (img.offsetHeight - st.clientHeight) / 2),
+      up: Math.max(0, stR.top - baseTop),         /* 图下移极限(顶部溢出量) */
+      down: Math.max(0, baseBottom - stR.bottom), /* 图上移极限(底部溢出量) */
+      left: Math.max(0, stR.left - baseLeft),      /* 图右移极限(左侧溢出量) */
+      right: Math.max(0, baseRight - stR.right),   /* 图左移极限(右侧溢出量) */
     };
   }
 
@@ -600,9 +614,10 @@ window.PC = (function () {
     var img = lb.el.querySelector("[data-lb-img]");
     if (lb.zoom) { zoomOff(img); return; }
     lb.zoom = true;
-    var r = img.getBoundingClientRect(); /* fit 显示尺寸 */
-    img.style.width = Math.round(r.width * LB_ZOOM) + "px";
-    img.style.height = Math.round(r.height * LB_ZOOM) + "px";
+    /* offsetWidth/H: transform 不影响它们; getBoundingClientRect 会把
+       入场 scale(0.985) 过渡中的中间值算进基准, 导致放大尺寸偏小 */
+    img.style.width = Math.round(img.offsetWidth * LB_ZOOM) + "px";
+    img.style.height = Math.round(img.offsetHeight * LB_ZOOM) + "px";
     img.dataset.zoomed = "true";
     img.style.cursor = "grab";
     lb.el.dataset.zoom = "true";

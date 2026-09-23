@@ -1603,7 +1603,10 @@ table { border-collapse: collapse; }
 .lightbox__img[data-ready="true"] { opacity: 1; transform: none; }
 .lightbox__img[data-zoomed="true"] { max-width: none; max-height: none; cursor: grab; }
 .lightbox[data-zoom="true"] .lightbox__stage { cursor: grab; user-select: none; }
-.lightbox[data-zoom="true"] .lightbox__img { position: static; }
+.lightbox[data-zoom="true"] .lightbox__img { position: static; transition: opacity 300ms var(--ease); } /* 拖拽平移不能带过渡, 否则图黏滞滞后于鼠标 */
+/* 拖拽中: 整个灯箱握住光标, 不随移出 stage 变回箭头 */
+.lightbox[data-dragging="true"],
+.lightbox[data-dragging="true"] * { cursor: grabbing !important; user-select: none; }
 
 /* 放大平移:内联 width/height = fit×1.5,拖拽写内联 transform(边界钳制在 JS);
    拖拽中禁止选中/原生图片拖拽,避免松手后黏着选区 */
