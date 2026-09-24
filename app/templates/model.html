@@ -73,7 +73,8 @@
     '<span data-fav-label>' + PC.t("Save") + '</span></button>';
 
   var bio = m.bio || "";
-  var sentences = bio.split(/(?<=\.)\s+/);
+  /* 首句作 lede: 中文句号直接断句, 西文按句号+空白断句(标题内的 !? 不切) */
+  var sentences = bio.split(/(?<=[。])\s*|(?<=\.)\s+/);
   document.querySelector("[data-lede]").textContent = sentences[0] || "";
   document.querySelector("[data-bio]").textContent = sentences.slice(1).join(" ") || bio;
 
