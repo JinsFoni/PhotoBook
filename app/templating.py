@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
@@ -11,6 +12,10 @@ from starlette.requests import Request
 from . import i18n
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+# 静态资产版本号: 每次启动取文件修改时间, 避免浏览器缓存旧 JS/CSS
+ASSET_VER = str(int(max((TEMPLATES_DIR.parent / "static" / f).stat().st_mtime
+                        for f in ("app.css", "app.js"))))
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
@@ -110,7 +115,9 @@ def _blur_src(request: Request) -> str | None:
             s.close()
         if rel:
             from .config import settings as _settings
-            return "/t/2400/" + rel.lstrip("/") + ".webp"
+            # 垫底图层重度模糊(46px), 900px 档足够; 2400px 预载太慢,
+            # 点击切虚化后要黑好几秒
+            return "/t/900/" + rel.lstrip("/") + ".webp"
     except Exception:
         pass
     return None
@@ -122,6 +129,7 @@ from .services.avatar import avatar_data_uri as _avatar_uri  # noqa: E402
 templates.env.globals["avatar"] = _avatar_uri
 templates.env.globals["app_name"] = "Photo Collection"
 templates.env.globals["boot_json"] = boot_json
+templates.env.globals["asset_ver"] = ASSET_VER
 templates.env.globals["t"] = i18n.translate
 templates.env.globals["lang"] = i18n.get_language
 templates.env.globals["LANGUAGES"] = i18n.LANGUAGES

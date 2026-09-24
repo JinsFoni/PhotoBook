@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600&family=EB+Garamond:ital,wght@0,400..700;1,400..600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-screen-webfont@1.7.0/style.css">
-<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/app.css?v={{ asset_ver }}">
 </head>
 <body data-page="{{ page }}">
 <div class="page-blur" data-page-blur data-on="false" aria-hidden="true"></div>
@@ -19,7 +19,7 @@
 {% block body %}{% endblock %}
 <script>window.PB_DATA = {{ data_json | default('{}') | safe }};
 window.PB_BOOT = {{ boot_json(request) | safe }};</script>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v={{ asset_ver }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

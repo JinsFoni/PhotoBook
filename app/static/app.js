@@ -62,14 +62,13 @@ window.PC = (function () {
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", state.theme === "light" ? "#ffffff" : "#0c0d0f");
     document.querySelectorAll("[data-theme-toggle]").forEach(function (b) {
-      /* 顶栏钮只在黑/白之间切换; 虚化模式只在设置页选择 */
-      if (state.theme === "blur") {
-        b.innerHTML = icon("blur");
-        b.setAttribute("aria-label", t("Switch to dark theme"));
-      } else {
-        b.innerHTML = icon(state.theme === "dark" ? "sun" : "moon");
-        b.setAttribute("aria-label", state.theme === "dark" ? t("Switch to light theme") : t("Switch to dark theme"));
-      }
+      /* 顶栏钮三态循环: 黑→白→虚化; 设置页三段选择器同步 */
+      var next = THEMES[(THEMES.indexOf(state.theme) + 1) % THEMES.length];
+      b.innerHTML = icon(state.theme === "blur" ? "blur" : state.theme === "dark" ? "sun" : "moon");
+      b.setAttribute("aria-label",
+        next === "dark" ? t("Switch to dark theme")
+        : next === "light" ? t("Switch to light theme")
+        : t("Switch to blur theme"));
     });
     var sw = document.querySelector("[data-theme-switch]");
     if (sw) {
@@ -91,33 +90,70 @@ window.PC = (function () {
     state.theme = v;
     try { localStorage.setItem(THEME_KEY, v); } catch (e) {}
     applyTheme();
+    renderBlurLayer();
     document.dispatchEvent(new CustomEvent("pc:theme"));
   }
 
   function toggleTheme() {
-    /* 顶栏钮: 黑⇆白直达; 虚化态下点击回深色 */
-    setTheme(state.theme === "dark" ? "light" : "dark");
+    /* 顶栏钮: 三态循环 黑→白→虚化→黑 */
+    setTheme(THEMES[(THEMES.indexOf(state.theme) + 1) % THEMES.length]);
   }
 
   /* ---------- 虚化垫底层(blur 主题) -----------------------------------
      整页背后垫一张放大模糊压暗的封面图(复用首页 hero__bg 配方):
      模特主页用头像, 写真详情用第一张图, 其他页面用首页精选封面。
      图源由服务端 boot_json.blur_src 按路径注入, 跨页导航自动更新。 */
+  /* 预载缓存: 记录当前垫底图的就绪状态 */
+  var preload = { src: "", ok: false };
+
   function renderBlurLayer() {
     var el = document.querySelector("[data-page-blur]");
     if (!el) return;
     var src = BOOT.blur_src || "";
-    var on = state.theme === "blur" && src;
-    el.dataset.on = on ? "true" : "false";
-    if (on && el.getAttribute("data-src") !== src) {
-      el.setAttribute("data-src", src);
+    /* 页面一打开就预载垫底图(不蜜主题是什么),
+       等用户点切到虚化时图已在缓存, 点击即显不用等 */
+    if (src && preload.src !== src) {
+      preload.src = src;
+      preload.ok = false;
       var img = new Image();
       img.onload = function () {
-        if (el.getAttribute("data-src") === src) el.style.backgroundImage = 'url("' + src + '")';
+        if (preload.src !== src) return;
+        preload.ok = true;
+        if (state.theme === "blur") renderBlurLayer();
       };
-      img.src = src; /* 预载完成后上墙, 避免半张模糊图闪现 */
+      img.onerror = function () { if (preload.src === src) preload.ok = true; };
+      img.src = src;
     }
-    if (!on) el.style.backgroundImage = "";
+    var on = state.theme === "blur" && src;
+    el.dataset.on = on ? "true" : "false";
+    if (!on) {
+      /* 切出虚化: 把图摘下来, 回来时才走完整上墙路径 */
+      el.removeAttribute("data-ready");
+      var old = el.querySelector("img");
+      if (old) old.remove();
+      return;
+    }
+    if (!el.querySelector("img")) {
+      var im = document.createElement("img");
+      im.alt = "";
+      if (preload.ok && preload.src === src) {
+        im.src = src; /* 预载已完成, 直接上墙淡入 */
+        el.appendChild(im);
+        el.setAttribute("data-ready", "true");
+      } else {
+        /* 图未就绪: 挂上元素等 onload; 3 秒兑底强制显示,
+           避免黑屏等太久(正常路径下预载早已完成) */
+        im.onload = function () {
+          if (im.parentNode === el) el.setAttribute("data-ready", "true");
+        };
+        im.src = src;
+        el.appendChild(im);
+        clearTimeout(renderBlurLayer._t);
+        renderBlurLayer._t = setTimeout(function () {
+          if (im.parentNode === el) el.setAttribute("data-ready", "true");
+        }, 3000);
+      }
+    }
   }
 
   /* ---------- favourites(服务端)------------------------------------------ */

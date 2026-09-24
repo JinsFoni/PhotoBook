@@ -140,22 +140,33 @@ html {
   scroll-behavior: smooth;
 }
 
-/* 虚化垫底层(blur 主题): 固定在视口最底层, 垫一张放大模糊压暗的封面图
-   (复用首页 hero__bg 配方), 上面再压一层深色渐变保证前景可读 */
+/* 虚化垫底层(blur 主题): 固定在视口最底层。
+   底色由 html[data-theme=blur] 提供(深墨, 点击立即落底可读);
+   真实 <img> 承载虚化图(浏览器原生加载/缓存, 无 CSS 变量兼容问题),
+   预载完成(data-ready)后 620ms 淡入; ::after 深色纱保证前景对比 */
+html[data-theme="blur"] { background: #101114; }
 .page-blur {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background-size: cover;
-  background-position: center;
-  filter: blur(46px) saturate(1.12);
-  transform: scale(1.12);
   opacity: 0;
   visibility: hidden;
   transition: opacity 620ms var(--ease), visibility 620ms;
   pointer-events: none;
 }
 .page-blur[data-on="true"] { opacity: 1; visibility: visible; }
+.page-blur img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(46px) saturate(1.12);
+  transform: scale(1.12);
+  opacity: 0;
+  transition: opacity 620ms var(--ease);
+}
+.page-blur[data-ready="true"] img { opacity: 1; }
 .page-blur::after {
   content: "";
   position: absolute;
