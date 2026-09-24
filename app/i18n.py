@@ -121,6 +121,8 @@ STRINGS: dict[str, dict[str, str]] = {
     # ---- 主题(app.js / profile)-------------------------------------------
     "Switch to light theme": {"zh-CN": "切换到浅色主题", "zh-TW": "切換至淺色主題"},
     "Switch to dark theme": {"zh-CN": "切换到深色主题", "zh-TW": "切換至深色主題"},
+    "Switch to blur theme": {"zh-CN": "切换到虚化主题", "zh-TW": "切換至虛化主題"},
+    "Blur (cover)": {"zh-CN": "虚化(垫底)", "zh-TW": "虛化(墊底)"},
     "Switch theme": {"zh-CN": "切换主题", "zh-TW": "切換主題"},
     "Dark theme": {"zh-CN": "深色主题", "zh-TW": "深色主題"},
     "Gallery (dark)": {"zh-CN": "画廊(深色)", "zh-TW": "藝廊(深色)"},
@@ -334,6 +336,9 @@ STRINGS: dict[str, dict[str, str]] = {
     "The archive opens in Gallery (dark) by default. Editorial (light) keeps the interface quiet against white.": {
         "zh-CN": "档案馆默认以画廊(深色)打开。素雅(浅色)在白色背景下更安静。",
         "zh-TW": "檔案館預設以藝廊(深色)開啟。素雅(淺色)在白色背景下更安靜。"},
+    "Three background modes: Gallery (dark), Editorial (light), Blur (cover) - a soft blurred cover image behind the whole page.": {
+        "zh-CN": "三种背景模式:画廊(深色)、素雅(浅色)、虚化(垫底)——整页背后垫一张柔和虚化的封面图。",
+        "zh-TW": "三種背景模式:藝廊(深色)、素雅(淺色)、虛化(墊底)——整頁背後熱一張柔和虛化的封面圖。"},
     "Language": {"zh-CN": "语言", "zh-TW": "語言"},
     "Interface language. Choice is saved to your account and takes effect at once.": {
         "zh-CN": "界面显示语言。选择会保存到账户并立即生效。",

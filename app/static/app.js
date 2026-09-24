@@ -36,7 +36,8 @@ window.PC = (function () {
     plus: '<path d="M12 5v14M5 12h14"/>',
     grid: '<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>',
     user: '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
-    logout: '<path d="M9 4H5v16h4M14 8l4 4-4 4M18 12H9"/>'
+    logout: '<path d="M9 4H5v16h4M14 8l4 4-4 4M18 12H9"/>',
+    blur: '<circle cx="12" cy="12" r="4.2"/><path d="M12 3.2v2.2M12 18.6v2.2M3.2 12h2.2M18.6 12h2.2M5.8 5.8l1.6 1.6M16.6 16.6l1.6 1.6M18.2 5.8l-1.6 1.6M7.4 16.6l-1.6 1.6" stroke-dasharray="1.5 2.4"/>'
   };
 
   function icon(name, cls) {
@@ -45,37 +46,78 @@ window.PC = (function () {
       (cls ? ' class="' + cls + '"' : '') + '>' + (ICONS[name] || "") + "</svg>";
   }
 
-  /* ---------- theme(本地偏好)-------------------------------------------- */
+  /* ---------- theme(本地偏好): dark / light / blur 三态循环 ------------- */
   var THEME_KEY = "pc.theme.v1";
+  var THEMES = ["dark", "light", "blur"];
   var state = { theme: "dark", favs: { model: [], collection: [], photo: [] } };
 
   try {
     var saved = localStorage.getItem(THEME_KEY);
-    if (saved === "light" || saved === "dark") state.theme = saved;
+    if (THEMES.indexOf(saved) !== -1) state.theme = saved;
     else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) state.theme = "light";
   } catch (e) { /* storage unavailable */ }
 
   function applyTheme() {
     document.documentElement.setAttribute("data-theme", state.theme);
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", state.theme === "dark" ? "#0c0d0f" : "#ffffff");
+    if (meta) meta.setAttribute("content", state.theme === "light" ? "#ffffff" : "#0c0d0f");
     document.querySelectorAll("[data-theme-toggle]").forEach(function (b) {
-      b.innerHTML = icon(state.theme === "dark" ? "sun" : "moon");
-      b.setAttribute("aria-label", state.theme === "dark" ? t("Switch to light theme") : t("Switch to dark theme"));
+      /* 顶栏钮只在黑/白之间切换; 虚化模式只在设置页选择 */
+      if (state.theme === "blur") {
+        b.innerHTML = icon("blur");
+        b.setAttribute("aria-label", t("Switch to dark theme"));
+      } else {
+        b.innerHTML = icon(state.theme === "dark" ? "sun" : "moon");
+        b.setAttribute("aria-label", state.theme === "dark" ? t("Switch to light theme") : t("Switch to dark theme"));
+      }
     });
     var sw = document.querySelector("[data-theme-switch]");
     if (sw) {
       sw.setAttribute("aria-checked", state.theme === "dark" ? "true" : "false");
       var lbl = document.querySelector("[data-theme-label]");
-      if (lbl) lbl.textContent = state.theme === "dark" ? t("Gallery (dark)") : t("Editorial (light)");
+      if (lbl) lbl.textContent = state.theme === "dark" ? t("Gallery (dark)")
+        : state.theme === "light" ? t("Editorial (light)") : t("Blur (cover)");
+    }
+    var seg = document.querySelector("[data-theme-seg]");
+    if (seg) {
+      seg.querySelectorAll("[data-theme-opt]").forEach(function (o) {
+        o.setAttribute("aria-pressed", o.getAttribute("data-theme-opt") === state.theme ? "true" : "false");
+      });
     }
   }
 
-  function toggleTheme() {
-    state.theme = state.theme === "dark" ? "light" : "dark";
-    try { localStorage.setItem(THEME_KEY, state.theme); } catch (e) {}
+  function setTheme(v) {
+    if (THEMES.indexOf(v) === -1 || v === state.theme) return;
+    state.theme = v;
+    try { localStorage.setItem(THEME_KEY, v); } catch (e) {}
     applyTheme();
     document.dispatchEvent(new CustomEvent("pc:theme"));
+  }
+
+  function toggleTheme() {
+    /* 顶栏钮: 黑⇆白直达; 虚化态下点击回深色 */
+    setTheme(state.theme === "dark" ? "light" : "dark");
+  }
+
+  /* ---------- 虚化垫底层(blur 主题) -----------------------------------
+     整页背后垫一张放大模糊压暗的封面图(复用首页 hero__bg 配方):
+     模特主页用头像, 写真详情用第一张图, 其他页面用首页精选封面。
+     图源由服务端 boot_json.blur_src 按路径注入, 跨页导航自动更新。 */
+  function renderBlurLayer() {
+    var el = document.querySelector("[data-page-blur]");
+    if (!el) return;
+    var src = BOOT.blur_src || "";
+    var on = state.theme === "blur" && src;
+    el.dataset.on = on ? "true" : "false";
+    if (on && el.getAttribute("data-src") !== src) {
+      el.setAttribute("data-src", src);
+      var img = new Image();
+      img.onload = function () {
+        if (el.getAttribute("data-src") === src) el.style.backgroundImage = 'url("' + src + '")';
+      };
+      img.src = src; /* 预载完成后上墙, 避免半张模糊图闪现 */
+    }
+    if (!on) el.style.backgroundImage = "";
   }
 
   /* ---------- favourites(服务端)------------------------------------------ */
@@ -804,6 +846,8 @@ window.PC = (function () {
     document.addEventListener("click", function (e) {
       var t = e.target;
       if (t.closest("[data-theme-toggle]")) { toggleTheme(); return; }
+      var topt = t.closest("[data-theme-opt]");
+      if (topt) { setTheme(topt.getAttribute("data-theme-opt")); return; }
       if (t.closest("[data-theme-switch]")) { toggleTheme(); return; }
       if (t.closest("[data-search-open]")) { closeDrawer(); openSearch(); return; }
       if (t.closest("[data-search-close]")) { closeSearch(); return; }
@@ -871,6 +915,7 @@ window.PC = (function () {
     applyTheme();
     renderChrome();
     applyTheme(); /* theme buttons live in chrome */
+    renderBlurLayer();
     bindChrome();
     fav.bind();
     syncAll();
@@ -897,6 +942,7 @@ window.PC = (function () {
         fav.bind();
         syncAll();
         bindPhotoTiles();
+        renderBlurLayer(); /* 设置页选择器等新节点可能带主题钮 */
       });
     });
     mo.observe(document.body, { childList: true, subtree: true });
@@ -915,6 +961,7 @@ window.PC = (function () {
     layoutPhotoWall: layoutPhotoWall,
     revealImages: revealImages,
     escapeHtml: escapeHtml,
+    setTheme: setTheme,
     state: state
   };
 })();

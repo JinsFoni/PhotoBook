@@ -89,11 +89,12 @@
         <div class="setting-row">
           <div>
             <p class="setting-row__label">{{ t('Appearance') }}</p>
-            <p class="setting-row__desc">{{ t('The archive opens in Gallery (dark) by default. Editorial (light) keeps the interface quiet against white.') }}</p>
+            <p class="setting-row__desc">{{ t('Three background modes: Gallery (dark), Editorial (light), Blur (cover) - a soft blurred cover image behind the whole page.') }}</p>
           </div>
-          <div style="display:flex;gap:var(--s3);align-items:center">
-            <span class="t-small" data-theme-label></span>
-            <button class="switch" type="button" role="switch" aria-checked="true" data-theme-switch aria-label="{{ t('Dark theme') }}"></button>
+          <div class="lang-switch" role="group" aria-label="{{ t('Appearance') }}" data-theme-seg>
+            <button class="lang-switch__opt" type="button" data-theme-opt="dark" aria-pressed="true">{{ t('Gallery (dark)') }}</button>
+            <button class="lang-switch__opt" type="button" data-theme-opt="light" aria-pressed="false">{{ t('Editorial (light)') }}</button>
+            <button class="lang-switch__opt" type="button" data-theme-opt="blur" aria-pressed="false">{{ t('Blur (cover)') }}</button>
           </div>
         </div>
 

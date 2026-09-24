@@ -31,7 +31,7 @@ def media_orig(rel: str | None) -> str:
 
 
 def boot_json(request: Request) -> str:
-    """chrome 启动上下文:用户、路径、统计、标签、语言(每响应一次轻查询)。"""
+    """chrome 启动上下文:用户、路径、统计、标签、语言、虚化背景图源(每响应一次轻查询)。"""
     from .services.avatar import avatar_data_uri
 
     user = getattr(request.state, "user", None)
@@ -45,6 +45,7 @@ def boot_json(request: Request) -> str:
         "stats": {"collections": None, "models": None},
         "tags": [],
         "suggestions": ["Editorial", "Studio", "Outdoor", "Monochrome"],
+        "blur_src": _blur_src(request),
     }
     try:
         from sqlalchemy import func, select
@@ -64,6 +65,55 @@ def boot_json(request: Request) -> str:
     except Exception:
         pass
     return json.dumps(boot, ensure_ascii=False)
+
+
+def _blur_src(request: Request) -> str | None:
+    """虚化主题的垫底图源:模特主页用头像, 写真详情用第一张图,
+    其他页面用首页精选轮播的封面(整条查询链都挑不到则返回 None)。"""
+    path = request.url.path
+    try:
+        from sqlalchemy import select
+
+        from .database import SessionLocal
+        from .db import Collection, Model
+
+        rel: str | None = None
+        s = SessionLocal()
+        try:
+            if path.startswith("/models/"):
+                slug = path.split("/")[2] if len(path.split("/")) > 2 else ""
+                m = s.scalar(select(Model).where(Model.slug == slug))
+                if m:
+                    rel = m.avatar_path
+                    if not rel:
+                        for c in m.collections:
+                            if c.status == "published" and c.photos:
+                                rel = c.photos[0].filename
+                                break
+            elif path.startswith("/collections/"):
+                slug = path.split("/")[2] if len(path.split("/")) > 2 else ""
+                c = s.scalar(select(Collection).where(Collection.slug == slug))
+                if c and c.photos:
+                    rel = c.photos[0].filename
+            if not rel:
+                c = s.scalar(
+                    select(Collection).where(Collection.status == "published",
+                                             Collection.featured == True)  # noqa: E712
+                    .order_by(Collection.published_at.desc()))
+                if not c:
+                    c = s.scalar(
+                        select(Collection).where(Collection.status == "published")
+                        .order_by(Collection.published_at.desc()))
+                if c and c.photos:
+                    rel = c.photos[0].filename
+        finally:
+            s.close()
+        if rel:
+            from .config import settings as _settings
+            return "/t/2400/" + rel.lstrip("/") + ".webp"
+    except Exception:
+        pass
+    return None
 
 
 templates.env.globals["media"] = media_url

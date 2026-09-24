@@ -27,6 +27,12 @@
   --overlay-ink: #ffffff;
   --lightbox-bg: rgba(250, 250, 249, 0.97);
 
+  /* 按钜/选中态等“墨底字”用纸色作字色;虚化态纸底透明,
+     这些地方改用固定深墨, 避免透明背景上字隐形 */
+  --paper-ink: #0c0d0f;
+  /* 全屏浮层(搜索/抽屉等)用不透明底, 虚化态下也保证可读 */
+  --panel-solid: #ffffff;
+
   /* type */
   /* 标题: EB Garamond 西文书卷气衬线 + 霞鹜文楷屏显版 (楷体,
      基于 Klee One, 汉字/假名同源风格统一, 自带拉丁字重可兑底)
@@ -90,6 +96,28 @@
   --void: #17191c;
   --scrim: rgba(12, 13, 15, 0.9);
   --lightbox-bg: rgba(8, 9, 10, 0.98);
+  --paper-ink: #0c0d0f;
+  --panel-solid: #0c0d0f;
+}
+
+/* blur 主题: 深色基调不变, 页面面板半透明化让虚化垫底透出。
+   阅读对比度靠 --ink 不变保证 */
+[data-theme="blur"] {
+  --paper: transparent;
+  --paper-2: rgba(12, 13, 15, 0.72);
+  --paper-3: rgba(22, 24, 27, 0.72);
+  --ink: #f7f7f5;
+  --ink-2: #b3b6bb;
+  --ink-3: #7d8186;
+  --line: rgba(255, 255, 255, 0.14);
+  --line-2: rgba(255, 255, 255, 0.22);
+  --accent: #e0455a;
+  --accent-ink: #ffffff;
+  --void: rgba(23, 25, 28, 0.72);
+  --scrim: rgba(12, 13, 15, 0.82);
+  --lightbox-bg: rgba(8, 9, 10, 0.98);
+  --paper-ink: #0c0d0f;
+  --panel-solid: #101114;
 }
 
 @media (max-width: 1180px) {
@@ -112,10 +140,32 @@ html {
   scroll-behavior: smooth;
 }
 
+/* 虚化垫底层(blur 主题): 固定在视口最底层, 垫一张放大模糊压暗的封面图
+   (复用首页 hero__bg 配方), 上面再压一层深色渐变保证前景可读 */
+.page-blur {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  filter: blur(46px) saturate(1.12);
+  transform: scale(1.12);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 620ms var(--ease), visibility 620ms;
+  pointer-events: none;
+}
+.page-blur[data-on="true"] { opacity: 1; visibility: visible; }
+.page-blur::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(8, 9, 10, 0.78), rgba(8, 9, 10, 0.66));
+}
+
 body {
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--ui);
   font-size: var(--fs-body);
   font-weight: 400;
   line-height: var(--lh-body);
@@ -169,7 +219,7 @@ table { border-collapse: collapse; }
   left: -9999px;
   top: 0;
   z-index: 200;
-  background: var(--paper);
+  background: var(--panel-solid);
   padding: var(--s3) var(--s5);
   border: 1px solid var(--line-2);
   font-size: var(--fs-meta);
@@ -446,7 +496,7 @@ table { border-collapse: collapse; }
   position: fixed;
   inset: 0;
   z-index: 90;
-  background: var(--paper);
+  background: var(--panel-solid);
   display: flex;
   flex-direction: column;
   padding: var(--s5) var(--pad) var(--s7);
@@ -491,7 +541,7 @@ table { border-collapse: collapse; }
   position: fixed;
   inset: 0;
   z-index: 95;
-  background: var(--paper);
+  background: var(--panel-solid);
   overflow-y: auto;
   opacity: 0;
   visibility: hidden;
@@ -503,7 +553,7 @@ table { border-collapse: collapse; }
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  background: var(--paper);
+  background: var(--panel-solid);
   z-index: 2;
 }
 .search__bar-inner {
@@ -572,7 +622,7 @@ table { border-collapse: collapse; }
   padding-inline: var(--s5);
   border: 1px solid var(--ink);
   background: var(--ink);
-  color: var(--paper);
+  color: var(--paper-ink);
   font-size: var(--fs-small);
   letter-spacing: var(--track-nav);
   text-transform: uppercase;
@@ -653,7 +703,7 @@ table { border-collapse: collapse; }
 .chip[aria-pressed="true"] {
   background: var(--ink);
   border-color: var(--ink);
-  color: var(--paper);
+  color: var(--paper-ink);
 }
 .chip-row {
   display: flex;
@@ -1519,7 +1569,7 @@ table { border-collapse: collapse; }
 }
 .lang-switch__opt:first-child { border-left: 0; }
 .lang-switch__opt:hover { color: var(--ink); background: var(--paper-3); }
-.lang-switch__opt--on { color: var(--paper); background: var(--ink); }
+.lang-switch__opt--on { color: var(--paper-ink); background: var(--ink); }
 .lang-switch--login { margin-top: var(--s6); align-self: flex-start; }
 
 /* ---------- 18. Lightbox ------------------------------------------------ */
@@ -1698,7 +1748,7 @@ table { border-collapse: collapse; }
   bottom: var(--s6);
   z-index: 130;
   background: var(--ink);
-  color: var(--paper);
+  color: var(--paper-ink);
   padding: var(--s3) var(--s5);
   font-size: var(--fs-small);
   display: flex;
