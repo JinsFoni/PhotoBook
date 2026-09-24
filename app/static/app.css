@@ -310,8 +310,8 @@ table { border-collapse: collapse; }
   -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
-/* 沉浸式(仅首页): 顶栏恒定轻霜玻璃(灯箱同源深色薄霜),
-   文字/图标保持白, 全程无状态切换 */
+/* 顶栏轻霜玻璃(全站统一, 灯箱同源深色薄霜):
+   半透明深底 + 实时模糊, 前景文字/图标保持白 */
 .header--immersive {
   background: rgba(8, 9, 10, 0.35);
   backdrop-filter: blur(24px) saturate(140%);
@@ -1084,8 +1084,7 @@ table { border-collapse: collapse; }
   gap: var(--s3);
   align-items: flex-end;
 }
-/* 组切换: 细箭头图标钮, 置于 "进入写真集" 上方,
-   与按钮同宽(space-between), 左右两缘分别对齐 */
+/* 组切换: 细箭头图标钮, 左右两缘与 caption 对齐 */
 .hero__pager {
   display: flex;
   gap: var(--s1);
@@ -1101,25 +1100,6 @@ table { border-collapse: collapse; }
 }
 .hero__pager .icon-btn:hover { color: #fff; border-color: #fff; }
 .hero__pager .icon-btn svg { width: 16px; height: 16px; }
-.hero__side .btn {
-  border-color: rgba(255, 255, 255, 0.42);
-  background: transparent;
-  color: #fff;
-}
-.hero__side .btn:hover { background: #fff; color: #000; border-color: #fff; }
-/* 进入写真集: 图标钮(右箭头), 宽度与上方切换钮行(两个钮+间距)一致,
-   左右两缘对齐 */
-.hero__side .hero__cta {
-  width: calc(34px * 2 + var(--s1));
-  padding-inline: 0;
-}
-.hero__side .hero__cta svg { width: 18px; height: 18px; }
-/* 悬停效果与切换钮一致: 不变纯白, 只提亮边框与图标 */
-.hero__side .hero__cta:hover {
-  background: transparent;
-  color: rgba(255, 255, 255, 1);
-  border-color: #fff;
-}
 
 /* the contact sheet — the page's one bold move */
 .sheet {

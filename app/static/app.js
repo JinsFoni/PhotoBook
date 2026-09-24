@@ -210,9 +210,9 @@ window.PC = (function () {
 
     var header = document.querySelector("[data-header]");
     if (header) {
-      /* 首页: 顶栏压在 Hero 轮播上, 用 backdrop-filter 实时模糊图片作背景 */
-      var immersive = activeKey() === "discovery";
-      header.className = immersive ? "header header--immersive" : "header";
+      /* 全站顶栏统一轻霜玻璃(同首页): 半透明深底 + backdrop-filter,
+         前景文字/图标保持白;首页 hero 仍由 .shell--immersive 上移垫图 */
+      header.className = "header header--immersive";
       header.innerHTML =
         '<div class="wrap header__inner">' +
         '<button class="icon-btn header__burger" type="button" data-drawer-open aria-label="' + t("Open menu") + '">' + icon("menu") + "</button>" +
