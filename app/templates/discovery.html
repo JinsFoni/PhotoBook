@@ -47,7 +47,7 @@
       <a class="section-aside" href="/collections">{{ t('All collections') }}</a>
     </div>
     <div class="grid grid--editorial" data-latest>
-      {% for c in data.latest[:5] %}{{ collection_card(c, 1200) }}{% endfor %}
+      {% for c in data.latest[:6] %}{{ collection_card(c, 1200) }}{% endfor %}
     </div>
   </div>
 </section>
@@ -60,7 +60,7 @@
       <a class="section-aside" href="/models">{{ t('All models') }}</a>
     </div>
     <div class="grid grid--models-5" data-models>
-      {% for m in data.models[:5] %}{{ model_card(m, 700) }}{% endfor %}
+      {% for m in data.models[:6] %}{{ model_card(m, 700) }}{% endfor %}
     </div>
   </div>
 </section>

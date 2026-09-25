@@ -901,18 +901,18 @@ table { border-collapse: collapse; }
   display: grid;
   gap: var(--gutter) var(--gutter);
 }
-.grid--models { grid-template-columns: repeat(5, 1fr); }
-.grid--models-5 { grid-template-columns: repeat(5, 1fr); }
+.grid--models { grid-template-columns: repeat(6, 1fr); }
+.grid--models-5 { grid-template-columns: repeat(6, 1fr); }
 .grid--collections { grid-template-columns: repeat(3, 1fr); }
-/* 档案详情页"更多内容"与列表页同规格: 一行 5 张 */
-.grid--collections-5 { grid-template-columns: repeat(5, 1fr); }
+/* 档案详情页"更多内容"与列表页同规格: 一行 6 张 */
+.grid--collections-5 { grid-template-columns: repeat(6, 1fr); }
 .grid--photos { grid-template-columns: repeat(4, 1fr); }
 .grid--2 { grid-template-columns: repeat(2, 1fr); }
 .grid--3 { grid-template-columns: repeat(3, 1fr); }
 
-/* editorial: 最新写真集一行 5 张等宽 */
+/* editorial: 最新写真集一行 6 张等宽 */
 .grid--editorial {
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: var(--gutter);
 }
 .span-4 { grid-column: span 4; }
@@ -949,7 +949,7 @@ table { border-collapse: collapse; }
   column-count: auto;
   column-gap: normal;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: var(--gutter);
 }
 .masonry--collections > * { margin-bottom: 0; }
@@ -962,7 +962,7 @@ table { border-collapse: collapse; }
   .grid--photos { grid-template-columns: repeat(3, 1fr); }
   .masonry { column-count: 3; }
   .masonry--collections { grid-template-columns: repeat(3, 1fr); }
-  /* 中屏:一行 3 张(5 卡排 3+2,避免 4+1 落单) */
+  /* 中屏:一行 3 张(6 卡排 3+3, 避免落单) */
   .grid--editorial { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 760px) {
