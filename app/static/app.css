@@ -1119,6 +1119,9 @@ table { border-collapse: collapse; }
   gap: var(--s6);
   padding-top: var(--s5);
 }
+/* 长标题(CJK 采集题名可达 60+ 字)必须允许 flex 子项收缩到内容以下,
+   否则标题把容器撑爆, 右侧轮播切换钮被推出视口; 收缩后 ellipsis 生效 */
+.hero__caption-inner > :first-child { min-width: 0; }
 .hero__title {
   font-family: var(--display);
   font-size: clamp(18px, 2.2vw, 30px);

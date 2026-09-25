@@ -134,6 +134,15 @@ window.PC = (function () {
       return;
     }
     if (!el.querySelector("img")) {
+      /* head 内联脚本可能已建好一张(首帧直出背景), 优先收养它,
+         避免同一 URL 建两个 img 导致跨页时闪烁 */
+      var adopted = document.head.querySelector("img[data-page-blur-img]");
+      if (adopted) {
+        adopted.removeAttribute("data-page-blur-img");
+        el.appendChild(adopted);
+        el.setAttribute("data-ready", "true");
+        return;
+      }
       var im = document.createElement("img");
       im.alt = "";
       if (preload.ok && preload.src === src) {

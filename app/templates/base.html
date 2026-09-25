@@ -1,12 +1,54 @@
 <!doctype html>
-{% set theme = 'light' %}
-<html lang="{{ lang() }}">
+<html lang="{{ lang() }}" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{{ app_name }}{% endblock %}</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230c0d0f'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' fill='none' stroke='%23f7f7f5' stroke-width='1.6'/%3E%3C/svg%3E">
 <meta name="theme-color" content="#0c0d0f">
+<script>
+/* 首屏前同步用户主题(localStorage), 避免整页导航时
+   先按默认渲染再被尾部 JS 纠正 → 页面闪一下;
+   并在虚化主题下首帧直出垫底背景(同一张图跨页不再重淡入) */
+(function () {
+  var t;
+  try { t = localStorage.getItem("pc.theme.v1"); } catch (e) {}
+  if (t === "dark" || t === "light" || t === "blur") {
+    document.documentElement.setAttribute("data-theme", t);
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute("content", t === "light" ? "#ffffff" : "#0c0d0f");
+  }
+  if (t !== "blur") {
+    /* 非虚化: 清掉标记, 回虚化时走淡入 */
+    try { localStorage.removeItem("pc.blur.fp"); } catch (e) {}
+    return;
+  }
+  var info = {{ blur_src_json(request) | safe }};
+  if (!info || !info.src) return;
+  var same = false;
+  try { same = localStorage.getItem("pc.blur.fp") === info.fp; } catch (e) {}
+  try { localStorage.setItem("pc.blur.fp", info.fp); } catch (e) {}
+  /* 同一张图跨页导航: 首帧直接全亮, 不播 620ms 淡入;
+   * 非同图: 容器/纱层即时可见(深底不闪黑), 图走默认淡入 */
+  var s = document.createElement("style");
+  s.textContent =
+    ".page-blur{opacity:1!important;visibility:visible!important}" +
+    (same ? ".page-blur img{opacity:1!important}" : "");
+  document.head.appendChild(s);
+  var i = new Image();
+  i.alt = "";
+  i.src = info.src;
+  i.dataset.pageBlurImg = "1";
+  var adopt = function () {
+    var el = document.querySelector("[data-page-blur]");
+    if (!el || el.querySelector("img")) return;
+    el.appendChild(i);
+    el.setAttribute("data-ready", "true");
+  };
+  if (document.body) adopt();
+  else document.addEventListener("DOMContentLoaded", adopt);
+})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600&family=EB+Garamond:ital,wght@0,400..700;1,400..600&display=swap" rel="stylesheet">

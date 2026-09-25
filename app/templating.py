@@ -72,6 +72,13 @@ def boot_json(request: Request) -> str:
     return json.dumps(boot, ensure_ascii=False)
 
 
+def _blur_fingerprint(rel: str) -> str:
+    """图源稳定指纹: 长路径哈希短码, 给内联脚本当 localStorage 键,
+    判定"本页垫底图与上一页是否同一张"(跨页导航背景不重淡入)。"""
+    import hashlib
+    return hashlib.sha1(rel.encode("utf-8")).hexdigest()[:10]
+
+
 def _blur_src(request: Request) -> str | None:
     """虚化主题的垫底图源:模特主页用头像, 写真详情用第一张图,
     其他页面用首页精选轮播的封面(整条查询链都挑不到则返回 None)。"""
@@ -123,6 +130,16 @@ def _blur_src(request: Request) -> str | None:
     return None
 
 
+def blur_src_json(request: Request) -> str:
+    """内联首帧脚本用的 JSON 字面量: {"src": .., "fp": ..} 或 null。
+    服务端算图源指纹, 客户端据此判断是否与上一页同一张(免重淡入)。"""
+    src = _blur_src(request)
+    if not src:
+        return "null"
+    import json
+    return json.dumps({"src": src, "fp": _blur_fingerprint(src)}, ensure_ascii=False)
+
+
 templates.env.globals["media"] = media_url
 templates.env.globals["media_orig"] = media_orig
 from .services.avatar import avatar_data_uri as _avatar_uri  # noqa: E402
@@ -130,6 +147,7 @@ templates.env.globals["avatar"] = _avatar_uri
 templates.env.globals["app_name"] = "Photo Collection"
 templates.env.globals["boot_json"] = boot_json
 templates.env.globals["asset_ver"] = ASSET_VER
+templates.env.globals["blur_src_json"] = blur_src_json
 templates.env.globals["t"] = i18n.translate
 templates.env.globals["lang"] = i18n.get_language
 templates.env.globals["LANGUAGES"] = i18n.LANGUAGES
