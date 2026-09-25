@@ -4,8 +4,8 @@
 {% block main %}
 <div class="wrap">
   <div class="model-head">
-    <div class="model-head__avatar" style="background:var(--paper-2);display:flex;align-items:center;justify-content:center">
-      <img data-avatar alt="" hidden>
+    <div class="model-head__avatar" style="background:var(--paper-2);display:flex;align-items:center;justify-content:center;position:relative">
+      <img data-avatar alt="" hidden style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
       <svg data-avatar-fallback viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" style="width:38%;height:38%" aria-hidden="true"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
     </div>
     <div>
@@ -96,7 +96,7 @@
   grid.innerHTML = (m.works || []).map(function (c) {
     return '<article class="collection-card hoverable">' +
       '<div style="position:relative"><a href="/collections/' + c.slug + '">' +
-      '<div class="frame skeleton" style="aspect-ratio:3/4"><img src="/t/900/' + c.cover + '.webp" alt="" loading="lazy"></div></a></div>' +
+      '<div class="frame skeleton" style="aspect-ratio:2/3"><img src="/t/900/' + c.cover + '.webp" alt="" loading="lazy"></div></a></div>' +
       '<div class="card__caption"><div class="card__caption-main">' +
       '<h3 class="card__title"><a href="/collections/' + c.slug + '">' + c.title + "</a></h3>" +
       '<p class="card__sub"><span>' + PC.t("{n} photos", { n: c.count }) + "</span>" + (c.date ? "<span>" + c.date + "</span>" : "") + "</p>" +

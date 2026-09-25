@@ -786,7 +786,7 @@ window.PC = (function () {
 
       /* 读取每张的宽高比(真实尺寸 → 模板 aspect-ratio 兑底) */
       var photos = tiles.map(function (tile) {
-        var ar = 3 / 4;
+        var ar = 2 / 3;
         var img = tile.querySelector("img");
         if (img && img.naturalWidth && img.naturalHeight) {
           ar = img.naturalWidth / img.naturalHeight;

@@ -74,7 +74,7 @@
   function card(m) {
     return '<article class="model-card hoverable">' +
       '<div style="position:relative"><a href="/models/' + m.slug + '" aria-label="' + PC.escapeHtml(m.name) + '">' +
-      '<div class="frame skeleton" style="aspect-ratio:3/4">' + (m.avatar ? '<img src="/t/700/' + m.avatar + '.webp" alt="' + PC.escapeHtml(m.name) + '" loading="lazy">' : '') + '</div></a>' +
+      '<div class="frame skeleton" style="aspect-ratio:2/3">' + (m.avatar ? '<img src="/t/700/' + m.avatar + '.webp" alt="' + PC.escapeHtml(m.name) + '" loading="lazy">' : '') + '</div></a>' +
       '<div class="card__fav reveal"><button class="fav fav--bare" type="button" data-fav="model" data-fav-key="' + m.slug + '" aria-pressed="false" title="' + PC.t("Favourite model") + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.2s-7.4-4.5-7.4-9.6A4.3 4.3 0 0 1 12 7.9a4.3 4.3 0 0 1 7.4 2.7c0 5.1-7.4 9.6-7.4 9.6z"/></svg>' +
       '<span class="sr">' + PC.t("Add to favourites") + '</span></button></div></div>' +

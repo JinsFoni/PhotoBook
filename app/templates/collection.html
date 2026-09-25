@@ -67,7 +67,7 @@
   /* 照片墙 */
   var wall = document.querySelector("[data-photos]");
   wall.innerHTML = (c.photos || []).map(function (p, i) {
-    var ar = (p.w && p.h) ? (p.w + "/" + p.h) : "3/4";
+    var ar = (p.w && p.h) ? (p.w + "/" + p.h) : "2/3";
     return '<div class="photo-tile">' +
       '<div class="frame skeleton" style="aspect-ratio:' + ar + '">' +
       '<img src="/t/1800/' + p.file + '.webp" alt="" loading="lazy" decoding="async"></div>' +
@@ -81,7 +81,7 @@
   /* 推荐 */
   document.querySelector("[data-next]").innerHTML = (c.next || []).map(function (x) {
     return '<article class="collection-card hoverable">' +
-      '<div style="position:relative"><a href="/collections/' + x.slug + '" aria-label="' + PC.escapeHtml(x.title) + '"><div class="frame skeleton" style="aspect-ratio:3/4">' +
+      '<div style="position:relative"><a href="/collections/' + x.slug + '" aria-label="' + PC.escapeHtml(x.title) + '"><div class="frame skeleton" style="aspect-ratio:2/3">' +
       '<img src="/t/900/' + x.cover + '.webp" alt="" loading="lazy"></div></a></div>' +
       '<div class="card__caption"><div class="card__caption-main">' +
       '<h3 class="card__title"><a href="/collections/' + x.slug + '">' + x.title + "</a></h3>" +

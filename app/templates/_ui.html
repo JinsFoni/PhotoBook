@@ -17,7 +17,7 @@
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"{{ ' class="' + cls + '"' if cls else '' }}>{{ paths.get(name, '') | safe }}</svg>
 {%- endmacro %}
 
-{% macro frame(rel, w, ar='3/4', h=None, alt='', cls='frame', eager=False) -%}
+{% macro frame(rel, w, ar='2/3', h=None, alt='', cls='frame', eager=False) -%}
 <div class="{{ cls }} skeleton" style="aspect-ratio:{{ ar }}">
   <img src="{{ media(rel, w, h) }}"
        srcset="{{ media(rel, (w * 0.5) | round | int, h) }} {{ (w * 0.5) | round | int }}w, {{ media(rel, w, h) }} {{ w }}w{% if h %}, {{ media(rel, (w * 1.6) | round | int, h) }} {{ (w * 1.6) | round | int }}w{% endif %}"
@@ -38,7 +38,7 @@
 {% macro collection_card(c, w=900) -%}
 <article class="collection-card hoverable">
   <div style="position:relative">
-    <a href="/collections/{{ c.slug }}" aria-label="{{ c.title }}">{{ frame(c.cover, w, '3/4', alt=t('{t} — cover', t=c.title)) }}</a>
+    <a href="/collections/{{ c.slug }}" aria-label="{{ c.title }}">{{ frame(c.cover, w, '2/3', alt=t('{t} — cover', t=c.title)) }}</a>
     <div class="card__fav reveal">{{ fav_button('collection', c.slug, 'fav--bare', title=t('Favourite collection')) }}</div>
   </div>
   <div class="card__caption"><div class="card__caption-main">
@@ -51,7 +51,7 @@
 {% macro model_card(m, w=700) -%}
 <article class="model-card hoverable">
   <div style="position:relative">
-    <a href="/models/{{ m.slug }}" aria-label="{{ m.name }}">{{ frame(m.avatar, w, '3/4', alt=m.name) }}</a>
+    <a href="/models/{{ m.slug }}" aria-label="{{ m.name }}">{{ frame(m.avatar, w, '2/3', alt=m.name) }}</a>
     <div class="card__fav reveal">{{ fav_button('model', m.slug, 'fav--bare', title=t('Favourite model')) }}</div>
   </div>
   <h3 class="model-card__name"><a href="/models/{{ m.slug }}">{{ m.name }}</a></h3>

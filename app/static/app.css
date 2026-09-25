@@ -613,7 +613,7 @@ table { border-collapse: collapse; }
 .search-row:hover { background: var(--paper-2); padding-left: var(--s3); }
 .search-row__thumb {
   width: 52px;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 2 / 3;
   object-fit: cover;
   background: var(--void);
   flex: none;
@@ -817,7 +817,9 @@ table { border-collapse: collapse; }
    arrives, then fades in. Nothing reflows, nothing pops. */
 .frame.skeleton img { opacity: 0; }
 .frame img.is-loaded { opacity: 1; }
-.frame--3x4 { aspect-ratio: 3 / 4; }
+/* 历史类名 frame--3x4 实际已全局 2/3(全站统一卡片比例),
+   保留名字兼容旧调用;新代码请用 frame--2x3 */
+.frame--3x4 { aspect-ratio: 2 / 3; }
 .frame--4x5 { aspect-ratio: 4 / 5; }
 .frame--2x3 { aspect-ratio: 2 / 3; }
 .frame--1x1 { aspect-ratio: 1 / 1; }
@@ -1223,9 +1225,11 @@ table { border-collapse: collapse; }
   gap: var(--s6);
   align-items: center;
 }
+/* 头像改写真卡片同款 2/3 竖幅(不再 1:1): 宽度仍由网格列定,
+   高度随比例走 */
 .model-head__avatar {
   width: 132px;
-  height: 132px;
+  aspect-ratio: 2 / 3;
   object-fit: cover;
   overflow: hidden;
   background: var(--paper-3);
@@ -1245,7 +1249,7 @@ table { border-collapse: collapse; }
 .model-head__actions { display: flex; align-items: center; gap: var(--s4); }
 @media (max-width: 760px) {
   .model-head { grid-template-columns: 84px minmax(0, 1fr); }
-  .model-head__avatar { width: 84px; height: 84px; }
+  .model-head__avatar { width: 84px; }
   .model-head__actions { grid-column: 1 / -1; }
 }
 
