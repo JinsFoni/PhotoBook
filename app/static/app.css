@@ -902,6 +902,8 @@ table { border-collapse: collapse; }
 .grid--models { grid-template-columns: repeat(5, 1fr); }
 .grid--models-5 { grid-template-columns: repeat(5, 1fr); }
 .grid--collections { grid-template-columns: repeat(3, 1fr); }
+/* 档案详情页"更多内容"与列表页同规格: 一行 5 张 */
+.grid--collections-5 { grid-template-columns: repeat(5, 1fr); }
 .grid--photos { grid-template-columns: repeat(4, 1fr); }
 .grid--2 { grid-template-columns: repeat(2, 1fr); }
 .grid--3 { grid-template-columns: repeat(3, 1fr); }
@@ -954,6 +956,7 @@ table { border-collapse: collapse; }
   .grid--models { grid-template-columns: repeat(3, 1fr); }
   .grid--models-5 { grid-template-columns: repeat(3, 1fr); }
   .grid--collections { grid-template-columns: repeat(2, 1fr); }
+  .grid--collections-5 { grid-template-columns: repeat(3, 1fr); }
   .grid--photos { grid-template-columns: repeat(3, 1fr); }
   .masonry { column-count: 3; }
   .masonry--collections { grid-template-columns: repeat(3, 1fr); }
@@ -964,6 +967,7 @@ table { border-collapse: collapse; }
   .grid--models,
   .grid--models-5 { grid-template-columns: repeat(2, 1fr); }
   .grid--collections { grid-template-columns: repeat(2, 1fr); }
+  .grid--collections-5 { grid-template-columns: repeat(2, 1fr); }
   .grid--photos { grid-template-columns: repeat(2, 1fr); }
   .grid--2,
   .grid--3 { grid-template-columns: 1fr; }

@@ -150,8 +150,8 @@ async def collection_detail(request: Request, slug: str, s: Session = Depends(ge
         select(Collection).where(Collection.model_id == c.model_id,
                                  Collection.status == "published")).all()
         if c.model_id else []) if x.slug != c.slug]
-    others = [x for x in _published_collections(s) if x.slug != c.slug and x.model_id != c.model_id][:3]
-    next_cols = (same_model + others)[:3]
+    others = [x for x in _published_collections(s) if x.slug != c.slug and x.model_id != c.model_id][:5]
+    next_cols = (same_model + others)[:5]
     payload["next"] = [_collection_payload(s, x) for x in next_cols]
     payload["next_aside"] = c.model.name if (same_model and c.model) else ""
     return templates.TemplateResponse(request, "collection.html", {
