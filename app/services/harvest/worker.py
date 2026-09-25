@@ -233,7 +233,8 @@ def _run_job(job_id: int) -> None:
             from .. import library_import
             r = library_import.import_album(
                 s, final_dir, app_settings.media_dir, library_root=library_root,
-                unsorted_dir=str(conf["harvest.unsorted_dir"]))
+                unsorted_dir=str(conf["harvest.unsorted_dir"]),
+                tags=target.tags)
             if r["skipped"]:
                 job.error = f"→ {final_dir.name}(已导入过,跳过)"
             else:

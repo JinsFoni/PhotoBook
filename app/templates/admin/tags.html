@@ -9,6 +9,7 @@
         <h1 class="page-head__title">{{ t('Tags') }}</h1>
         <p class="page-head__sub">{{ t('主题标签,用于筛选与发现。') }}</p>
       </div>
+      {% if flash %}<p class="t-small" style="color:var(--ink-2);margin-bottom:var(--s4)">{{ flash }}</p>{% endif %}
       <div class="panel-grid">
         <nav class="side-nav" aria-label="{{ t('Admin') }}">
           <a class="side-nav__item" href="/admin">{{ t('Dashboard') }}</a>
@@ -35,6 +36,10 @@
             {% endfor %}
           </div>
           {% else %}<p class="t-small" style="color:var(--ink-3)">{{ t('暂无标签。') }}</p>{% endif %}
+          <form method="post" action="/admin/tags/retag" style="margin-top:var(--s6)">
+            <button class="btn" type="submit">{{ t('从采集历史补录标签') }}</button>
+            <p class="t-small" style="color:var(--ink-3);margin-top:var(--s2)">{{ t('重新解析已完成的采集任务详情页,把标签补到对应合集与模特。幂等,可重复执行。') }}</p>
+          </form>
         </div>
       </div>
     </div>

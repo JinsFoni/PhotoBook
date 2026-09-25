@@ -226,11 +226,22 @@ async def admin_collection_delete(col_id: int, s: Session = Depends(get_db)):
 # ---- Tags ----------------------------------------------------------------------
 
 @router.get("/tags")
-async def admin_tags(request: Request, s: Session = Depends(get_db)):
+async def admin_tags(request: Request, s: Session = Depends(get_db),
+                     flash: str = ""):
     tags = s.scalars(select(Tag).order_by(Tag.name)).all()
     return templates.TemplateResponse(request, "admin/tags.html", {
-        "page": "admin", "tags": tags, "error": "",
+        "page": "admin", "tags": tags, "error": "", "flash": flash,
     })
+
+
+@router.post("/tags/retag")
+async def admin_tags_retag(s: Session = Depends(get_db)):
+    """补录:重新解析已 done 采集任务的详情页,把 tag 补到合集与模特。"""
+    from ..services import tagging
+    stats = tagging.retag_from_history(s)
+    msg = t("补录完成:匹配 {m} 个,新关联 {n} 条,跳过 {k} 个",
+            m=stats["matched"], n=stats["tagged"], k=stats["skipped"])
+    return RedirectResponse(f"/admin/tags?flash={quote(msg)}", 303)
 
 
 @router.post("/tags/new")
