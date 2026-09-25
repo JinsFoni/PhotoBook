@@ -673,7 +673,13 @@ table { border-collapse: collapse; }
   color: var(--ink-2);
   transition: color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
 }
-.fav svg { width: 19px; height: 19px; }
+.fav svg {
+  width: 19px;
+  height: 19px;
+  /* 心形路径墨迹中心在 viewBox 中心下方 ~2 单位, 光学补偿上移,
+     否则与旁边文字(带标签档)中心不齐 */
+  transform: translateY(-1.6px);
+}
 .fav:hover { color: var(--ink); }
 .fav[aria-pressed="true"] { color: var(--accent); }
 .fav[aria-pressed="true"] svg { fill: currentColor; }
