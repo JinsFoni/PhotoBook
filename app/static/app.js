@@ -521,7 +521,7 @@ window.PC = (function () {
       '<div class="lightbox__foot">' +
       '<span class="lightbox__counter" data-lb-counter></span>' +
       '<div class="lightbox__foot-actions">' +
-      '<button class="fav" type="button" data-fav="photo" data-fav-key="" aria-pressed="false" title="' + t("Favourite photo") + '">' +
+      '<button class="fav fav--labelled" type="button" data-fav="photo" data-fav-key="" aria-pressed="false" title="' + t("Favourite photo") + '">' +
       icon("heart") + '<span data-fav-label>' + t("Save") + '</span><span class="sr">' + t("Add to favourites") + "</span></button>" +
       '<a class="btn btn--ghost btn--sm" data-lb-download download>' + icon("download") + "<span>" + t("Download") + "</span></a>" +
       "</div></div>" +
