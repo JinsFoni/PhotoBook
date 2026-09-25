@@ -59,7 +59,7 @@
     return '<a class="tag" href="/collections?tag=' + encodeURIComponent(t) + '">#' + t + "</a>";
   }).join("");
   document.querySelector("[data-head-fav]").innerHTML =
-    '<button class="fav" type="button" data-fav="collection" data-fav-key="' + c.slug + '" aria-pressed="false" title="' + PC.t("Favourite collection") + '">' +
+    '<button class="fav fav--labelled" type="button" data-fav="collection" data-fav-key="' + c.slug + '" aria-pressed="false" title="' + PC.t("Favourite collection") + '">' +
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.2s-7.4-4.5-7.4-9.6A4.3 4.3 0 0 1 12 7.9a4.3 4.3 0 0 1 7.4 2.7c0 5.1-7.4 9.6-7.4 9.6z"/></svg>' +
     '<span data-fav-label>' + PC.t("Save") + '</span></button>';
   document.querySelector("[data-photo-count]").textContent = PC.t("{n} photos · {m}", { n: c.count, m: c.model_name });
