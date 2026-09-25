@@ -192,8 +192,10 @@ async def model_detail(request: Request, slug: str, s: Session = Depends(get_db)
                                           {"user": user, "page": "models", "text": text},
                                           status_code=404)
     payload = _model_payload(s, m)
-    payload["works"] = [_collection_payload(s, c) for c in m.collections
-                        if c.status == "published"]
+    # 写真集按最新在前(与全站列表一致); 无发布日期的排最后
+    works = [c for c in m.collections if c.status == "published"]
+    works.sort(key=lambda c: (c.published_at or "", c.id), reverse=True)
+    payload["works"] = [_collection_payload(s, c) for c in works]
     return templates.TemplateResponse(request, "model.html", {
         "user": user, "page": "models",
         "data_json": json.dumps(payload, ensure_ascii=False),
