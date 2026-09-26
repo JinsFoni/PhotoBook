@@ -27,13 +27,38 @@ def _fav_keys(s: Session, user_id: int) -> dict[str, set[str]]:
     return out
 
 
+def _collection_cover(s: Session, c: Collection) -> str | None:
+    """列表用封面文件名: 优先 cover_photo_id(避免为拿第一张图拖全 photos),
+    兼容老数据/手动建集合回退第一张。"""
+    if c.cover_photo_id:
+        ph = s.get(Photo, c.cover_photo_id)
+        if ph:
+            return ph.filename
+    ph = s.scalar(select(Photo).where(Photo.collection_id == c.id)
+                  .order_by(Photo.sort_order).limit(1))
+    return ph.filename if ph else None
+
+
+def _collection_card(s: Session, c: Collection) -> dict:
+    """列表/网格卡片的瘦身条目: 不带 photos 数组, 体积约为完整 payload 的 1/30。
+    用在哪: /collections 虚拟化数据池(万级条目也轻)。"""
+    return {
+        "id": c.id, "slug": c.slug, "title": c.title,
+        "date": c.published_at or "",
+        "model_slug": c.model.slug if c.model else "",
+        "model_name": c.model.name if c.model else t("未分类"),
+        "cover": _collection_cover(s, c),
+        "count": len(c.photos),
+    }
+
+
 def _collection_payload(s: Session, c: Collection) -> dict:
     return {
         "id": c.id, "slug": c.slug, "title": c.title,
         "date": c.published_at or "", "featured": c.featured,
         "model_slug": c.model.slug if c.model else "",
         "model_name": c.model.name if c.model else t("未分类"),
-        "cover": c.photos[0].filename if c.photos else None,
+        "cover": _collection_cover(s, c),
         "photos": [{"id": p.id, "file": p.filename, "w": p.width, "h": p.height}
                    for p in c.photos],
         "tags": [t.name for t in c.tags],
@@ -114,10 +139,7 @@ async def collections_page(request: Request, s: Session = Depends(get_db),
     models = s.scalars(select(Model).where(Model.status == "published").order_by(Model.name)).all()
     tags = s.scalars(select(Tag).order_by(Tag.name)).all()
 
-    items = []
-    for c in cols:
-        p = _collection_payload(s, c)
-        items.append(p)
+    items = [_collection_card(s, c) for c in cols]
 
     tag_counts = {}
     for c in cols:

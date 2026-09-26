@@ -36,7 +36,7 @@
     <button class="btn btn--quiet btn--sm" type="button" data-f-reset>{{ t('Reset') }}</button>
   </div>
 
-  <div class="masonry masonry--collections" data-grid></div>
+  <div class="vm-grid" data-grid></div>
 
   <div data-empty hidden>
     <div class="state">
@@ -46,20 +46,28 @@
     </div>
   </div>
 </div>
-
-<div class="wrap"><div data-load-more></div></div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-/* 客户端筛选 + 分批渲染(消除整页刷新) */
+/* 客户端筛选 + 网格虚拟化(滚动到哪渲染到哪, DOM/内存恒定)
+   前提: 数据池为瘦身条目(无 photos 数组), 万级条目也轻;
+   卡片高度 = 列宽×1.5(2/3 封面) + 标注区固定高度, 全部可由公式算出 */
 (function () {
   var D = window.PB_DATA;
   var grid = document.querySelector("[data-grid]");
   var empty = document.querySelector("[data-empty]");
-  var more = document.querySelector("[data-load-more]");
-  var f = { name: D.filters.q || "", tag: D.filters.tag || "", model: D.filters.model || "", sort: "newest", page: 1 };
-  var PER = 12;
+  var f = { name: D.filters.q || "", tag: D.filters.tag || "", model: D.filters.model || "", sort: "newest" };
+
+  /* ---- 虚拟化常量(与 CSS 严格同步) ------------------------------------
+     列数: >1180px 为 6, ≤1180px 为 3; 手机 760px 以下 CSS 整体降级全量渲染。
+     封面高 = 列宽 × 1.5(2/3 比例); 标注区单行, 固定高 CAP。
+     卡片绝对定位到真实文档坐标(行窗口), 容器只负责撑总高。 */
+  var COLS_WIDE = 6, COLS_NARROW = 3, NARROW_BP = 1180, MOBILE_BP = 760;
+  var CAP = 12 + 26 + 2 + 22; /* padding-top + 标题行高 + 间距 + 元信息行(含余量) */
+
+  function gutter() { return window.innerWidth <= MOBILE_BP ? 12 : 24; }
+  function cols() { return window.innerWidth <= NARROW_BP ? COLS_NARROW : COLS_WIDE; }
 
   var tagSel = document.querySelector("[data-f-tag]");
   D.tags.forEach(function (t) {
@@ -80,7 +88,7 @@
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.2s-7.4-4.5-7.4-9.6A4.3 4.3 0 0 1 12 7.9a4.3 4.3 0 0 1 7.4 2.7c0 5.1-7.4 9.6-7.4 9.6z"/></svg>' +
       '<span class="sr">' + PC.t("Add to favourites") + '</span></button></div></div>' +
       '<div class="card__caption"><div class="card__caption-main">' +
-      '<h3 class="card__title"><a href="/collections/' + c.slug + '">' + c.title + "</a></h3>" +
+      '<h3 class="card__title"><a href="/collections/' + c.slug + '">' + PC.escapeHtml(c.title) + "</a></h3>" +
       '<p class="card__sub"><a href="/models/' + c.model_slug + '">' + c.model_name + "</a><span>" + PC.t("{n} photos", { n: c.count }) + "</span></p>" +
       "</div></div></article>";
   }
@@ -100,21 +108,129 @@
     return list;
   }
 
+  /* ---- 虚拟化窗口 --------------------------------------------------------
+     grid[data-vm=on]: display:block + JS 设总高撑滚动条;
+     卡片绝对定位: left = col×(colW+gap), top = row×(rowH+gap)。
+     节点池固定 ~4 行, 滚动时循环复用(innerHTML 仅在卡槽换内容时重建)。 */
+  var list = [], cells = [], cache = {}, win = { first: -1, count: -1 };
+  var VM_ON = false;
+
+  function measure() {
+    var w = grid.clientWidth || grid.getBoundingClientRect().width;
+    var n = cols(), g = gutter();
+    var colW = (w - g * (n - 1)) / n;
+    return { w: w, colW: colW, rh: Math.round(colW * 1.5) + CAP, n: n, g: g };
+  }
+
+  function build() {
+    var m = measure();
+    var rows = Math.ceil(list.length / m.n) || 0;
+    var total = rows ? rows * m.rh + (rows - 1) * m.g : 0;
+    if (!VM_ON && window.innerWidth > MOBILE_BP) {
+      VM_ON = true;
+      grid.setAttribute("data-vm", "on");
+    } else if (VM_ON && window.innerWidth <= MOBILE_BP) {
+      VM_ON = false;
+      grid.removeAttribute("data-vm");
+    }
+    if (VM_ON) {
+      grid.style.height = total + "px";
+    } else {
+      grid.style.height = "";
+    }
+    grid.hidden = rows === 0;
+    empty.hidden = rows > 0;
+    cache = { w: m.w, colW: m.colW, rh: m.rh, n: m.n, g: m.g, rows: rows, total: total };
+    return m;
+  }
+
+  function place(m, scrollTop) {
+    if (!m || !m.rh) return;
+    var top = grid.getBoundingClientRect().top + scrollTop; /* 网格相对文档的 Y */
+    if (!VM_ON) {
+      /* 手机降级: 全量渲染一次 */
+      if (win.count !== list.length) {
+        grid.innerHTML = list.map(card).join("");
+        cells = [];
+        win.count = list.length;
+      }
+      return;
+    }
+    var vh = window.innerHeight;
+    var step = m.rh + m.g;
+    var first = Math.max(0, Math.floor((scrollTop - top) / step) - 2);
+    var last = Math.min(cache.rows - 1, Math.ceil((scrollTop - top + vh) / step) + 2);
+    if (last < first) last = first - 1;
+    var count = last - first + 1;
+    if (first === win.first && count === win.count && win.top === top && win.w === m.w) return;
+
+    var want = count * m.n;
+    while (cells.length < want) {
+      /* 池节点用 div: card() 本身产出 <article>, 嵌套会破坏选择器与样式 */
+      var d = document.createElement("div");
+      d.className = "vm-cell";
+      grid.appendChild(d);
+      cells.push(d);
+      d.style.display = "none";
+    }
+    for (var i = 0; i < cells.length; i++) {
+      var el = cells[i];
+      var idx = i < want ? first * m.n + i : -1;
+      if (idx >= 0 && idx < list.length) {
+        var r = Math.floor(idx / m.n), col = idx % m.n;
+        el.style.display = "";
+        el.style.left = Math.round(col * (m.colW + m.g)) + "px";
+        el.style.top = Math.round(r * step) + "px";
+        el.style.width = Math.round(m.colW) + "px";
+        if (el.dataset.idx !== String(idx)) {
+          el.dataset.idx = String(idx);
+          el.innerHTML = card(list[idx]);
+        }
+      } else {
+        el.style.display = "none";
+        el.dataset.idx = "";
+      }
+    }
+    win.first = first; win.count = count; win.top = top; win.w = m.w;
+  }
+
+  var ticking = false;
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () {
+      ticking = false;
+      place(cache, window.pageYOffset || document.documentElement.scrollTop);
+    });
+  }
+
   function render() {
-    var list = filtered();
-    var shown = list.slice(0, f.page * PER);
-    grid.innerHTML = shown.map(card).join("");
-    grid.hidden = list.length === 0;
-    empty.hidden = list.length > 0;
-    document.querySelector("[data-count]").textContent =
-      PC.t(list.length === 1 ? "{n} collection" : "{n} collections", { n: list.length });
-    more.innerHTML = list.length > shown.length
-      ? '<div style="display:flex;justify-content:center;padding-block:var(--s8)"><button class="btn btn--ghost" type="button" data-more>' + PC.t("Load more collections") + '</button></div>'
-      : '<div style="height:var(--s9)"></div>';
-    var b = more.querySelector("[data-more]");
-    if (b) b.addEventListener("click", function () { f.page++; render(); });
+    list = filtered();
+    var m = build();
+    var count = document.querySelector("[data-count]");
+    count.textContent = PC.t(list.length === 1 ? "{n} collection" : "{n} collections", { n: list.length });
+    win = { first: -1, count: -1, top: 0, w: 0 };
+    cells.forEach(function (el) { el.remove(); });
+    cells = [];
+    place(m, window.pageYOffset || document.documentElement.scrollTop);
     document.dispatchEvent(new CustomEvent("pc:content"));
   }
+
+  var lastW = window.innerWidth, lastH = window.innerHeight;
+  window.addEventListener("resize", function () {
+    /* 移动端地址栏收展会触发 resize 但宽度没变: 跳过重渲染(下帧滚动自会补) */
+    if (window.innerWidth === lastW && Math.abs(window.innerHeight - lastH) < 120) return;
+    lastW = window.innerWidth; lastH = window.innerHeight;
+    win = { first: -1, count: -1, top: 0, w: 0 };
+    cells.forEach(function (el) { el.remove(); });
+    cells = [];
+    render();
+  });
+  window.addEventListener("scroll", onScroll, { passive: true });
+  /* 调试/测试钩子: 控制台可手动触发重渲染(数据池变更、验证布局) */
+  window.PC_VM = { render: render };
+  /* 滚动条初始化后位置可能非 0(浏览器恢复), 首帧后再校正一次 */
+  requestAnimationFrame(function () { onScroll(); });
 
   function syncUrl() {
     var p = new URLSearchParams();
@@ -128,18 +244,18 @@
   document.querySelector("[data-f-name]").addEventListener("input", function (e) {
     clearTimeout(debounce);
     var v = e.target.value;
-    debounce = setTimeout(function () { f.name = v; f.page = 1; syncUrl(); render(); }, 180);
+    debounce = setTimeout(function () { f.name = v; syncUrl(); render(); }, 180);
   });
   tagSel.addEventListener("change", function (e) {
-    f.tag = e.target.value; f.page = 1; syncUrl();
+    f.tag = e.target.value; syncUrl();
     document.querySelector("[data-title]").textContent = f.tag ? "#" + f.tag : PC.t("Collections");
     render();
   });
-  modelSel.addEventListener("change", function (e) { f.model = e.target.value; f.page = 1; syncUrl(); render(); });
+  modelSel.addEventListener("change", function (e) { f.model = e.target.value; syncUrl(); render(); });
   document.querySelector("[data-f-sort]").addEventListener("change", function (e) { f.sort = e.target.value; render(); });
   document.querySelectorAll("[data-f-reset]").forEach(function (b) {
     b.addEventListener("click", function () {
-      f = { name: "", tag: "", model: "", sort: "newest", page: 1 };
+      f = { name: "", tag: "", model: "", sort: "newest" };
       document.querySelector("[data-f-name]").value = "";
       tagSel.value = ""; modelSel.value = "";
       document.querySelector("[data-title]").textContent = PC.t("Collections");

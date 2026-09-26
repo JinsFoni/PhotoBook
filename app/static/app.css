@@ -912,6 +912,51 @@ table { border-collapse: collapse; }
 .grid--collections { grid-template-columns: repeat(3, 1fr); }
 /* 档案详情页"更多内容"与列表页同规格: 一行 6 张 */
 .grid--collections-5 { grid-template-columns: repeat(6, 1fr); }
+/* /collections 虚拟化专用: 固定 6 列 + 封面区固定行高(列宽×1.5 不变),
+   标注区收成单行(标题单行省略+元信息同排), 整卡高度可由公式算出 ——
+   虚拟化窗口定位依赖这个不变量。收藏页/模特页不改。 */
+.vm-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--gutter) var(--gutter);
+  position: relative;
+}
+.vm-grid[data-vm="on"] {
+  /* 虚拟化激活态: 容器不参与常规流, 由 JS 直接设定总高;
+     卡片绝对定位到真实文档坐标(行窗口) */
+  display: block;
+  height: 0;
+}
+.vm-grid[data-vm="on"] .vm-cell {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* 封面高度来源: 绝对定位下 aspect-ratio 无宽高基准不可靠, 改用固定比例
+   padding-bottom 撑起(2/3 → 150%), 卡宽即列宽(JS 已定), 高度随之确定 */
+.vm-grid[data-vm="on"] .vm-cell .frame {
+  aspect-ratio: auto;
+  height: 0;
+  padding-bottom: 150%;
+}
+.vm-grid[data-vm="on"] .vm-cell .frame img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.vm-grid[data-vm="on"] .vm-cell .card__caption { flex: none; }
+.vm-grid .card__title {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vm-grid .card__caption { flex-wrap: nowrap; }
+.vm-grid .collection-card { display: flex; flex-direction: column; }
 .grid--photos { grid-template-columns: repeat(4, 1fr); }
 .grid--2 { grid-template-columns: repeat(2, 1fr); }
 .grid--3 { grid-template-columns: repeat(3, 1fr); }
@@ -968,6 +1013,8 @@ table { border-collapse: collapse; }
   .grid--photos { grid-template-columns: repeat(3, 1fr); }
   .masonry { column-count: 3; }
   .masonry--collections { grid-template-columns: repeat(3, 1fr); }
+  /* 虚拟化网格窄屏: 回 3 列, 行高公式用列数参数化后仍然成立 */
+  .vm-grid { grid-template-columns: repeat(3, 1fr); }
   /* 中屏:一行 3 张(6 卡排 3+3, 避免落单) */
   .grid--editorial { grid-template-columns: repeat(3, 1fr); }
 }
@@ -981,6 +1028,11 @@ table { border-collapse: collapse; }
   .grid--3 { grid-template-columns: 1fr; }
   .masonry { column-count: 2; }
   .masonry--collections { grid-template-columns: repeat(2, 1fr); }
+  /* 手机窄屏: 虚拟化降级为普通流式网格(全量渲染), 简化布局并避免
+     绝对定位/transform 在小屏的边界问题; 条目千级以下全量渲染无压力 */
+  .vm-grid { grid-template-columns: repeat(2, 1fr); }
+  .vm-grid[data-vm="on"] { display: grid; height: auto; }
+  .vm-grid[data-vm="on"] .vm-cell { position: static; transform: none !important; width: auto !important; }
 
   .grid--editorial { grid-template-columns: repeat(2, 1fr); gap: var(--s5) var(--gutter); }
   .span-4,
