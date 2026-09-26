@@ -52,7 +52,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
+          # 双架构: amd64 + arm64(QEMU 模拟构建, 已装 arm64 轮子, 无需交叉编译)
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
