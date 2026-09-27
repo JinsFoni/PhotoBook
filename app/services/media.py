@@ -24,6 +24,11 @@ THUMB_RE = re.compile(r"^(\d+)(?:x(\d+))?/(.+)\.(jpg|jpeg|png|webp)$", re.I)
 
 Image.MAX_IMAGE_PIXELS = 400 * 1024 * 1024  # 原图可达 40MP+
 
+# 缩略图生成全局并发上限。单张 19MP 图解码峰值 ~170MB,
+# 不限流时浏览器并发 8 张就能把容器打到 1.4GB(NAS 实测)。
+# NAS 级 CPU 单张 1~3s,排队等 1 轮远好于内存打爆。
+_gen_sem = threading.Semaphore(2)
+
 
 def _safe_path(rel: str) -> any:
     """防目录穿越:解析后必须仍在 media_dir 内。"""
@@ -40,28 +45,36 @@ def _cache_path(w: int, h: int | None, q: int, rel: str) -> any:
 
 
 def _make_webp(src, w: int, h: int | None, q: int) -> bytes:
-    """从源图生成缩放 WebP;只缩不放,支持等比(仅 w)与中心裁剪(w+h)。"""
-    with Image.open(src) as im:
-        im = im.convert("RGB")
-        sw, sh = im.size
-        tw = min(w, sw)
-        if h:
-            # 先按比例裁剪,再缩放
-            target_ratio = w / h
-            src_ratio = sw / sh
-            if src_ratio > target_ratio:   # 太宽 → 裁两侧
-                nw = int(sh * target_ratio)
-                x0 = (sw - nw) // 2
-                im = im.crop((x0, 0, x0 + nw, sh))
-            else:                           # 太高 → 裁上下(偏上,保头部)
-                nh = int(sw / target_ratio)
-                y0 = max(0, (sh - nh) // 3)
-                im = im.crop((0, y0, sw, y0 + nh))
-        th = h if h else int(tw * sh / sw)
-        im = im.resize((tw, th), Image.LANCZOS)
-        buf = io.BytesIO()
-        im.save(buf, "WEBP", quality=q, method=4)
-        return buf.getvalue()
+    """从源图生成缩放 WebP;只缩不放,支持等比(仅 w)与中心裁剪(w+h)。
+
+    JPEG 先 draft() 降采样解码:按目标宽选 1/2、1/4 档,
+    解码内存/时间降 4~16 倍,缩放结果肉眼无差(目标宽 ≥ 源宽/2 时取最近档)。
+    """
+    with _gen_sem:
+        with Image.open(src) as im:
+            is_jpeg = (im.format == "JPEG")  # draft() 仅对 JPEG 生效
+            if is_jpeg:
+                im.draft("RGB", (w, h or w))
+            im = im.convert("RGB")
+            sw, sh = im.size
+            tw = min(w, sw)
+            if h:
+                # 先按比例裁剪,再缩放
+                target_ratio = w / h
+                src_ratio = sw / sh
+                if src_ratio > target_ratio:   # 太宽 → 裁两侧
+                    nw = int(sh * target_ratio)
+                    x0 = (sw - nw) // 2
+                    im = im.crop((x0, 0, x0 + nw, sh))
+                else:                           # 太高 → 裁上下(偏上,保头部)
+                    nh = int(sw / target_ratio)
+                    y0 = max(0, (sh - nh) // 3)
+                    im = im.crop((0, y0, sw, y0 + nh))
+            th = h if h else int(tw * sh / sw)
+            im = im.resize((tw, th), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, "WEBP", quality=q, method=4)
+            return buf.getvalue()
 
 
 def ensure_cached(rel: str, w: int, h: int | None = None, q: int | None = None) -> None:
