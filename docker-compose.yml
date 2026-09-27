@@ -1,6 +1,8 @@
 services:
   photobook:
-    build: .
+    # 使用 GHCR 发布镜像(多架构 amd64/arm64, 随 Release 自动更新)
+    # 本地改动需自建时: 注释掉 image 行, 换成 build: . 后 up -d --build
+    image: ghcr.io/jinsfoni/photobook:latest
     container_name: photobook
     restart: unless-stopped
     ports:
