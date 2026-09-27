@@ -52,7 +52,8 @@ def test_import_moves_files_and_publishes(tmp_path):
 
         c = _collection(s, "yeha-school-nurse-vol-1")
         assert c is not None
-        assert c.status == "published"          # 导入即发布
+        # 缩略图就绪前 processing(前台不可见), 生成完自动 published
+        assert c.status == "processing"
         assert c.cover_photo_id                 # 封面 = 首图
         assert c.model is not None and c.model.name == "Yeha"
         assert c.published_at.count(".") == 2   # YYYY.MM.DD
@@ -200,14 +201,20 @@ def test_import_missing_library_dir(tmp_path):
 # ---- 前台可见性 --------------------------------------------------------------
 
 def test_imported_album_visible_on_pages(tmp_path, admin_client):
-    """导入即 published → 写真集页面立刻能看到,封面图可服务。"""
+    """缩略图生成完后自动 published → 写真集页面可见,封面图可服务。
+    测试里直接调 _publish_ready 跳过后台线程等待。"""
     lib = tmp_path / "library"
     _album(lib, "Yeha", "Visible Album", n=2)
 
     with SessionLocal() as s:
         library_import.import_library(s, lib, settings.media_dir)
         c = _collection(s, "yeha-visible-album")
-        assert c is not None and c.status == "published"
+        assert c is not None and c.status == "processing"
+        from app.services import media as media_svc
+        media_svc._publish_ready("yeha-visible-album")
+        s.expire_all()
+        c = _collection(s, "yeha-visible-album")
+        assert c.status == "published"
 
     r = admin_client.get("/collections")
     assert r.status_code == 200

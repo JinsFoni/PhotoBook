@@ -493,11 +493,13 @@ window.PC = (function () {
     return "/t/" + w + "/" + p.file + ".webp";     /* 缩放版:服务端只缩不放,磁盘缓存 */
   }
 
-  /* 高清版目标宽:铺满最长边 ×1.5,夹在 [1800,2400] —— 24MP 原图缩到此尺寸
-     后与真原图在屏幕上肉眼无差,但体积从 10–25MB 降到约 1–2MB */
+  /* 高清版目标宽: 吸附固定档(1800/2400), 消灭屏宽驱动的档位漂移 ——
+     连续取值会让每种屏宽生成一个独立缓存档(2160/2268…), 10 万张规模
+     下每档都是 150GB 级。1800: 小屏足够; 2400: 桌面全屏无差。
+     原图缩到此尺寸后与真原图在屏幕上肉眼无差, 但体积从 10–25MB 降到约 1–2MB */
   function hiWidth() {
     var m = Math.max(window.innerWidth || 0, window.innerHeight || 0);
-    return Math.min(2400, Math.max(1800, Math.round(m * 1.5)));
+    return m * 1.5 <= 2100 ? 1800 : 2400;
   }
 
   function lightboxEl() {

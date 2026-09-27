@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from .. import settings_store
+from .. import media, settings_store
 from ...db import HarvestHistory, HarvestJob
 from ...database import SessionLocal
 from . import net, pipeline
@@ -226,7 +226,8 @@ def _run_job(job_id: int) -> None:
         job.error = f"→ {final_dir.name}({file_count} 文件)"
         s.commit()
 
-        # 7. 导入平台(library → media + 建库),导入即 published 立即可见。
+        # 7. 导入平台(library → media + 建库)。导入后写真置 processing
+        #    (前台不可见),缩略图队列生成 900/1800 两档后才翻转 published。
         #    导入失败只记状态,不把采集任务判失败(文件仍在 library,可手动重扫)
         try:
             from ...config import settings as app_settings
@@ -234,12 +235,13 @@ def _run_job(job_id: int) -> None:
             r = library_import.import_album(
                 s, final_dir, app_settings.media_dir, library_root=library_root,
                 unsorted_dir=str(conf["harvest.unsorted_dir"]),
-                tags=target.tags)
+                tags=target.tags, thumbs=False)
             if r["skipped"]:
                 job.error = f"→ {final_dir.name}(已导入过,跳过)"
             else:
                 extra = f",跳过 {r['videos']} 个视频" if r["videos"] else ""
-                job.error = f"→ {final_dir.name}({r['photos']} 张已入库{extra})"
+                nq = media.queue_import_thumbs(r["slug"])
+                job.error = f"→ {final_dir.name}({r['photos']} 张入库,缩略图生成中#{nq})"
             s.commit()
         except Exception as e:
             log.exception("import failed for %s", final_dir)

@@ -29,7 +29,7 @@
               <input class="input" name="published_at" value="{{ c.published_at if c and c.published_at else '' }}" placeholder="2026.02.14"></label>
             <label class="field"><span class="field__label">{{ t('状态') }}</span>
               <select class="select" name="status">
-                {% for st in ('published', 'draft', 'hidden') %}
+                {% for st in ('published', 'processing', 'draft', 'hidden') %}
                 <option value="{{ st }}" {% if c and c.status == st %}selected{% endif %}>{{ st }}</option>
                 {% endfor %}
               </select></label>

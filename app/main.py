@@ -31,7 +31,8 @@ async def lifespan(app: FastAPI):
     # worker 消费线程常启: 手动提交的任务随时要处理。
     # HARVEST_ENABLED 只控制「定时扫描」是否自动跑(见 start_worker 内部)。
     worker.start_worker()
-    media.preheat_all()  # daemon 线程预热缩略图,不阻塞启动
+    media.ensure_import_worker()  # 入库缩略图队列(daemon, 惰性启动亦可, 这里提前拉起)
+    media.preheat_all()  # daemon 线程预热缩略图(存量兑底), 不阻塞启动
     log.info("PhotoBook started — http://%s:%s", settings.host, settings.port)
     yield
     from .services.harvest import worker

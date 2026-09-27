@@ -70,7 +70,7 @@
     var ar = (p.w && p.h) ? (p.w + "/" + p.h) : "2/3";
     return '<div class="photo-tile">' +
       '<div class="frame skeleton" style="aspect-ratio:' + ar + '">' +
-      '<img src="/t/1800/' + p.file + '.webp" alt="" loading="lazy" decoding="async"></div>' +
+      '<img src="/t/900/' + p.file + '.webp" alt="" loading="lazy" decoding="async"></div>' +
       '<button class="photo-tile__hit" type="button" data-photo-index="' + i + '" aria-label="' + PC.t("Open photo {n} full screen", { n: i + 1 }) + '"></button>' +
       '<span class="photo-tile__idx" aria-hidden="true">' + String(i + 1).padStart(2, "0") + "</span></div>";
   }).join("");

@@ -164,11 +164,17 @@ def test_run_job_archives_and_imports(monkeypatch, s):
     job = s.get(HarvestJob, job_id)
     assert job.status == "done"
     assert job.model_name == "WorkerModel"        # 出品方 tag 被排除词跳过
-    assert "2 张已入库" in job.error
+    assert "2 张入库" in job.error and "缩略图生成中" in job.error
     assert calls == ["download", "extract"]
 
     c = s.scalar(select(Collection).where(Collection.slug == SLUG))
-    assert c is not None and c.status == "published"
+    # 缩略图生成完才 published; 测试里后台线程可能未跑完, 直接驱动发布翻转
+    assert c is not None
+    from app.services import media as media_svc
+    media_svc._publish_ready(SLUG)
+    s.expire_all()
+    c = s.scalar(select(Collection).where(Collection.slug == SLUG))
+    assert c.status == "published"
     assert c.model is not None and c.model.name == "WorkerModel"
     assert len(c.photos) == 2
     assert (Path(settings.media_dir) / "workermodel" / "worker-import-album" / "001.jpg").exists()

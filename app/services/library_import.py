@@ -166,12 +166,15 @@ def collection_exists(s: Session, model_name: str, title: str,
 def import_album(s: Session, album_dir: Path, media_root: Path,
                  library_root: Path | None = None, unsorted_dir: str = "未分类",
                  today: str | None = None,
-                 tags: list[str] | None = None) -> dict:
+                 tags: list[str] | None = None,
+                 thumbs: bool = True) -> dict:
     """导入单个写真目录。返回统计 {album, model, photos, videos, skipped, slug}。
 
     图片移动 → 建 models/collections/photos 记录;已导入过(slug 命中)则原样跳过。
     中途失败会把已移动的文件移回原位,不留半成品。
     ``tags``:采集详情页解析到的显示名 tag(None = 无),建合集后一并挂上。
+    ``thumbs``:True = 入库后同步入队缩略图生成(完成前 status=processing,
+    前台不可见);False = 调用方自管(采集 worker 拿到 slug 后自己入队)。
     """
     album_dir = Path(album_dir)
     parent = album_dir.parent
@@ -214,9 +217,12 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
             moved.append((src, target))
 
         published = today or datetime.now().strftime("%Y.%m.%d")
+        # 缩略图就绪前不前台可见: thumbs=True 直接 processing, 生成完自动发布;
+        # thumbs=False(采集 worker)调用方随后自己入队(同样会置 processing)
+        initial = "processing" if thumbs else "published"
         c = Collection(slug=slug, title=title[:255],
                        model_id=model.id if model else None,
-                       published_at=published, status="published")
+                       published_at=published, status=initial)
         s.add(c)
         s.flush()
         for i, (_src, target) in enumerate(moved):
@@ -246,6 +252,9 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
 
     _prune_empty(album_dir, Path(library_root) if library_root else None)
     log.info("imported %s: %d photos (%s)", title, len(moved), slug)
+    if thumbs and not stats["skipped"] and stats["slug"]:
+        from . import media
+        media.queue_import_thumbs(stats["slug"])
     return stats
 
 

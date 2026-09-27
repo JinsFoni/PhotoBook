@@ -14,6 +14,7 @@ import threading
 from fastapi import HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from PIL import Image
+from sqlalchemy import select
 
 from ..config import settings
 
@@ -24,16 +25,33 @@ THUMB_RE = re.compile(r"^(\d+)(?:x(\d+))?/(.+)\.(jpg|jpeg|png|webp)$", re.I)
 
 Image.MAX_IMAGE_PIXELS = 400 * 1024 * 1024  # 原图可达 40MP+
 
+# 档位策略(分层设计):
+#   900  网格 + 照片墙(入库时异步生成)
+#   1800 灯箱 fit 预览(入库时异步生成)
+#   2400 灯箱自动高清升级 — 不预热、不入库生成, 纯按需(谁看过全屏谁才有);
+#        10 万张规模固定存储 48GB(原图的 3%), 2400 档体积随观看增长不随库容。
+WALL_W = 900
+PREVIEW_W = 1800
+HD_W = 2400
+PREHEAT_WIDTHS = (WALL_W, PREVIEW_W)
+
 # 缩略图生成全局并发上限。单张 19MP 图解码峰值 ~170MB,
 # 不限流时浏览器并发 8 张就能把容器打到 1.4GB(NAS 实测);
 # 库里还有 74MP 巨图, 2400 档单张峰值 243MB(实测)。
 # NAS 级 CPU 单张 1~3s,排队等 1 轮远好于内存打爆。
 _gen_sem = threading.Semaphore(2)
 
-# 预热每张图要连出 4 个档位(700/900/1800/2400), 74MP 巨图在 2400 档
-# 单张峰值 243MB(实测)。预热是逐张串行的, 但 glibc 默认不把解完后的
-# 空闲堆页还给内核, VmHWM 会一路顶到 800MB+。每张图之间 malloc_trim
-# 归还内存 + 短歇, 尖柗不再叠加。
+# 入库缩略图队列: 采集/手动导入完成后, 后台线程逐张生成 WALL/PREVIEW 两档。
+# 生成完 → 写真从 processing 翻转 published(前台可见)。
+# 单张 ~0.2s(19MP draft 解码), 299 张的写真约 1 分钟内就绪。
+_thumb_queue: list[str] = []   # collection slug 列表(去重由入队方保证)
+_thumb_lock = threading.Lock()
+_thumb_wake = threading.Event()
+_thumb_thread: threading.Thread | None = None
+
+# 预热每张图要连出多个档位, 74MP 巨图在 2400 档单张峰值 243MB(实测)。
+# 预热是逐张串行的, 但 glibc 默认不把解完后的空闲堆页还给内核,
+# VmHWM 会一路顶到 800MB+。每张图之间 malloc_trim 归还内存 + 短歇。
 _preheat_gap = 0.3
 
 
@@ -178,8 +196,10 @@ def preheat_progress() -> dict:
 
 
 def preheat_all(batch: int = 4) -> None:
-    """预热全部照片的常用尺寸(700 网格 / 900 封面 / 1800 预览 / 2400 高清)。
-    幂等:已有缓存的文件直接跳过。在 daemon 线程里跑,不阻塞启动。"""
+    """预热全部照片的常用尺寸(900 网格/照片墙 / 1800 灯箱预览)。
+
+    2400(高清升级)不预热: 纯按需, 存储随观看增长而非库容(10 万张规模
+    固定档合计 48GB)。幂等:已有缓存的文件直接跳过。daemon 线程,不阻塞启动。"""
 
     def _run() -> None:
         import time
@@ -200,12 +220,11 @@ def preheat_all(batch: int = 4) -> None:
                 _preheat_state.update(total=len(files), done=0, running=True)
             log.info("preheat: %d photos", len(files))
             done = 0
-            import ctypes
-            libc = ctypes.CDLL("libc.so.6")  # malloc_trim: 把空闲堆页还给内核
+            libc = _load_libc()  # malloc_trim: 把空闲堆页还给内核(不可用则跳过)
             for rel in files:
                 if _preheat_done.is_set():
                     break
-                for w in (700, 900, 1800, 2400):
+                for w in PREHEAT_WIDTHS:
                     ensure_cached(rel, w)
                 done += 1
                 if done % 50 == 0:
@@ -216,7 +235,8 @@ def preheat_all(batch: int = 4) -> None:
                 if done % batch == 0:
                     time.sleep(0.05)
                 time.sleep(_preheat_gap)
-                libc.malloc_trim(0)
+                if libc:
+                    libc.malloc_trim(0)
             with _preheat_lock:
                 _preheat_state.update(done=done, running=False)
             log.info("preheat done: %d photos in %.0fs", done, time.time() - t0)
@@ -226,3 +246,110 @@ def preheat_all(batch: int = 4) -> None:
             log.exception("preheat crashed")
 
     threading.Thread(target=_run, name="thumb-preheat", daemon=True).start()
+
+
+# ---- 入库缩略图队列 -------------------------------------------------------------
+# 采集/手动导入完成后异步生成 900/1800 两档;生成完把写真从 processing
+# 翻转 published,前台才可见。队列元素为 collection slug。
+
+def _publish_ready(slug: str) -> None:
+    """写真两档齐备 → published。幂等:已是 published 则无操作。"""
+    from ..database import SessionLocal
+    from ..db import Collection
+
+    s = SessionLocal()
+    try:
+        c = s.scalar(select(Collection).where(Collection.slug == slug))
+        if not c:
+            return
+        if c.status == "processing":
+            c.status = "published"
+            s.commit()
+            log.info("published (thumbs ready): %s", slug)
+    finally:
+        s.close()
+
+
+def _load_libc():
+    """malloc_trim 用;Linux 走 libc.so.6。macOS 无此符号 → 返回 None(不致命)。"""
+    import ctypes
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        if not hasattr(libc, "malloc_trim"):
+            return None
+        return libc
+    except OSError:
+        return None
+
+
+def _import_worker() -> None:
+    import time
+
+    libc = _load_libc()
+    while True:
+        with _thumb_lock:
+            slug = _thumb_queue[0] if _thumb_queue else None
+        if slug is None:
+            _thumb_wake.wait(timeout=30)
+            _thumb_wake.clear()
+            continue
+        try:
+            from ..database import SessionLocal
+            from ..db import Collection
+
+            s = SessionLocal()
+            try:
+                c = s.scalar(select(Collection).where(Collection.slug == slug))
+                files = [p.filename for p in c.photos] if c else []
+            finally:
+                s.close()
+            for rel in files:
+                for w in PREHEAT_WIDTHS:
+                    ensure_cached(rel, w)
+            _publish_ready(slug)
+        except Exception:
+            # 生成失败也放行(保持 processing 会永久隐藏写真;放行交给
+            # 请求路径限流兜底,预热下次重启再补)
+            log.exception("import thumbs failed: %s", slug)
+            try:
+                _publish_ready(slug)
+            except Exception:
+                log.exception("publish failed: %s", slug)
+        finally:
+            with _thumb_lock:
+                if _thumb_queue and _thumb_queue[0] == slug:
+                    _thumb_queue.pop(0)
+            if libc:
+                libc.malloc_trim(0)
+            time.sleep(0.1)
+
+
+def ensure_import_worker() -> None:
+    """启动入库缩略图 worker(daemon)。幂等。"""
+    global _thumb_thread
+    if _thumb_thread and _thumb_thread.is_alive():
+        return
+    _thumb_thread = threading.Thread(target=_import_worker, name="thumb-import", daemon=True)
+    _thumb_thread.start()
+
+
+def queue_import_thumbs(slug: str) -> int:
+    """写真入队生成缩略图,返回当前队列长度。入队后写真状态置 processing。"""
+    from ..database import SessionLocal
+    from ..db import Collection
+
+    s = SessionLocal()
+    try:
+        c = s.scalar(select(Collection).where(Collection.slug == slug))
+        if c and c.status == "published":
+            c.status = "processing"
+            s.commit()
+    finally:
+        s.close()
+    with _thumb_lock:
+        if slug not in _thumb_queue:
+            _thumb_queue.append(slug)
+        n = len(_thumb_queue)
+    ensure_import_worker()
+    _thumb_wake.set()
+    return n

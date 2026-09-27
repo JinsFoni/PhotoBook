@@ -75,7 +75,7 @@ class Collection(Base):
     title: Mapped[str] = mapped_column(String(255))
     cover_photo_id: Mapped[int | None] = mapped_column(ForeignKey("photos.id", ondelete="SET NULL"), default=None)
     published_at: Mapped[str | None] = mapped_column(String(20), default=None)  # YYYY.MM.DD
-    status: Mapped[str] = mapped_column(String(20), default="published")  # draft|published|hidden
+    status: Mapped[str] = mapped_column(String(20), default="published")  # processing|draft|published|hidden
     featured: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_weight: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
