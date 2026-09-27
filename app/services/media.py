@@ -25,9 +25,16 @@ THUMB_RE = re.compile(r"^(\d+)(?:x(\d+))?/(.+)\.(jpg|jpeg|png|webp)$", re.I)
 Image.MAX_IMAGE_PIXELS = 400 * 1024 * 1024  # 原图可达 40MP+
 
 # 缩略图生成全局并发上限。单张 19MP 图解码峰值 ~170MB,
-# 不限流时浏览器并发 8 张就能把容器打到 1.4GB(NAS 实测)。
+# 不限流时浏览器并发 8 张就能把容器打到 1.4GB(NAS 实测);
+# 库里还有 74MP 巨图, 2400 档单张峰值 243MB(实测)。
 # NAS 级 CPU 单张 1~3s,排队等 1 轮远好于内存打爆。
 _gen_sem = threading.Semaphore(2)
+
+# 预热每张图要连出 4 个档位(700/900/1800/2400), 74MP 巨图在 2400 档
+# 单张峰值 243MB(实测)。预热是逐张串行的, 但 glibc 默认不把解完后的
+# 空闲堆页还给内核, VmHWM 会一路顶到 800MB+。每张图之间 malloc_trim
+# 归还内存 + 短歇, 尖柗不再叠加。
+_preheat_gap = 0.3
 
 
 def _safe_path(rel: str) -> any:
@@ -193,6 +200,8 @@ def preheat_all(batch: int = 4) -> None:
                 _preheat_state.update(total=len(files), done=0, running=True)
             log.info("preheat: %d photos", len(files))
             done = 0
+            import ctypes
+            libc = ctypes.CDLL("libc.so.6")  # malloc_trim: 把空闲堆页还给内核
             for rel in files:
                 if _preheat_done.is_set():
                     break
@@ -203,9 +212,11 @@ def preheat_all(batch: int = 4) -> None:
                     log.info("preheat: %d/%d (%.0fs)", done, len(files), time.time() - t0)
                 with _preheat_lock:
                     _preheat_state["done"] = done
-                # 小批次让出 CPU,采集下载等任务优先
+                # 小批次让出 CPU + 还堆页,采集下载等任务优先
                 if done % batch == 0:
                     time.sleep(0.05)
+                time.sleep(_preheat_gap)
+                libc.malloc_trim(0)
             with _preheat_lock:
                 _preheat_state.update(done=done, running=False)
             log.info("preheat done: %d photos in %.0fs", done, time.time() - t0)
