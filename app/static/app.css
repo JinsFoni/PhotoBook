@@ -957,6 +957,22 @@ table { border-collapse: collapse; }
 }
 .vm-grid .card__caption { flex-wrap: nowrap; }
 .vm-grid .collection-card { display: flex; flex-direction: column; }
+/* 网格项默认 min-width:auto, 长标题/长 slug 的 min-content 会撑爆 1fr 轨道
+   (手机 2 列降级时实测首卡被撑到 1268px, 整页横向溢出到 2297px)。
+   虚拟化卡宽由 JS 定死不受影响; 流式网格(/collections 手机降级、收藏墙等)
+   统一在此拨正。 */
+.vm-grid > *,
+.grid--collections > *,
+.grid--models > *,
+.grid--models-5 > *,
+.grid--photos > *,
+.masonry--collections > * { min-width: 0; }
+/* 手机降级为流式网格后, 标题恢复换行(nowrap 是给绝对定位虚拟化卡的单行
+   标注区设计的, 不受限宽; 流式卡不限会回撑轨道) */
+@media (max-width: 760px) {
+  .vm-grid .card__title { white-space: normal; }
+  .vm-grid .card__caption { flex-wrap: wrap; }
+}
 .grid--photos { grid-template-columns: repeat(4, 1fr); }
 .grid--2 { grid-template-columns: repeat(2, 1fr); }
 .grid--3 { grid-template-columns: repeat(3, 1fr); }
