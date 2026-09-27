@@ -18,6 +18,7 @@ HARVEST_KEYS: dict[str, tuple[str, str, type]] = {
     "harvest.model_exclude": (defaults.harvest_model_exclude,
                              "模特名排除词(逗号分隔,按词匹配,用于从标签里挑模特名)", str),
     "harvest.unsorted_dir": (defaults.harvest_unsorted_dir, "未分类目录名", str),
+    "harvest.proxy": ("", "网络代理(整条采集链路: 页面解析/短链/API/下载,空=直连)", str),
     "library.dir": (str(defaults.library_dir), "归档根目录", str),
 }
 

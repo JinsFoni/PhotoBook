@@ -40,8 +40,10 @@ def download_stream(url: str, dest: Path, *,
     total = 0
     # curl_cffi 0.16.x 的 Response 不支持 with 语句(部分版本才支持),
     # 统一用手动 close + try/finally,流式读完后释放连接。
+    # 代理与 net 同源(settings 表 harvest.proxy,整条采集链路共用)。
+    from .net import _proxy
     r = cr.get(url, impersonate="chrome", headers=headers, stream=True,
-               timeout=(20, 120))
+               timeout=(20, 120), proxy=_proxy())
     try:
         if r.status_code not in (200, 206):
             raise RuntimeError(f"下载失败 HTTP {r.status_code}")

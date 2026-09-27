@@ -52,6 +52,11 @@
             <label class="field"><span class="field__label">{{ t('未分类模特目录名') }}</span>
               <input class="input" name="harvest.unsorted_dir" value="{{ conf['harvest.unsorted_dir'] }}"></label>
 
+            <label class="field"><span class="field__label">{{ t('网络代理(采集下载)') }}</span>
+              <input class="input" name="harvest.proxy" value="{{ conf['harvest.proxy'] }}"
+                     placeholder="http://192.168.0.2:7890" autocomplete="off" spellcheck="false">
+              <span class="t-small" style="color:var(--ink-3)">{{ t('采集全部请求(页面解析、短链、API、归档下载)都走此代理;前台与后台不受影响。留空直连,改完即时生效。') }}</span></label>
+
             <div style="border-top:1px solid var(--line);margin-top:var(--s5);padding-top:var(--s5)">
               <h2 class="t-h3" style="margin-bottom:var(--s4)">{{ t('站点') }}</h2>
               <label class="field"><span class="field__label">{{ t('默认语言') }}</span>

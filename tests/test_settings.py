@@ -51,3 +51,27 @@ def test_get_setting_missing(s):
 def test_harvest_keys_complete():
     for k in ("enabled", "interval_hours", "pages_per_round", "start", "whitelist", "blacklist"):
         assert f"harvest.{k}" in HARVEST_KEYS
+
+
+def test_proxy_roundtrip(s):
+    # 代理设置: 写入 → conf 读回;清空 → None(直连)
+    set_setting(s, "harvest.proxy", "http://192.168.0.2:7890")
+    s.flush()
+    assert harvest_conf(s)["harvest.proxy"] == "http://192.168.0.2:7890"
+    set_setting(s, "harvest.proxy", "")
+    s.flush()
+    assert harvest_conf(s)["harvest.proxy"] == ""
+
+
+def test_net_proxy_reads_settings(s):
+    # 整个采集链路走代理: net(页面/短链/API) + pipeline.download_stream 都应接线
+    import inspect
+    from app.services.harvest import net, pipeline as pl
+
+    assert net_src_proxies(net) == 3, "net 应有 3 处 proxy 接线(fetch/ouo Session/mediafire API)"
+    assert "harvest.proxy" in inspect.getsource(pl), "下载流应读取 harvest.proxy"
+
+
+def net_src_proxies(net) -> int:
+    import inspect
+    return inspect.getsource(net).count("proxy=")

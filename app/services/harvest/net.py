@@ -17,6 +17,22 @@ from curl_cffi import requests as cr
 UA_IMPERSONATE = "chrome"
 
 
+def _proxy() -> str | None:
+    """采集代理(settings 表 harvest.proxy,空=直连)。
+
+    作用于整条采集链路(页面解析、短链跳转、MediaFire API、归档下载);
+    每次请求时读,后台改完即时生效,无需重启。前台与 admin 不受影响。
+    """
+    from app.database import SessionLocal
+    from app.services import settings_store
+    s = SessionLocal()
+    try:
+        val = str(settings_store.harvest_conf(s).get("harvest.proxy") or "").strip()
+        return val or None
+    finally:
+        s.close()
+
+
 @dataclass
 class HarvestTarget:
     """从详情页解析出的采集目标。"""
@@ -31,7 +47,7 @@ class HarvestTarget:
 
 def fetch_html(url: str, *, timeout: float = 30.0) -> str:
     """GET 页面,返回 HTML 文本。失败抛 RuntimeError。"""
-    r = cr.get(url, impersonate=UA_IMPERSONATE, timeout=timeout)
+    r = cr.get(url, impersonate=UA_IMPERSONATE, timeout=timeout, proxy=_proxy())
     if r.status_code != 200:
         raise RuntimeError(f"HTTP {r.status_code} for {url}")
     return r.text
@@ -194,7 +210,7 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
     2026-09 起 ouo 常见两段式:第三步落地 ouo.io/<新短码>(还是短链页),
     需把同样流程再走一遍(最多 max_hops 轮)才到达 MediaFire。
     """
-    s = cr.Session(impersonate=UA_IMPERSONATE)
+    s = cr.Session(impersonate=UA_IMPERSONATE, proxy=_proxy())
     try:
         url = link
         for _ in range(max_hops):
@@ -232,7 +248,7 @@ def mediafire_info_from_url(page_url: str) -> dict:
 
     api = cr.get("https://www.mediafire.com/api/1.5/file/get_info.php",
                  params={"quick_key": key, "response_format": "json"},
-                 impersonate=UA_IMPERSONATE, timeout=30)
+                 impersonate=UA_IMPERSONATE, timeout=30, proxy=_proxy())
     fi = api.json()["response"]["file_info"]
     direct = mediafire_direct_url(page_url) or ""
     return {
