@@ -296,13 +296,22 @@ def _consume_loop() -> None:
 
 
 def start_worker() -> None:
-    """启动后台消费线程 + APScheduler 定时扫描。"""
+    """启动后台消费线程 + APScheduler 定时扫描。
+
+    消费线程无条件启动(手动提交的任务要随时处理);
+    定时扫描仅在 HARVEST_ENABLED=1 时注册(后台「定时扫描开启」开关仍逐轮生效)。
+    """
     global _thread
     if _thread and _thread.is_alive():
         return
     _stop.clear()
     _thread = threading.Thread(target=_consume_loop, name="harvest-worker", daemon=True)
     _thread.start()
+
+    from ...config import settings
+    if not settings.harvest_enabled:
+        log.info("harvest worker started (scheduled scan disabled by HARVEST_ENABLED)")
+        return
 
     from apscheduler.schedulers.background import BackgroundScheduler
 
