@@ -81,9 +81,9 @@
                 <tr data-job-row="{{ j.id }}" style="border-bottom:1px solid var(--line-2)">
                   <td class="num" style="padding:var(--s2) 0">{{ j.id }}</td>
                   <td class="num">{{ j.serial }}</td>
-                  <td>{{ (j.title or '—')[:36] }}</td>
+                  <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ j.title or '' }}">{{ (j.title or '—')[:24] }}{% if j.title and j.title|length > 24 %}…{% endif %}</td>
                   <td>{{ j.model_name or '—' }}</td>
-                  <td><span class="num" data-status-badge="{{ j.status }}">{{ j.status }}</span></td>
+                  <td><span class="num" data-status-badge="{{ j.status }}" style="display:inline-block;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom">{{ j.status }}</span></td>
                   <td class="num" data-job-progress="{{ j.id }}">{{ (j.bytes_done // 1048576) }}/{{ (j.bytes_total // 1048576) }}MB</td>
                   <td class="t-small">{{ j.source }}</td>
                   <td class="num t-small" style="color:var(--ink-3)">{{ j.created_at.strftime('%m-%d %H:%M') if j.created_at else '' }}</td>
@@ -148,12 +148,13 @@
           ? fmtMB(j.bytesDone) + "/" + fmtMB(j.bytesTotal) + "MB"
           : (j.status === "downloading" ? fmtMB(j.bytesDone) + "MB" : "—");
         var err = j.error ? '<div class="t-small" style="color:var(--accent);margin-top:2px">' + esc(j.error.slice(0, 80)) + "</div>" : "";
+        var title = (j.title || "").slice(0, 24) + ((j.title || "").length > 24 ? "…" : "");
         return "<tr style=\"border-bottom:1px solid var(--line-2)\">" +
           '<td class="num" style="padding:var(--s2) 0">' + j.id + "</td>" +
           '<td class="num">' + j.serial + "</td>" +
-          "<td>" + esc(j.title.slice(0, 36) || "—") + "</td>" +
+          '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(j.title || "") + '">' + esc(title || "—") + "</td>" +
           "<td>" + esc(j.model || "—") + "</td>" +
-          '<td><span class="num" data-status-badge="' + j.status + '">' + j.status + "</span>" + err + "</td>" +
+          '<td><span class="num" data-status-badge="' + j.status + '" style="display:inline-block;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom">' + j.status + "</span>" + err + "</td>" +
           '<td class="num">' + prog + "</td>" +
           '<td class="t-small">' + j.source + "</td>" +
           '<td class="num t-small" style="color:var(--ink-3)">' + (j.createdAt || "") + "</td>" +
