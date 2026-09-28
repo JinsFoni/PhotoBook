@@ -117,7 +117,9 @@ def _finish(s, job: HarvestJob, status: str, error: str | None = None) -> None:
     job.status = status
     job.error = error
     job.finished_at = _now()
-    s.add(HarvestHistory(serial=job.serial, status=status, title=job.title))
+    # 历史表 serial 为主键: 同一任务二次 _finish(如 done 后 import 失败改判 failed)
+    # 用合并写入, 保留最新状态
+    s.merge(HarvestHistory(serial=job.serial, status=status, title=job.title))
 
 
 def _run_job(job_id: int) -> None:
@@ -228,7 +230,8 @@ def _run_job(job_id: int) -> None:
 
         # 7. 导入平台(library → media + 建库)。导入后写真置 processing
         #    (前台不可见),缩略图队列生成 900/1800 两档后才翻转 published。
-        #    导入失败只记状态,不把采集任务判失败(文件仍在 library,可手动重扫)
+        #    导入失败 → 任务判 failed 并记录归档残留路径:删除该任务时
+        #    会连带清理(残留未入库, 不删就是孤儿);重试也能走 failed 重跑路径
         try:
             from ...config import settings as app_settings
             from .. import library_import
@@ -247,7 +250,9 @@ def _run_job(job_id: int) -> None:
             log.exception("import failed for %s", final_dir)
             job = s.get(HarvestJob, job_id)
             if job:
-                job.error = f"→ {final_dir.name}(入库失败: {str(e)[:120]})"
+                _finish(s, job, "failed", f"→ {final_dir.name}(入库失败: {str(e)[:100]})")
+                # 残留目录记录到任务上, 删除 failed 任务时一并清理
+                job.archive_dir = str(final_dir)
                 s.commit()
     except FileExistsError:
         job = s.get(HarvestJob, job_id)

@@ -156,6 +156,8 @@ class HarvestJob(Base):
     bytes_done: Mapped[int] = mapped_column(Integer, default=0)
     bytes_total: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, default=None)
+    # failed 时若已归档到 library(import 失败等), 记录残留目录路径供删除任务时清理
+    archive_dir: Mapped[str | None] = mapped_column(String(500), default=None)
     source: Mapped[str] = mapped_column(String(10), default="auto")  # auto | manual
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(default=None)

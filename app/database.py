@@ -41,6 +41,7 @@ def _migrate() -> None:
     """轻量迁移:仅对已存在的旧库补列(create_all 不会改已有表)。幂等。"""
     stmts = (
         "ALTER TABLE users ADD COLUMN language VARCHAR(8) NOT NULL DEFAULT ''",
+        "ALTER TABLE harvest_jobs ADD COLUMN archive_dir VARCHAR(500)",
     )
     with engine.connect() as conn:
         for stmt in stmts:

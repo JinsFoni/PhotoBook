@@ -95,6 +95,11 @@
                     <form method="post" action="/admin/harvest/{{ j.id }}/cancel" style="display:inline">
                       <button class="btn btn--quiet btn--sm" type="submit">{{ t('取消') }}</button></form>
                     {% endif %}
+                    {% if j.status in ('done', 'exists', 'skipped', 'failed') %}
+                    <form method="post" action="/admin/harvest/{{ j.id }}/delete" style="display:inline"
+                          onsubmit="return confirm('{{ t('删除该任务记录?') }}{% if j.status == 'failed' %} {{ t('同时清理归档库残留文件。') }}{% endif %}')">
+                      <button class="btn btn--quiet btn--sm" type="submit" style="color:var(--danger, #c0392b)">{{ t('删除') }}</button></form>
+                    {% endif %}
                   </td>
                 </tr>
                 {% endfor %}
@@ -131,9 +136,14 @@
       tbody.innerHTML = jobs.map(function (j) {
         var ops = "";
         if (j.status === "failed" || j.status === "skipped")
-          ops = '<form method="post" action="/admin/harvest/' + j.id + '/retry" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit">' + PC.t("重试") + '</button></form>';
+          ops += '<form method="post" action="/admin/harvest/' + j.id + '/retry" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit">' + PC.t("重试") + '</button></form> ';
         else if (j.status === "queued")
-          ops = '<form method="post" action="/admin/harvest/' + j.id + '/cancel" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit">' + PC.t("取消") + '</button></form>';
+          ops += '<form method="post" action="/admin/harvest/' + j.id + '/cancel" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit">' + PC.t("取消") + '</button></form> ';
+        var terminal = (j.status === "done" || j.status === "exists" || j.status === "skipped" || j.status === "failed");
+        if (terminal) {
+          var msg = j.status === "failed" ? PC.t("删除该任务记录?") + " " + PC.t("同时清理归档库残留文件。") : PC.t("删除该任务记录?");
+          ops += '<form method="post" action="/admin/harvest/' + j.id + '/delete" style="display:inline" onsubmit="return confirm(\'' + msg.replace(/'/g, "&#39;") + '\')"><button class="btn btn--quiet btn--sm" type="submit" style="color:var(--danger, #c0392b)">' + PC.t("删除") + '</button></form>';
+        }
         var prog = (j.status === "downloading" && j.bytesTotal)
           ? fmtMB(j.bytesDone) + "/" + fmtMB(j.bytesTotal) + "MB"
           : (j.status === "downloading" ? fmtMB(j.bytesDone) + "MB" : "—");

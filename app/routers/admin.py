@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -23,6 +24,8 @@ from ..i18n import t
 from ..templating import templates
 from ..services import settings_store
 from ..services.harvest import worker as harvest_worker
+
+log = logging.getLogger("photobook.admin")
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 
@@ -420,6 +423,45 @@ async def admin_harvest_cancel(job_id: int, s: Session = Depends(get_db)):
         s.delete(job)
         s.commit()
     return RedirectResponse("/admin/harvest", 303)
+
+
+@router.post("/harvest/{job_id}/delete")
+async def admin_harvest_delete(job_id: int, s: Session = Depends(get_db)):
+    """删除终态任务记录。
+
+    - 正常 done/exists/skipped:只删记录,不碰任何文件(done 已导入平台,
+      exists/skipped 本就无残留)
+    - 带 archive_dir 的任务(import 失败,残包留在 library):删除时连带清理
+      残留目录 — 它未入库,不删就是孤儿。路径必须是 library 子目录,防误删。
+    """
+    job = s.get(HarvestJob, job_id)
+    if not job:
+        return RedirectResponse("/admin/harvest", 303)
+    if job.status not in ("done", "exists", "skipped", "failed"):
+        # 运行中/排队中不能用删除(应走取消/等完成), 防误删进行中的任务记录
+        return RedirectResponse("/admin/harvest?flash=" + quote(t("任务进行中,不能删除")), 303)
+    if job.archive_dir:
+        # failed(下载/导入失败)或存量 done(旧版 import 失败未改判)可能带归档残留;
+        # 正常 done 任务无 archive_dir, 不会误删任何文件。
+        import shutil
+        from ..services.settings_store import harvest_conf
+        conf = harvest_conf(s)
+        library_root = Path(str(conf["library.dir"])).resolve()
+        try:
+            target = Path(job.archive_dir).resolve()
+            # 只删 library 内的目录; 保护根与 _tmp
+            if (target.is_dir() and str(target).startswith(str(library_root) + "/")
+                    and target != library_root and target.name != "_tmp"):
+                shutil.rmtree(target, ignore_errors=True)
+                log.info("deleted failed-job residue: %s", target)
+        except Exception:
+            log.exception("delete residue failed: %s", job.archive_dir)
+    hist = s.get(HarvestHistory, job.serial)
+    if hist:
+        s.delete(hist)
+    s.delete(job)
+    s.commit()
+    return RedirectResponse("/admin/harvest?flash=" + quote(t("任务已删除")), 303)
 
 
 @router.get("/api/harvest/jobs")
