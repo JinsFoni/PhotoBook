@@ -89,17 +89,18 @@
                   <td class="t-small">{{ j.source }}</td>
                   <td class="num t-small" style="color:var(--ink-3)">{{ j.created_at.strftime('%m-%d %H:%M') if j.created_at else '' }}</td>
                   <td>
-                    {% if j.status in ('failed', 'skipped') %}
-                    <form method="post" action="/admin/harvest/{{ j.id }}/retry" style="display:inline">
-                      <button class="btn btn--quiet btn--sm" type="submit">{{ t('重试') }}</button></form>
-                    {% elif j.status == 'queued' %}
-                    <form method="post" action="/admin/harvest/{{ j.id }}/cancel" style="display:inline">
-                      <button class="btn btn--quiet btn--sm" type="submit">{{ t('取消') }}</button></form>
-                    {% endif %}
                     {% if j.status in ('done', 'exists', 'skipped', 'failed') %}
                     <form method="post" action="/admin/harvest/{{ j.id }}/delete" style="display:inline">
                       <button class="btn btn--quiet btn--sm" type="submit" aria-label="{{ t('删除') }}" title="{{ t('删除') }}"
                               style="color:var(--danger, #c0392b);display:inline-flex;align-items:center;padding:4px 6px">{{ icon('trash') }}</button></form>
+                    {% endif %}
+                    {% if j.status in ('failed', 'skipped') %}
+                    <form method="post" action="/admin/harvest/{{ j.id }}/retry" style="display:inline">
+                      <button class="btn btn--quiet btn--sm" type="submit" aria-label="{{ t('重试') }}" title="{{ t('重试') }}"
+                              style="display:inline-flex;align-items:center;padding:4px 6px">{{ icon('retry') }}</button></form>
+                    {% elif j.status == 'queued' %}
+                    <form method="post" action="/admin/harvest/{{ j.id }}/cancel" style="display:inline">
+                      <button class="btn btn--quiet btn--sm" type="submit">{{ t('取消') }}</button></form>
                     {% endif %}
                   </td>
                 </tr>
@@ -147,15 +148,15 @@
     } else {
       tbody.innerHTML = jobs.map(function (j) {
         var ops = "";
-        if (j.status === "failed" || j.status === "skipped")
-          ops += '<form method="post" action="/admin/harvest/' + j.id + '/retry" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit">' + PC.t("重试") + '</button></form> ';
-        else if (j.status === "queued")
-          ops += '<form method="post" action="/admin/harvest/' + j.id + '/cancel" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit">' + PC.t("取消") + '</button></form> ';
         var terminal = (j.status === "done" || j.status === "exists" || j.status === "skipped" || j.status === "failed");
-        if (terminal) {
+        if (terminal)
           ops += '<form method="post" action="/admin/harvest/' + j.id + '/delete" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit" aria-label="' + PC.t("删除") + '" title="' + PC.t("删除") + '" style="color:var(--danger, #c0392b);display:inline-flex;align-items:center;padding:4px 6px">' +
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:15px;height:15px;flex:none"><path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l1 12.2h9l1-12.2M10 10.5v5.5M14 10.5v5.5"/></svg></button></form>';
-        }
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:15px;height:15px;flex:none"><path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l1 12.2h9l1-12.2M10 10.5v5.5M14 10.5v5.5"/></svg></button></form> ';
+        if (j.status === "failed" || j.status === "skipped")
+          ops += '<form method="post" action="/admin/harvest/' + j.id + '/retry" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit" aria-label="' + PC.t("重试") + '" title="' + PC.t("重试") + '" style="display:inline-flex;align-items:center;padding:4px 6px">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:15px;height:15px;flex:none"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg></button></form>';
+        else if (j.status === "queued")
+          ops += '<form method="post" action="/admin/harvest/' + j.id + '/cancel" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit">' + PC.t("取消") + '</button></form>';
         var prog = (j.status === "downloading" && j.bytesTotal)
           ? fmtMB(j.bytesDone) + "/" + fmtMB(j.bytesTotal) + "MB"
           : (j.status === "downloading" ? fmtMB(j.bytesDone) + "MB" : "—");
