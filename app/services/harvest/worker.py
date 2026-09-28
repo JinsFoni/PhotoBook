@@ -225,7 +225,7 @@ def _run_job(job_id: int) -> None:
                                                 unsorted_dir=str(conf["harvest.unsorted_dir"]))
         _finish(s, job, "done")
         file_count = len(list(final_dir.rglob('*')))
-        job.error = f"→ {final_dir.name}({file_count} 文件)"
+        job.error = f"→ {file_count} 个文件"
         s.commit()
 
         # 7. 导入平台(library → media + 建库)。导入后写真置 processing
@@ -240,17 +240,17 @@ def _run_job(job_id: int) -> None:
                 unsorted_dir=str(conf["harvest.unsorted_dir"]),
                 tags=target.tags, thumbs=False)
             if r["skipped"]:
-                job.error = f"→ {final_dir.name}(已导入过,跳过)"
+                job.error = "→ 已导入过,跳过"
             else:
                 extra = f",跳过 {r['videos']} 个视频" if r["videos"] else ""
                 nq = media.queue_import_thumbs(r["slug"])
-                job.error = f"→ {final_dir.name}({r['photos']} 张入库,缩略图生成中#{nq})"
+                job.error = f"→ {r['photos']} 张已入库{extra},缩略图生成中#{nq}"
             s.commit()
         except Exception as e:
             log.exception("import failed for %s", final_dir)
             job = s.get(HarvestJob, job_id)
             if job:
-                _finish(s, job, "failed", f"→ {final_dir.name}(入库失败: {str(e)[:100]})")
+                _finish(s, job, "failed", f"→ 入库失败: {str(e)[:80]}")
                 # 残留目录记录到任务上, 删除 failed 任务时一并清理
                 job.archive_dir = str(final_dir)
                 s.commit()

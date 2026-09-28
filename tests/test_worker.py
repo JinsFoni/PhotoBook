@@ -164,7 +164,7 @@ def test_run_job_archives_and_imports(monkeypatch, s):
     job = s.get(HarvestJob, job_id)
     assert job.status == "done"
     assert job.model_name == "WorkerModel"        # 出品方 tag 被排除词跳过
-    assert "2 张入库" in job.error and "缩略图生成中" in job.error
+    assert "2 张已入库" in job.error and "缩略图生成中" in job.error
     assert calls == ["download", "extract"]
 
     c = s.scalar(select(Collection).where(Collection.slug == SLUG))
