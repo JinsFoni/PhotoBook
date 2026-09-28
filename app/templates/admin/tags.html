@@ -29,8 +29,7 @@
           {% if tags %}
           <div class="chip-row">
             {% for tag in tags %}
-            <form method="post" action="/admin/tags/{{ tag.id }}/delete" style="display:inline"
-                  onsubmit="return confirm('{{ t('删除标签 {n}?', n=tag.name) }}')">
+            <form method="post" action="/admin/tags/{{ tag.id }}/delete" style="display:inline">
               <button class="chip" type="submit">{{ tag.name }} ×</button>
             </form>
             {% endfor %}

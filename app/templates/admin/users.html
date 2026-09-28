@@ -64,8 +64,7 @@
                 </td>
                 <td>
                   {% if not (request.state.user and u.id == request.state.user.id) %}
-                  <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline"
-                        onsubmit="return confirm('{{ t('删除用户 {n}?', n=u.username) }}')">
+                  <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline">
                     <button class="btn btn--quiet btn--sm" type="submit">{{ t('删') }}</button>
                   </form>
                   {% endif %}
