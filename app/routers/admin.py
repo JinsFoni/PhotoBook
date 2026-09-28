@@ -359,9 +359,13 @@ async def admin_harvest(request: Request, s: Session = Depends(get_db)):
     jobs = s.scalars(select(HarvestJob).order_by(desc(HarvestJob.id)).limit(100)).all()
     history_count = s.scalar(select(func.count(HarvestHistory.serial))) or 0
     conf = settings_store.harvest_conf(s)
+    status_icon = {"queued": "clock", "parsing": "search", "downloading": "download",
+                   "extracting": "archive", "done": "check", "exists": "check",
+                   "skipped": "minus", "failed": "close"}
     return templates.TemplateResponse(request, "admin/harvest.html", {
         "page": "admin", "jobs": jobs, "history_count": history_count,
         "conf": conf, "harvest_keys": settings_store.HARVEST_KEYS,
+        "status_icon": status_icon,
         "worker_running": harvest_worker.worker_running(),
         "flash": request.query_params.get("flash", ""),
     })

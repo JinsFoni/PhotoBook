@@ -469,6 +469,17 @@ table { border-collapse: collapse; }
 .icon-btn svg { width: 18px; height: 18px; }
 .icon-btn[aria-expanded="true"] { color: var(--ink); }
 
+/* 采集任务状态徽标: 图标按状态着色 */
+.job-status svg { width: 15px; height: 15px; flex: none; }
+.job-status[data-status-badge="done"] svg,
+.job-status[data-status-badge="exists"] svg { color: var(--ok, #2e9e5b); }
+.job-status[data-status-badge="failed"] svg { color: var(--danger, #c0392b); }
+.job-status[data-status-badge="skipped"] svg { color: var(--ink-3); }
+.job-status[data-status-badge="queued"] svg,
+.job-status[data-status-badge="parsing"] svg,
+.job-status[data-status-badge="downloading"] svg,
+.job-status[data-status-badge="extracting"] svg { color: var(--accent); }
+
 .icon-btn__dot {
   position: absolute;
   top: 6px;
