@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_ui.html' import icon %}
 {% block title %}{{ t('Admin Models') }} — Photo Collection{% endblock %}
 {% block body %}
 <div class="shell">
@@ -40,10 +41,12 @@
                 <td class="num">{{ col_counts.get(m.id, 0) }}</td>
                 <td>{{ '★' if m.featured else '' }}</td>
                 <td style="white-space:nowrap">
-                  <a class="btn btn--quiet btn--sm" href="/admin/models/{{ m.id }}/edit">{{ t('编辑') }}</a>
+                  <a class="btn btn--quiet btn--sm" href="/admin/models/{{ m.id }}/edit" aria-label="{{ t('编辑') }}" title="{{ t('编辑') }}"
+                     style="display:inline-flex;align-items:center;padding:4px 6px">{{ icon('edit') }}</a>
                   <form method="post" action="/admin/models/{{ m.id }}/delete" style="display:inline"
                         onsubmit="return confirm('{{ t('删除模特 {n}?其写真将一并删除。', n=m.name) }}')">
-                    <button class="btn btn--quiet btn--sm" type="submit">{{ t('删') }}</button>
+                    <button class="btn btn--quiet btn--sm" type="submit" aria-label="{{ t('删') }}" title="{{ t('删') }}"
+                            style="color:var(--danger, #c0392b);display:inline-flex;align-items:center;padding:4px 6px">{{ icon('trash') }}</button>
                   </form>
                 </td>
               </tr>
