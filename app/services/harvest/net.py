@@ -16,6 +16,12 @@ from curl_cffi import requests as cr
 
 UA_IMPERSONATE = "chrome"
 
+# ouo.io/ouo.press 专用指纹。ouo 套了 Cloudflare 人机盾(Cf-Mitigated: challenge),
+# 按「出口 IP + TLS 指纹」联合概率拦截:机房代理出口 + chrome 指纹实测 100% 403,
+# safari17_0 实测 6/6 过盾且完整两段式跳转 3/3 落地 MediaFire。chrome 留作重试
+# 兕底(住宅出口/换代理场景 chrome 是通的)。
+OUO_IMPERSONATE = "safari17_0"
+
 
 def _proxy() -> str | None:
     """采集代理(settings 表 harvest.proxy,空=直连)。
@@ -209,22 +215,29 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
 
     2026-09 起 ouo 常见两段式:第三步落地 ouo.io/<新短码>(还是短链页),
     需把同样流程再走一遍(最多 max_hops 轮)才到达 MediaFire。
+
+    CF 盾是概率拦截:单会话被盾/流程断掉 → 换新会话重试(safari17_0 优先,
+    末轮 chrome 兕底, 兼容住宅出口场景)。落地到非 ouo/mediafire 域说明
+    短链本身坏了, 重试无意义直接返回 None。
     """
-    s = cr.Session(impersonate=UA_IMPERSONATE, proxy=_proxy())
-    try:
-        url = link
-        for _ in range(max_hops):
-            final = _ouo_step(s, url, wait=wait)
-            if not final:
-                return None
-            if "mediafire.com/file/" in final and "mediafire.com/download" not in final:
-                return final
-            if "ouo.io/" not in final and "ouo.press/" not in final:
-                return None
-            url = final  # 下一段短码,继续
-        return None
-    except Exception:
-        return None
+    proxy = _proxy()
+    for attempt in range(3):
+        imp = OUO_IMPERSONATE if attempt < 2 else UA_IMPERSONATE
+        s = cr.Session(impersonate=imp, proxy=proxy)
+        try:
+            url = link
+            for _ in range(max_hops):
+                final = _ouo_step(s, url, wait=wait)
+                if not final:
+                    break  # 被盾/页面异常 → 换新会话重试
+                if "mediafire.com/file/" in final and "mediafire.com/download" not in final:
+                    return final
+                if "ouo.io/" not in final and "ouo.press/" not in final:
+                    return None  # 落地到未知域: 短链坏, 重试无意义
+                url = final  # 下一段短码,继续
+        except Exception:
+            pass
+    return None
 
 
 # ---- MediaFire ---------------------------------------------------------------
