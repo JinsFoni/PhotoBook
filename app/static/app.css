@@ -672,6 +672,8 @@ table { border-collapse: collapse; }
 .btn--sm { height: 38px; padding-inline: var(--s4); }
 .btn--block { width: 100%; }
 .btn[disabled] { opacity: 0.42; pointer-events: none; }
+/* 锚点不支持 disabled 属性:分页等 a.btn 禁用态用 aria-disabled 表达 */
+.btn[aria-disabled="true"] { opacity: 0.42; pointer-events: none; }
 
 /* favourite toggle — the one place colour appears */
 .fav {

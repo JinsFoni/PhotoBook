@@ -173,3 +173,29 @@ def test_empty_filter_shows_placeholder(admin_client, jobs45):
     assert "该状态下没有任务" in page
     # 「队列为空」只允许出现在内联 JS 回退字符串里,不得作为 SSR 空态单元格渲染
     assert ">队列为空" not in page
+
+
+def test_pager_disabled_on_first_and_last_page(admin_client, jobs45):
+    """边界页:上一页/下一页带 aria-disabled 且 href 钳制,不会指向 page=0 或越界页。"""
+    import re
+
+    first = admin_client.get("/admin/harvest").text
+    prev = re.search(r'<a class="btn btn--quiet btn--sm pager__prev"[^>]*>', first).group(0)
+    nxt = re.search(r'<a class="btn btn--quiet btn--sm pager__next"[^>]*>', first).group(0)
+    # 第一页:上一页禁用 + href 钳到 page=1(而非 page=0)
+    assert 'aria-disabled="true"' in prev
+    assert "page=1" in prev
+    assert "page=0" not in prev
+    # 第一页:下一页可用且指向 page=2
+    assert 'aria-disabled="true"' not in nxt
+    assert "page=2" in nxt
+
+    last = admin_client.get("/admin/harvest?page=3").text
+    prev = re.search(r'<a class="btn btn--quiet btn--sm pager__prev"[^>]*>', last).group(0)
+    nxt = re.search(r'<a class="btn btn--quiet btn--sm pager__next"[^>]*>', last).group(0)
+    # 最后一页:下一页禁用 + href 钳到最后一页(而非 page=4)
+    assert 'aria-disabled="true"' in nxt
+    assert "page=3" in nxt
+    assert "page=4" not in nxt
+    # 最后一页:上一页可用
+    assert 'aria-disabled="true"' not in prev

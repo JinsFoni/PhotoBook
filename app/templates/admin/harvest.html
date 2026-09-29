@@ -127,11 +127,13 @@
             <nav class="pager" style="display:flex;align-items:center;gap:var(--s3);margin-top:var(--s4);flex-wrap:wrap" aria-label="{{ t('分页') }}">
               {% set qs = ('status=' + cur_status) if cur_status else '' %}
               {% set sep = '&' if qs else '' %}
-              <a class="btn btn--quiet btn--sm pager__prev" href="/admin/harvest?{{ qs }}{{ sep }}page={{ cur_page - 1 }}"
-                 {% if cur_page <= 1 %}aria-disabled="true"{% endif %}>{{ t('上一页') }}</a>
+              {% set prev_page = [cur_page - 1, 1] | max %}
+              {% set next_page = [cur_page + 1, total_pages] | min %}
+              <a class="btn btn--quiet btn--sm pager__prev" href="/admin/harvest?{{ qs }}{{ sep }}page={{ prev_page }}"
+                 {% if cur_page <= 1 %}aria-disabled="true" tabindex="-1"{% endif %}>{{ t('上一页') }}</a>
               <span class="t-small num" style="color:var(--ink-3)" data-page-info>{{ t('第 {p} / {total} 页', p=cur_page, total=total_pages) }}</span>
-              <a class="btn btn--quiet btn--sm pager__next" href="/admin/harvest?{{ qs }}{{ sep }}page={{ cur_page + 1 }}"
-                 {% if cur_page >= total_pages %}aria-disabled="true"{% endif %}>{{ t('下一页') }}</a>
+              <a class="btn btn--quiet btn--sm pager__next" href="/admin/harvest?{{ qs }}{{ sep }}page={{ next_page }}"
+                 {% if cur_page >= total_pages %}aria-disabled="true" tabindex="-1"{% endif %}>{{ t('下一页') }}</a>
               <span class="t-small num" style="color:var(--ink-3);margin-left:auto" data-total-info>{{ t('共 {n} 条', n=total_count) }}</span>
             </nav>
           </div>
@@ -244,6 +246,8 @@
     next.href = "/admin/harvest?" + qs + "page=" + Math.min(pg.totalPages, pg.page + 1);
     prev.setAttribute("aria-disabled", pg.page <= 1 ? "true" : "false");
     next.setAttribute("aria-disabled", pg.page >= pg.totalPages ? "true" : "false");
+    prev.tabIndex = pg.page <= 1 ? -1 : 0;
+    next.tabIndex = pg.page >= pg.totalPages ? -1 : 0;
   }
 
   function poll() {
