@@ -302,7 +302,13 @@ async def admin_collection_delete(col_id: int, s: Session = Depends(get_db)):
     c = s.get(Collection, col_id)
     if c:
         slug, filenames = c.slug, [p.filename for p in c.photos]
+        model_id = c.model_id
         s.delete(c)
+        # 名下写真集删光后模特一并删除(前台模特无写真即不可见, 留着成死链)
+        if model_id is not None:
+            m = s.get(Model, model_id)
+            if m and not s.scalar(select(Collection.id).where(Collection.model_id == model_id).limit(1)):
+                s.delete(m)
         s.commit()
         media.purge_collection_files(slug, filenames)
     return RedirectResponse("/admin/collections", 303)

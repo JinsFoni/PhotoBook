@@ -147,3 +147,60 @@ def test_delete_model_purges_its_collections(admin_client):
         assert s.query(Collection).filter(Collection.slug == slug).count() == 0
     finally:
         s.close()
+
+
+def test_delete_last_collection_removes_model(admin_client):
+    """模特名下最后一套写真被删时, 模特一并删除。"""
+    from app.database import SessionLocal
+    from app.db import Collection, Model
+
+    slug, rels = _mk_collection_with_photos()  # 模特 purge-owner, 1 套写真
+    s = SessionLocal()
+    try:
+        mid = s.query(Model).filter(Model.slug == "purge-owner").one().id
+        cid = s.query(Collection).filter(Collection.slug == slug).one().id
+    finally:
+        s.close()
+    assert admin_client.post(f"/admin/collections/{cid}/delete", follow_redirects=False).status_code in (302, 303)
+    s = SessionLocal()
+    try:
+        assert s.query(Model).filter(Model.id == mid).count() == 0
+    finally:
+        s.close()
+
+
+def test_delete_one_collection_keeps_model_with_others(admin_client):
+    """模特还有其它写真集时, 删一套不影响模特。"""
+    from app.database import SessionLocal
+    from app.db import Collection, Model
+
+    slug1, _ = _mk_collection_with_photos()
+    # 给同一模特再挂一套(空照片列表也行, 只为占位)
+    s = SessionLocal()
+    try:
+        m = s.query(Model).filter(Model.slug == "purge-owner").one()
+        s.add(Collection(slug="purge-target-2", title="pt2", model_id=m.id,
+                         published_at="2026.09.30", status="published"))
+        s.commit()
+        mid, cid1 = m.id, s.query(Collection).filter(Collection.slug == slug1).one().id
+    finally:
+        s.close()
+    assert admin_client.post(f"/admin/collections/{cid1}/delete", follow_redirects=False).status_code in (302, 303)
+    s = SessionLocal()
+    try:
+        assert s.query(Model).filter(Model.id == mid).count() == 1  # 模特还在
+        assert s.query(Collection).filter(Collection.slug == "purge-target-2").count() == 1
+    finally:
+        s.close()
+    # 收尾: 删掉第二套和模特, 不污染其它测试
+    s = SessionLocal()
+    try:
+        cid2 = s.query(Collection).filter(Collection.slug == "purge-target-2").one().id
+    finally:
+        s.close()
+    admin_client.post(f"/admin/collections/{cid2}/delete", follow_redirects=False)
+    s = SessionLocal()
+    try:
+        assert s.query(Model).filter(Model.slug == "purge-owner").count() == 0
+    finally:
+        s.close()
