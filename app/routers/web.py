@@ -49,6 +49,7 @@ def _collection_card(s: Session, c: Collection) -> dict:
         "model_name": c.model.name if c.model else t("未分类"),
         "cover": _collection_cover(s, c),
         "count": len(c.photos),
+        "tags": [t.name for t in c.tags],
     }
 
 

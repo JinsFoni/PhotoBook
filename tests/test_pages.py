@@ -94,3 +94,17 @@ def test_models_page_vm_payload(admin_client):
     # 虚拟化网格容器 + 无「加载更多」按钮(分页交互已移除)
     assert 'class="vm-grid" data-grid' in r.text
     assert "data-more-btn" not in r.text
+
+
+def test_collections_page_vm_payload_has_tags(admin_client):
+    """/collections 卡片条目必须带 tags 数组(标签筛选 c.tags.indexOf 依赖)。"""
+    r = admin_client.get("/collections")
+    assert r.status_code == 200
+    d = _pb_data(r.text)
+    assert d["collections"], "种子数据应有写真集"
+    for c in d["collections"]:
+        assert isinstance(c.get("tags"), list), f"collection {c['slug']} 缺 tags 字段"
+    # 有标签的写真集, 其 tags 应出现在筛选下拉数据源里
+    if any(c["tags"] for c in d["collections"]):
+        names = {t["name"] for t in d["tags"]}
+        assert names, "有带标签的写真集时, tags 数据源不应为空"
