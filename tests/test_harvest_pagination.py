@@ -199,3 +199,68 @@ def test_pager_disabled_on_first_and_last_page(admin_client, jobs45):
     assert "page=4" not in nxt
     # 最后一页:上一页可用
     assert 'aria-disabled="true"' not in prev
+
+
+# ---- 缩略图状态文案实时化 ----
+
+def _make_processing_collection(slug: str, title: str):
+    from app.db import Collection, Model
+    s = SessionLocal()
+    try:
+        m = s.query(Model).filter(Model.name == "tester").first()
+        if not m:
+            m = Model(name="tester", slug="tester")
+            s.add(m)
+            s.flush()
+        c = Collection(slug=slug, title=title, model_id=m.id,
+                       published_at="2026.09.29", status="processing")
+        s.add(c)
+        s.commit()
+        return c.id
+    finally:
+        s.close()
+
+
+def test_thumb_generating_stays_while_processing(admin_client, jobs45):
+    """collection 仍 processing 时,任务文案保持「缩略图生成中」。"""
+    from app.db import HarvestJob
+    _make_processing_collection("tester-some-album", "some album")
+    s = SessionLocal()
+    try:
+        j = _job(994050, "done")
+        j.collection_slug = "tester-some-album"
+        j.error = "→ 10 张已入库,缩略图生成中#1"
+        s.merge(j); s.commit()
+    finally:
+        s.close()
+    page = admin_client.get("/admin/harvest").text
+    assert "缩略图生成中#1" in page
+
+
+def test_thumb_generating_becomes_done_after_publish(admin_client, jobs45):
+    """collection 翻转 published 后,文案实时变为「已完成」(DB 里不回写)。"""
+    from app.db import Collection, HarvestJob
+    _make_processing_collection("tester-album-two", "album two")
+    s = SessionLocal()
+    try:
+        j = _job(994051, "done")
+        j.collection_slug = "tester-album-two"
+        j.error = "→ 10 张已入库,缩略图生成中#1"
+        s.merge(j); s.commit()
+        # 队列完成 → published
+        c = s.query(Collection).filter(Collection.slug == "tester-album-two").one()
+        c.status = "published"
+        s.commit()
+        # DB 里的 error 未被回写,仍是旧文案
+        raw = s.get(HarvestJob, j.id).error
+        assert "缩略图生成中" in raw
+    finally:
+        s.close()
+    page = admin_client.get("/admin/harvest").text
+    assert "→ 10 张已入库,已完成" in page
+    assert "缩略图生成中" not in page
+    # 轮询 API 同样实时
+    import json as _json
+    api = _json.loads(admin_client.get("/admin/api/harvest/jobs").text)
+    err = [x["error"] for x in api["jobs"] if x["id"] == j.id][0]
+    assert err == "→ 10 张已入库,已完成"

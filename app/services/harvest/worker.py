@@ -243,6 +243,7 @@ def _run_job(job_id: int) -> None:
                 job.error = "→ 已导入过,跳过"
             else:
                 extra = f",跳过 {r['videos']} 个视频" if r["videos"] else ""
+                job.collection_slug = r["slug"]
                 nq = media.queue_import_thumbs(r["slug"])
                 job.error = f"→ {r['photos']} 张已入库{extra},缩略图生成中#{nq}"
             s.commit()

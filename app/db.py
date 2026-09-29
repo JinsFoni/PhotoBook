@@ -158,6 +158,8 @@ class HarvestJob(Base):
     error: Mapped[str | None] = mapped_column(Text, default=None)
     # failed 时若已归档到 library(import 失败等), 记录残留目录路径供删除任务时清理
     archive_dir: Mapped[str | None] = mapped_column(String(500), default=None)
+    # 导入成功后写真 slug: 用于任务列表实时判断缩略图是否生成完(替代静态文案)
+    collection_slug: Mapped[str | None] = mapped_column(String(220), default=None)
     source: Mapped[str] = mapped_column(String(10), default="auto")  # auto | manual
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(default=None)

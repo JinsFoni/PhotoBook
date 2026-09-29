@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -42,6 +43,7 @@ def _migrate() -> None:
     stmts = (
         "ALTER TABLE users ADD COLUMN language VARCHAR(8) NOT NULL DEFAULT ''",
         "ALTER TABLE harvest_jobs ADD COLUMN archive_dir VARCHAR(500)",
+        "ALTER TABLE harvest_jobs ADD COLUMN collection_slug VARCHAR(220)",
     )
     with engine.connect() as conn:
         for stmt in stmts:
@@ -50,6 +52,52 @@ def _migrate() -> None:
                 conn.commit()
             except Exception:
                 pass  # 列已存在
+    _backfill_collection_slug()
+
+
+def _backfill_collection_slug() -> None:
+    """一次性回填:存量「缩略图生成中」任务无 collection_slug,展示层无法实时判态。
+
+    从任务的 error 文案(「N 张已入库」)与写真标题反查匹配的 collection:
+    slug 由模特 slug + 标题 slugify 构成,标题在 DB 里精确存过 → 用 LIKE 前缀匹配。
+    修复后展示文案即可正确变为「已完成」。幂等:只更新 slug 为空的行。
+    """
+    from sqlalchemy import select
+    import re as _re
+
+    from .db import Collection, HarvestJob
+    from .services import library_import
+
+    s = SessionLocal()
+    try:
+        jobs = s.scalars(select(HarvestJob).where(
+            HarvestJob.collection_slug.is_(None),
+            HarvestJob.status == "done",
+            HarvestJob.error.like("%缩略图生成中%"))).all()
+        if not jobs:
+            return
+        fixed = 0
+        for job in jobs:
+            # 标题形如 "Coser@蠢沫沫 (chunmomo): 阳 (31 photos)  -" → 取冒号后的纯标题
+            m = _re.search(r"[:\uFF1A]\s*(.+?)(?:\s*\(\d+\s*photos?\))?\s*-?\s*$",
+                           job.title or "")
+            if not m:
+                continue
+            title_part = m.group(1).strip()
+            col = s.scalars(select(Collection).where(
+                Collection.title.like(f"%{title_part}%"))).first()
+            if col is None:
+                continue
+            job.collection_slug = col.slug
+            fixed += 1
+        if fixed:
+            s.commit()
+            logging.getLogger("photobook").info(
+                "backfilled collection_slug on %d harvest jobs", fixed)
+    except Exception:
+        logging.getLogger("photobook").exception("collection_slug backfill failed")
+    finally:
+        s.close()
 
 
 @contextmanager

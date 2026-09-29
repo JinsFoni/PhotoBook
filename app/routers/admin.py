@@ -56,6 +56,33 @@ def _clamp_page(page: int, total: int, per_page: int) -> int:
     return min(max(1, page), pages)
 
 
+def _thumb_status_text(s: Session, job) -> str | None:
+    """导入后的任务状态文案(实时,替代导入瞬间写死的静态字符串)。
+
+    导入成功时 error 停留在「…缩略图生成中#n」,但缩略图队列完成后没人回写。
+    这里对带 collection_slug 的 done 任务查写真状态:
+      - 已 published → 把「,缩略图生成中#n」尾巴换成「,已完成」
+      - 仍 processing → 保持原文案(真实仍在生成)
+    返回 None = 不需要调整(非 done / 无 slug / 非该文案)。
+    """
+    from ..db import Collection
+
+    if job.status != "done" or not job.collection_slug or not job.error:
+        return None
+    if "缩略图生成中" not in job.error:
+        return None
+    col = s.scalar(select(Collection).where(Collection.slug == job.collection_slug))
+    if col is None or col.status != "published":
+        return None
+    return re.sub(r",缩略图生成中#\d+$", "," + t("已完成"), job.error)
+
+
+def _job_display_error(s: Session, job) -> str:
+    """任务展示用 error(可能被实时缩略图状态覆盖)。"""
+    overridden = _thumb_status_text(s, job)
+    return overridden if overridden is not None else (job.error or "")
+
+
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 
 
@@ -406,6 +433,8 @@ async def admin_harvest(request: Request, s: Session = Depends(get_db),
     jobs = s.scalars(_jobs_query(s, status)
                      .offset((page - 1) * JOBS_PER_PAGE)
                      .limit(JOBS_PER_PAGE)).all()
+    # 展示文案实时化:「缩略图生成中」在队列完成后显示「已完成」(见 _thumb_status_text)
+    display_errors = {j.id: _job_display_error(s, j) for j in jobs}
     total_pages = max(1, -(-total // JOBS_PER_PAGE))
     # 各筛选分组的任务数(一次分组查询,供筛选胶囊显示计数)
     status_counts = dict(s.execute(
@@ -421,6 +450,7 @@ async def admin_harvest(request: Request, s: Session = Depends(get_db),
                    "skipped": "minus", "failed": "close"}
     return templates.TemplateResponse(request, "admin/harvest.html", {
         "page": "admin", "jobs": jobs, "history_count": history_count,
+        "display_errors": display_errors,
         "conf": conf, "harvest_keys": settings_store.HARVEST_KEYS,
         "status_icon": status_icon,
         "job_status_groups": JOB_STATUS_GROUPS,
@@ -551,7 +581,7 @@ async def admin_harvest_jobs_api(s: Session = Depends(get_db),
                      .limit(JOBS_PER_PAGE)).all()
     return {"jobs": [{
         "id": j.id, "serial": j.serial, "status": j.status, "title": j.title or "",
-        "model": j.model_name or "", "error": j.error or "",
+        "model": j.model_name or "", "error": _job_display_error(s, j),
         "bytesDone": j.bytes_done, "bytesTotal": j.bytes_total,
         "source": j.source,
         "createdAt": j.created_at.strftime("%m-%d %H:%M") if j.created_at else "",
