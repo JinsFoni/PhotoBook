@@ -102,23 +102,27 @@ def _make_webp(src, w: int, h: int | None, q: int) -> bytes:
             return buf.getvalue()
 
 
-def ensure_cached(rel: str, w: int, h: int | None = None, q: int | None = None) -> None:
-    """确保某个缩放档已有磁盘缓存(预热用,不直接服务请求)。"""
+def ensure_cached(rel: str, w: int, h: int | None = None, q: int | None = None) -> bool:
+    """确保某个缩放档已有磁盘缓存(预热用,不直接服务请求)。
+
+    返回是否真的生成了新缓存(命中已有缓存/源图缺失返回 False)。
+    """
     src = _safe_path(rel)
     if not src.is_file():
-        return
+        return False
     if q is None:
         q = 88 if w >= 1600 else 78
     cache = _cache_path(w, h, q, rel)
     if cache.is_file():
-        return
+        return False
     try:
         data = _make_webp(src, w, h, q)
     except Exception:
         log.warning("preheat failed: %s w=%s", rel, w, exc_info=True)
-        return
+        return False
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_bytes(data)
+    return True
 
 
 def serve_media(rel: str, request: Request) -> Response:
@@ -195,11 +199,54 @@ def preheat_progress() -> dict:
         return dict(_preheat_state)
 
 
+def _preheat_files(files: list[str], batch: int) -> tuple[int, int]:
+    """逐张巡检预热。返回 (已巡检张数, 实际生成缩略图数)。
+
+    缓存全部命中时零停顿(热重启几秒内巡完);只有真生成了缩略图
+    才让出 CPU + 归还堆页,采集下载等任务优先。
+    """
+    import time
+
+    done = 0
+    generated = 0
+    libc = _load_libc()  # malloc_trim: 把空闲堆页还给内核(不可用则跳过)
+    for rel in files:
+        if _preheat_done.is_set():
+            break
+        made = 0
+        for w in PREHEAT_WIDTHS:
+            if ensure_cached(rel, w):
+                made += 1
+        done += 1
+        generated += made
+        if done % 50 == 0:
+            log.info("preheat: %d/%d (%.0fs)", done, len(files), time.time() - _t0[0])
+        with _preheat_lock:
+            _preheat_state["done"] = done
+        if not made:
+            # 全部命中缓存:零开销巡检,不睡眠不等内存回收
+            continue
+        # 真生成了缩略图才节流
+        if done % batch == 0:
+            time.sleep(0.05)
+        time.sleep(_preheat_gap)
+        if libc:
+            libc.malloc_trim(0)
+    return done, generated
+
+
+_t0 = [0.0]
+
+
 def preheat_all(batch: int = 4) -> None:
     """预热全部照片的常用尺寸(900 网格/照片墙 / 1800 灯箱预览)。
 
     2400(高清升级)不预热: 纯按需, 存储随观看增长而非库容(10 万张规模
     固定档合计 48GB)。幂等:已有缓存的文件直接跳过。daemon 线程,不阻塞启动。"""
+
+    # 新一轮预热周期:清掉上次 shutdown 置位的停机信号,
+    # 否则同进程内二次启动(测试/热重启)时预热线程会立即退出
+    _preheat_done.clear()
 
     def _run() -> None:
         import time
@@ -210,6 +257,7 @@ def preheat_all(batch: int = 4) -> None:
         from ..db import Photo
 
         t0 = time.time()
+        _t0[0] = t0
         try:
             s = SessionLocal()
             try:
@@ -219,27 +267,11 @@ def preheat_all(batch: int = 4) -> None:
             with _preheat_lock:
                 _preheat_state.update(total=len(files), done=0, running=True)
             log.info("preheat: %d photos", len(files))
-            done = 0
-            libc = _load_libc()  # malloc_trim: 把空闲堆页还给内核(不可用则跳过)
-            for rel in files:
-                if _preheat_done.is_set():
-                    break
-                for w in PREHEAT_WIDTHS:
-                    ensure_cached(rel, w)
-                done += 1
-                if done % 50 == 0:
-                    log.info("preheat: %d/%d (%.0fs)", done, len(files), time.time() - t0)
-                with _preheat_lock:
-                    _preheat_state["done"] = done
-                # 小批次让出 CPU + 还堆页,采集下载等任务优先
-                if done % batch == 0:
-                    time.sleep(0.05)
-                time.sleep(_preheat_gap)
-                if libc:
-                    libc.malloc_trim(0)
+            done, generated = _preheat_files(files, batch)
             with _preheat_lock:
                 _preheat_state.update(done=done, running=False)
-            log.info("preheat done: %d photos in %.0fs", done, time.time() - t0)
+            log.info("preheat done: %d photos, %d thumbs generated in %.0fs",
+                     done, generated, time.time() - t0)
         except Exception:
             with _preheat_lock:
                 _preheat_state["running"] = False
