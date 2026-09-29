@@ -69,6 +69,8 @@ def _collection_payload(s: Session, c: Collection) -> dict:
 def _model_payload(s: Session, m: Model, collections: list[Collection] | None = None) -> dict:
     works = collections if collections is not None else m.collections
     photo_count = sum(len(c.photos) for c in works)
+    # 最新活动日期:作品集里最新的发布日期(模特页「排序:最新」用)
+    latest = max((c.published_at or "" for c in works), default="")
     # 头像兜底:没设头像时用第一张合集封面
     avatar = m.avatar_path
     if not avatar:
@@ -81,7 +83,7 @@ def _model_payload(s: Session, m: Model, collections: list[Collection] | None = 
         "avatar": avatar, "hero": m.hero_path or avatar,
         "gender": m.gender or "", "age": m.age, "height": m.height,
         "measurements": m.measurements, "agency": m.agency or "", "bio": m.bio or "",
-        "since": m.since or "", "featured": m.featured,
+        "since": m.since or "", "featured": m.featured, "latest": latest,
         "tags": [t.name for t in m.tags],
         "count": len(works), "photoCount": photo_count,
     }

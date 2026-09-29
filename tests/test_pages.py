@@ -83,3 +83,14 @@ def test_original_media_served(admin_client):
     r = admin_client.get("/media/demo/summer-editorial/1524253482453-3fed8d2fe12b.jpg")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("image/")
+
+
+def test_models_page_vm_payload(admin_client):
+    """/models 与 /collections 同构: 全量数据池 + latest 字段(排序:最新用)。"""
+    r = admin_client.get("/models")
+    assert r.status_code == 200
+    d = _pb_data(r.text)
+    assert d["models"] and all("latest" in m for m in d["models"])
+    # 虚拟化网格容器 + 无「加载更多」按钮(分页交互已移除)
+    assert 'class="vm-grid" data-grid' in r.text
+    assert "data-more-btn" not in r.text

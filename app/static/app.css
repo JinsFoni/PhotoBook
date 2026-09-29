@@ -891,6 +891,30 @@ table { border-collapse: collapse; }
 }
 .card__end { margin-left: auto; }
 
+/* /models 虚拟化(与 /collections 同引擎): 模特卡标注区在虚拟化下也收单行,
+   名字单行省略 + 作品数同行, 高度可由 CAP 公式算出; 流式(手机降级)不限定。 */
+.vm-grid .model-card { display: flex; flex-direction: column; }
+.vm-grid[data-vm="on"] .vm-cell { overflow: visible; } /* 悬停标签行溢出卡外显示 */
+.vm-grid .model-card__name {
+  display: block;
+  margin-top: 0; /* 流式时由 margin 撑距; 虚拟化由 caption 的 padding-top 统一撑 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vm-grid .model-card__tags { visibility: hidden; } /* 悬停浮现, 绝对定位不占高 */
+.vm-grid .hoverable:hover .model-card__tags,
+.vm-grid .hoverable:focus-within .model-card__tags { visibility: visible; }
+.vm-grid[data-vm="on"] .vm-cell .model-card__tags {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(-1 * var(--s2) - 1.1em);
+  margin: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
 /* model card */
 .model-card .frame { margin-bottom: 0; }
 .model-card__name {
@@ -985,6 +1009,8 @@ table { border-collapse: collapse; }
 @media (max-width: 760px) {
   .vm-grid .card__title { white-space: normal; }
   .vm-grid .card__caption { flex-wrap: wrap; }
+  .vm-grid .model-card__name { white-space: normal; margin-top: var(--s3); }
+  .vm-grid .model-card__tags { visibility: visible; position: static; }
 }
 .grid--photos { grid-template-columns: repeat(4, 1fr); }
 .grid--2 { grid-template-columns: repeat(2, 1fr); }
@@ -1474,6 +1500,8 @@ table { border-collapse: collapse; }
     opacity: 1 !important;
     transform: none !important;
   }
+  /* 触屏无 hover: 虚拟化模特卡的标签行直接常显(仍不占高, 溢出显示) */
+  .vm-grid .model-card__tags { visibility: visible; }
 }
 
 .download-status {
