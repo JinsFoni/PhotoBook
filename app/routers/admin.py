@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session
 
 from ..auth import hash_password, require_admin
 from ..config import settings
-from ..db import (Collection, HarvestHistory, HarvestJob, Model, Photo, Session as DbSession,
-                  Setting, Tag, User)
+from ..db import (Collection, Favorite, HarvestHistory, HarvestJob, Model, Photo,
+                  Session as DbSession, Setting, Tag, User)
 from ..database import get_db
 from ..i18n import t
 from ..templating import templates
@@ -213,8 +213,18 @@ async def admin_model_update(request: Request, model_id: int, s: Session = Depen
 async def admin_model_delete(model_id: int, s: Session = Depends(get_db)):
     m = s.get(Model, model_id)
     if m:
+        # 该模特名下所有写真集一并删除(DB + 磁盘: 照片/缩略图/收藏);
+        # ORM 无级联(DB 层 model_id SET NULL 只会留下无主写真集), 显式删
+        victims = [(c.slug, [p.filename for p in c.photos])
+                   for c in s.scalars(select(Collection).where(Collection.model_id == model_id)).all()]
+        for slug, filenames in victims:
+            col = s.scalar(select(Collection).where(Collection.slug == slug))
+            if col:
+                s.delete(col)
         s.delete(m)
         s.commit()
+        for slug, filenames in victims:
+            media.purge_collection_files(slug, filenames)
     return RedirectResponse("/admin/models", 303)
 
 
@@ -291,8 +301,10 @@ async def admin_collection_update(request: Request, col_id: int, s: Session = De
 async def admin_collection_delete(col_id: int, s: Session = Depends(get_db)):
     c = s.get(Collection, col_id)
     if c:
+        slug, filenames = c.slug, [p.filename for p in c.photos]
         s.delete(c)
         s.commit()
+        media.purge_collection_files(slug, filenames)
     return RedirectResponse("/admin/collections", 303)
 
 

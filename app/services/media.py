@@ -102,6 +102,78 @@ def _make_webp(src, w: int, h: int | None, q: int) -> bytes:
             return buf.getvalue()
 
 
+def purge_collection_files(slug: str, filenames: list[str]) -> None:
+    """删除写真集后清理磁盘残留: 照片本体 + 缩略图缓存 + 收藏记录。
+
+    - 照片本体: 逐个删除 DB 登记过的文件; 原目录仅当空时才删
+      (手工放进的非本写真集文件绝不误删), 不空则保留。
+    - 缩略图: /media/_cache/<规格>/<照片相对路径>.webp, 按每个规格目录
+      整目录移除; 空了则连规格下的写真目录一并移除。
+    - 收藏记录(favorite): collection 与 photo(键 = slug:idx)一并清除, 避免前台
+      收藏夹出现幽灵条目。
+
+    清理失败不阻断删除主流程(DB 行已删, 不影响前台; 磁盘残留可手工清)。
+    """
+    import shutil
+
+    if not filenames:
+        return
+    base = settings.media_dir
+    album_dir = (base / filenames[0]).parent  # <owner>/<album-dir>
+
+    # 照片本体: 逐个删除(只删 DB 里登记过的文件, 目录里其它文件不动)
+    for rel in filenames:
+        try:
+            (base / rel).unlink()
+        except OSError:
+            pass
+
+    # 缩略图缓存: 每个规格目录下按相对路径删除
+    cache_root = base / CACHE_DIR
+    if cache_root.is_dir():
+        for spec_dir in cache_root.iterdir():
+            if not spec_dir.is_dir():
+                continue
+            album_cache = spec_dir / album_dir.relative_to(base)
+            if album_cache.is_dir():
+                shutil.rmtree(album_cache, ignore_errors=True)
+                try:
+                    next(album_cache.parent.iterdir())  # 目录非空则保留
+                except StopIteration:
+                    album_cache.parent.rmdir()
+
+    # 原图目录: 空才删, 防误删手工文件
+    if album_dir.is_dir():
+        try:
+            next(album_dir.iterdir())
+        except StopIteration:
+            album_dir.rmdir()
+            try:
+                next(album_dir.parent.iterdir())
+            except StopIteration:
+                album_dir.parent.rmdir()
+
+    # 收藏记录: collection 本体 + 照片(键 = "slug:idx")
+    from ..database import SessionLocal
+    from ..db import Favorite
+
+    s = SessionLocal()
+    try:
+        n = s.query(Favorite).filter(
+            (Favorite.target_type == "collection") & (Favorite.target_key == slug)
+            | (Favorite.target_type == "photo") & (Favorite.target_key.like(f"{slug}:%"))
+        ).delete(synchronize_session=False)
+        if n:
+            s.commit()
+            log.info("purged %d favourites of deleted collection %s", n, slug)
+    except Exception:
+        s.rollback()
+        log.exception("purge favourites failed: %s", slug)
+    finally:
+        s.close()
+    log.info("purged collection files: %s (%d photos)", slug, len(filenames))
+
+
 def ensure_cached(rel: str, w: int, h: int | None = None, q: int | None = None) -> bool:
     """确保某个缩放档已有磁盘缓存(预热用,不直接服务请求)。
 
