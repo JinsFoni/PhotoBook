@@ -72,6 +72,14 @@
               <span class="section-aside t-small num" data-preheat-state style="margin-left:var(--s3);color:var(--ink-3)"></span>
             </div>
 
+            <!-- 状态筛选 -->
+            <nav class="chip-row" style="margin-bottom:var(--s4)" aria-label="{{ t('状态筛选') }}" data-status-filters>
+              {% for key, label in [('', '全部'), ('active', '进行中'), ('done', '已完成'), ('skipped', '已跳过'), ('failed', '失败')] %}
+              <a class="chip" href="/admin/harvest{% if key %}?status={{ key }}{% endif %}"
+                 {% if cur_status == key %}aria-pressed="true"{% endif %} data-status-chip="{{ key }}">{{ t(label) }} <span class="num" style="color:inherit;opacity:.55">{{ chip_counts[key] }}</span></a>
+              {% endfor %}
+            </nav>
+
             <table style="width:100%;border-collapse:collapse">
               <thead><tr class="t-small" style="text-align:left;color:var(--ink-3);border-bottom:1px solid var(--line)">
                 <th style="padding:var(--s2) 0">#</th><th>{{ t('Serial') }}</th><th>{{ t('标题') }}</th><th>{{ t('模特') }}</th>
@@ -89,27 +97,43 @@
                   <td class="t-small">{{ j.source }}</td>
                   <td class="num t-small" style="color:var(--ink-3)">{{ j.created_at.strftime('%m-%d %H:%M') if j.created_at else '' }}</td>
                   <td>
+                    {% set back = _back_qs(cur_status, cur_page) %}
                     {% if j.status in ('done', 'exists', 'skipped', 'failed') %}
                     <form method="post" action="/admin/harvest/{{ j.id }}/delete" style="display:inline">
+                      <input type="hidden" name="back" value="{{ back }}">
                       <button class="btn btn--quiet btn--sm" type="submit" aria-label="{{ t('删除') }}" title="{{ t('删除') }}"
                               style="color:var(--danger, #c0392b);display:inline-flex;align-items:center;padding:4px 6px">{{ icon('trash') }}</button></form>
                     {% endif %}
                     {% if j.status in ('failed', 'skipped') %}
                     <form method="post" action="/admin/harvest/{{ j.id }}/retry" style="display:inline">
+                      <input type="hidden" name="back" value="{{ back }}">
                       <button class="btn btn--quiet btn--sm" type="submit" aria-label="{{ t('重试') }}" title="{{ t('重试') }}"
                               style="display:inline-flex;align-items:center;padding:4px 6px">{{ icon('retry') }}</button></form>
                     {% elif j.status == 'queued' %}
                     <form method="post" action="/admin/harvest/{{ j.id }}/cancel" style="display:inline">
+                      <input type="hidden" name="back" value="{{ back }}">
                       <button class="btn btn--quiet btn--sm" type="submit">{{ t('取消') }}</button></form>
                     {% endif %}
                   </td>
                 </tr>
                 {% endfor %}
                 {% if not jobs %}
-                <tr><td colspan="9" style="padding:var(--s6);color:var(--ink-3)" class="t-small">{{ t('队列为空 — 提交 URL 或立即扫描。') }}</td></tr>
+                <tr><td colspan="9" style="padding:var(--s6);color:var(--ink-3)" class="t-small">{{ t('该状态下没有任务') if cur_status else t('队列为空 — 提交 URL 或立即扫描。') }}</td></tr>
                 {% endif %}
               </tbody>
             </table>
+
+            <!-- 分页 -->
+            <nav class="pager" style="display:flex;align-items:center;gap:var(--s3);margin-top:var(--s4);flex-wrap:wrap" aria-label="{{ t('分页') }}">
+              {% set qs = ('status=' + cur_status) if cur_status else '' %}
+              {% set sep = '&' if qs else '' %}
+              <a class="btn btn--quiet btn--sm pager__prev" href="/admin/harvest?{{ qs }}{{ sep }}page={{ cur_page - 1 }}"
+                 {% if cur_page <= 1 %}aria-disabled="true"{% endif %}>{{ t('上一页') }}</a>
+              <span class="t-small num" style="color:var(--ink-3)" data-page-info>{{ t('第 {p} / {total} 页', p=cur_page, total=total_pages) }}</span>
+              <a class="btn btn--quiet btn--sm pager__next" href="/admin/harvest?{{ qs }}{{ sep }}page={{ cur_page + 1 }}"
+                 {% if cur_page >= total_pages %}aria-disabled="true"{% endif %}>{{ t('下一页') }}</a>
+              <span class="t-small num" style="color:var(--ink-3);margin-left:auto" data-total-info>{{ t('共 {n} 条', n=total_count) }}</span>
+            </nav>
           </div>
         </div>
       </div>
@@ -122,10 +146,14 @@
 
 {% block scripts %}{% endblock %}
 <script>
-/* 2 秒轮询刷新任务表(§36:不用 SSE/WebSocket) */
+/* 2 秒轮询刷新任务表(§36:不用 SSE/WebSocket)。
+   页码/筛选状态由前端持有,轮询时透传给 API;总页数变化或筛选计数变化时按返回重绘。 */
 (function () {
   var tbody = document.querySelector("[data-jobs]");
   if (!tbody) return;
+
+  var curPage = {{ cur_page }};
+  var curStatus = "{{ cur_status }}";
 
   function fmtMB(n) { return Math.round((n || 0) / 1048576); }
 
@@ -142,21 +170,24 @@
     failed: '<path d="M6 6l12 12M18 6L6 18"/>'
   };
 
-  function render(jobs, running, preheat) {
+  function render(jobs, running, preheat, pg) {
+    pg = pg || {};
     if (!jobs.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="padding:var(--s6);color:var(--ink-3)" class="t-small">' + PC.t("队列为空 — 提交 URL 或立即扫描。") + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="padding:var(--s6);color:var(--ink-3)" class="t-small">' +
+        (curStatus ? PC.t("该状态下没有任务") : PC.t("队列为空 — 提交 URL 或立即扫描。")) + '</td></tr>';
     } else {
       tbody.innerHTML = jobs.map(function (j) {
         var ops = "";
+        var back = curStatus ? ("?status=" + curStatus + (curPage > 1 ? "&page=" + curPage : "")) : (curPage > 1 ? "?page=" + curPage : "");
         var terminal = (j.status === "done" || j.status === "exists" || j.status === "skipped" || j.status === "failed");
         if (terminal)
-          ops += '<form method="post" action="/admin/harvest/' + j.id + '/delete" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit" aria-label="' + PC.t("删除") + '" title="' + PC.t("删除") + '" style="color:var(--danger, #c0392b);display:inline-flex;align-items:center;padding:4px 6px">' +
+          ops += '<form method="post" action="/admin/harvest/' + j.id + '/delete" style="display:inline"><input type="hidden" name="back" value="' + esc(back) + '"><button class="btn btn--quiet btn--sm" type="submit" aria-label="' + PC.t("删除") + '" title="' + PC.t("删除") + '" style="color:var(--danger, #c0392b);display:inline-flex;align-items:center;padding:4px 6px">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:15px;height:15px;flex:none"><path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l1 12.2h9l1-12.2M10 10.5v5.5M14 10.5v5.5"/></svg></button></form> ';
         if (j.status === "failed" || j.status === "skipped")
-          ops += '<form method="post" action="/admin/harvest/' + j.id + '/retry" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit" aria-label="' + PC.t("重试") + '" title="' + PC.t("重试") + '" style="display:inline-flex;align-items:center;padding:4px 6px">' +
+          ops += '<form method="post" action="/admin/harvest/' + j.id + '/retry" style="display:inline"><input type="hidden" name="back" value="' + esc(back) + '"><button class="btn btn--quiet btn--sm" type="submit" aria-label="' + PC.t("重试") + '" title="' + PC.t("重试") + '" style="display:inline-flex;align-items:center;padding:4px 6px">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:15px;height:15px;flex:none"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg></button></form>';
         else if (j.status === "queued")
-          ops += '<form method="post" action="/admin/harvest/' + j.id + '/cancel" style="display:inline"><button class="btn btn--quiet btn--sm" type="submit">' + PC.t("取消") + '</button></form>';
+          ops += '<form method="post" action="/admin/harvest/' + j.id + '/cancel" style="display:inline"><input type="hidden" name="back" value="' + esc(back) + '"><button class="btn btn--quiet btn--sm" type="submit">' + PC.t("取消") + '</button></form>';
         var prog = (j.status === "downloading" && j.bytesTotal)
           ? fmtMB(j.bytesDone) + "/" + fmtMB(j.bytesTotal) + "MB"
           : (j.status === "downloading" ? fmtMB(j.bytesDone) + "MB" : "—");
@@ -193,12 +224,33 @@
         ps.textContent = "";
       }
     }
+    if (pg.page) {
+      curPage = pg.page;
+      var pi = document.querySelector("[data-page-info]");
+      if (pi) pi.textContent = PC.t("第 {p} / {total} 页", { p: pg.page, total: pg.totalPages });
+      var ti = document.querySelector("[data-total-info]");
+      if (ti) ti.textContent = PC.t("共 {n} 条", { n: pg.total });
+      updatePager(pg);
+    }
+  }
+
+  /* 按返回的页码更新上一页/下一页链接(翻页后轮询会继续带上新页码) */
+  function updatePager(pg) {
+    var prev = document.querySelector(".pager__prev");
+    var next = document.querySelector(".pager__next");
+    if (!prev || !next) return;
+    var qs = curStatus ? ("status=" + curStatus + "&") : "";
+    prev.href = "/admin/harvest?" + qs + "page=" + Math.max(1, pg.page - 1);
+    next.href = "/admin/harvest?" + qs + "page=" + Math.min(pg.totalPages, pg.page + 1);
+    prev.setAttribute("aria-disabled", pg.page <= 1 ? "true" : "false");
+    next.setAttribute("aria-disabled", pg.page >= pg.totalPages ? "true" : "false");
   }
 
   function poll() {
-    fetch("/admin/api/harvest/jobs", { credentials: "same-origin" })
+    var qs = "page=" + curPage + (curStatus ? "&status=" + curStatus : "");
+    fetch("/admin/api/harvest/jobs?" + qs, { credentials: "same-origin" })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d) render(d.jobs, d.workerRunning, { running: d.preheatRunning, progress: d.preheatProgress }); })
+      .then(function (d) { if (d) render(d.jobs, d.workerRunning, { running: d.preheatRunning, progress: d.preheatProgress }, d); })
       .catch(function () {});
   }
   poll();

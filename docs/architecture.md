@@ -304,3 +304,23 @@ M1/M2 与 M3 几乎无耦合(采集只依赖 settings + 两张表 + 管理员登
 (快速连切不错屏);下载按钮仍指原图。实测最差帧 111ms → 21ms。
 
 注:Chrome 窗口被遮挡时 rAF 暂停(动画看似卡住实为不渲染),属浏览器节流行为,非页面问题。
+
+### 采集任务队列分页 + 状态筛选(2026-09 新增)
+
+背景:原实现 SSR 取最近 100 条、轮询 API 取最近 30 条且整表重绘,旧任务(终态记录
+只增不减)超过 30 条后从界面消失,重试/删除都够不着;两处上限不一致还会首屏闪烁。
+
+实现要点:
+
+- 每页 20 条(`JOBS_PER_PAGE`);状态筛选按分组(全部/进行中/已完成/已跳过/失败,
+  `JOB_STATUS_GROUPS`),done 组含 `done+exists`、active 组含四种运行态 — 与
+  `ix_jobs_status_id` 索引对齐,过滤 + 倒序取页都是索引扫描
+- **轮询 API 分页感知**是关键:页面 2 秒整表重绘的设计下,页码/筛选状态由前端持有
+  (`curPage`/`curStatus`),轮询透传 `?page=&status=`,否则任何分页都会被下一次轮询冲掉;
+  API 返回 `page/totalPages/total`,越界页码收敛到最后一页(`_clamp_page`)
+- SSR 与 API 共用 `_jobs_query`(一处改,两边一致);筛选胶囊计数来自一次
+  `GROUP BY status` 查询
+- 行内操作(重试/取消/删除)表单带 `back` 隐藏域回跳原筛选原页;`back` 只接受
+  `?status=<组>&page=<n>` 白名单形态(正则校验),防开放重定向
+- 新词条入 i18n STRINGS(上一页/下一页/第 x/y 页/共 n 条/状态名等,zh-CN/zh-TW)
+- 测试:`tests/test_harvest_pagination.py`(分页边界、筛选、API、back 白名单、空态)

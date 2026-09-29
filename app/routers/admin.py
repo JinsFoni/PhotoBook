@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -27,12 +28,54 @@ from ..services.harvest import worker as harvest_worker
 
 log = logging.getLogger("photobook.admin")
 
+# 采集任务列表:每页条数与状态筛选分组(接口/模板/JS 共用同一份定义)
+JOBS_PER_PAGE = 20
+JOB_STATUS_GROUPS: dict[str, tuple[str, ...]] = {
+    "active": ("queued", "parsing", "downloading", "extracting"),
+    "done": ("done", "exists"),
+    "skipped": ("skipped",),
+    "failed": ("failed",),
+}
+
+
+def _jobs_query(s: Session, status: str):
+    """任务列表查询:status 为分组键(active/done/skipped/failed)时按状态过滤。
+
+    状态有索引(ix_jobs_status_id),过滤后按 id 倒序取页都是索引扫描。
+    """
+    q = select(HarvestJob)
+    statuses = JOB_STATUS_GROUPS.get(status or "")
+    if statuses:
+        q = q.where(HarvestJob.status.in_(statuses))
+    return q.order_by(desc(HarvestJob.id))
+
+
+def _clamp_page(page: int, total: int, per_page: int) -> int:
+    """把请求页码限制在 [1, total_pages];无数据时返回 1。"""
+    pages = max(1, -(-total // per_page))
+    return min(max(1, page), pages)
+
+
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 
 
 def _conf_value(s: Session, key: str, dflt: str) -> str:
     v = settings_store.get_setting(s, key)
     return v if v is not None and v != "" else dflt
+
+
+def _back_qs(status: str, page: int) -> str:
+    """操作后回跳列表的查询串(保持筛选与页码;默认值则省略)。"""
+    params: dict[str, str] = {}
+    if status in JOB_STATUS_GROUPS:
+        params["status"] = status
+    if page > 1:
+        params["page"] = str(page)
+    return ("?" + quote(urlencode(params))) if params else ""
+
+
+# 模板全局:操作表单的回跳查询串(在定义后挂载,避免与 templating 循环导入)
+templates.env.globals["_back_qs"] = _back_qs
 
 
 # ---- Dashboard ----------------------------------------------------------------
@@ -355,8 +398,22 @@ async def admin_collection_tag_remove(col_id: int, tag_id: int, s: Session = Dep
 # ---- 采集(§29)--------------------------------------------------------------------
 
 @router.get("/harvest")
-async def admin_harvest(request: Request, s: Session = Depends(get_db)):
-    jobs = s.scalars(select(HarvestJob).order_by(desc(HarvestJob.id)).limit(100)).all()
+async def admin_harvest(request: Request, s: Session = Depends(get_db),
+                        page: int = 1, status: str = ""):
+    total = s.scalar(select(func.count()).select_from(
+        _jobs_query(s, status).subquery())) or 0
+    page = _clamp_page(page, total, JOBS_PER_PAGE)
+    jobs = s.scalars(_jobs_query(s, status)
+                     .offset((page - 1) * JOBS_PER_PAGE)
+                     .limit(JOBS_PER_PAGE)).all()
+    total_pages = max(1, -(-total // JOBS_PER_PAGE))
+    # 各筛选分组的任务数(一次分组查询,供筛选胶囊显示计数)
+    status_counts = dict(s.execute(
+        select(HarvestJob.status, func.count(HarvestJob.id)).group_by(HarvestJob.status)).all())
+    chip_counts = {g: sum(status_counts.get(st, 0) for st in sts)
+                   for g, sts in JOB_STATUS_GROUPS.items()}
+    chip_counts[""] = sum(status_counts.values())
+    active_count = chip_counts["active"]
     history_count = s.scalar(select(func.count(HarvestHistory.serial))) or 0
     conf = settings_store.harvest_conf(s)
     status_icon = {"queued": "clock", "parsing": "search", "downloading": "download",
@@ -366,6 +423,11 @@ async def admin_harvest(request: Request, s: Session = Depends(get_db)):
         "page": "admin", "jobs": jobs, "history_count": history_count,
         "conf": conf, "harvest_keys": settings_store.HARVEST_KEYS,
         "status_icon": status_icon,
+        "job_status_groups": JOB_STATUS_GROUPS,
+        "cur_status": status, "cur_page": page,
+        "total_count": total, "total_pages": total_pages,
+        "chip_counts": chip_counts, "active_count": active_count,
+        "per_page": JOBS_PER_PAGE,
         "worker_running": harvest_worker.worker_running(),
         "flash": request.query_params.get("flash", ""),
     })
@@ -406,7 +468,8 @@ async def admin_harvest_import(s: Session = Depends(get_db)):
 
 
 @router.post("/harvest/{job_id}/retry")
-async def admin_harvest_retry(job_id: int, s: Session = Depends(get_db)):
+async def admin_harvest_retry(job_id: int, s: Session = Depends(get_db),
+                              back: str = Form("")):
     job = s.get(HarvestJob, job_id)
     if job and job.status in ("failed", "skipped"):
         job.status = "queued"
@@ -417,20 +480,22 @@ async def admin_harvest_retry(job_id: int, s: Session = Depends(get_db)):
         if hist:
             s.delete(hist)
         s.commit()
-    return RedirectResponse("/admin/harvest", 303)
+    return RedirectResponse(f"/admin/harvest{back}", 303)
 
 
 @router.post("/harvest/{job_id}/cancel")
-async def admin_harvest_cancel(job_id: int, s: Session = Depends(get_db)):
+async def admin_harvest_cancel(job_id: int, s: Session = Depends(get_db),
+                               back: str = Form("")):
     job = s.get(HarvestJob, job_id)
     if job and job.status == "queued":
         s.delete(job)
         s.commit()
-    return RedirectResponse("/admin/harvest", 303)
+    return RedirectResponse(f"/admin/harvest{back}", 303)
 
 
 @router.post("/harvest/{job_id}/delete")
-async def admin_harvest_delete(job_id: int, s: Session = Depends(get_db)):
+async def admin_harvest_delete(job_id: int, s: Session = Depends(get_db),
+                               back: str = Form("")):
     """删除终态任务记录。
 
     - 正常 done/exists/skipped:只删记录,不碰任何文件(done 已导入平台,
@@ -438,12 +503,16 @@ async def admin_harvest_delete(job_id: int, s: Session = Depends(get_db)):
     - 带 archive_dir 的任务(import 失败,残包留在 library):删除时连带清理
       残留目录 — 它未入库,不删就是孤儿。路径必须是 library 子目录,防误删。
     """
+    # back 为操作前所在列表的查询串(?status=…&page=…),仅接受本方生成的白名单形态
+    if back and not re.fullmatch(r"\?status=(active|done|skipped|failed)&page=\d+", back):
+        back = ""
     job = s.get(HarvestJob, job_id)
     if not job:
-        return RedirectResponse("/admin/harvest", 303)
+        return RedirectResponse(f"/admin/harvest{back}", 303)
     if job.status not in ("done", "exists", "skipped", "failed"):
         # 运行中/排队中不能用删除(应走取消/等完成), 防误删进行中的任务记录
-        return RedirectResponse("/admin/harvest?flash=" + quote(t("任务进行中,不能删除")), 303)
+        return RedirectResponse(f"/admin/harvest{back}" + ("&" if back else "?")
+                                + "flash=" + quote(t("任务进行中,不能删除")), 303)
     if job.archive_dir:
         # failed(下载/导入失败)或存量 done(旧版 import 失败未改判)可能带归档残留;
         # 正常 done 任务无 archive_dir, 不会误删任何文件。
@@ -465,13 +534,21 @@ async def admin_harvest_delete(job_id: int, s: Session = Depends(get_db)):
         s.delete(hist)
     s.delete(job)
     s.commit()
-    return RedirectResponse("/admin/harvest?flash=" + quote(t("任务已删除")), 303)
+    return RedirectResponse(f"/admin/harvest{back}" + ("&" if back else "?")
+                            + "flash=" + quote(t("任务已删除")), 303)
 
 
 @router.get("/api/harvest/jobs")
-async def admin_harvest_jobs_api(s: Session = Depends(get_db)):
-    """轮询端点:返回最近任务状态(2s 轮询用)。"""
-    jobs = s.scalars(select(HarvestJob).order_by(desc(HarvestJob.id)).limit(30)).all()
+async def admin_harvest_jobs_api(s: Session = Depends(get_db),
+                                 page: int = 1, status: str = ""):
+    """轮询端点:返回当前页任务状态(2s 轮询用)。页码/筛选由前端透传保持。"""
+    status = status if status in JOB_STATUS_GROUPS else ""
+    total = s.scalar(select(func.count()).select_from(
+        _jobs_query(s, status).subquery())) or 0
+    page = _clamp_page(page, total, JOBS_PER_PAGE)
+    jobs = s.scalars(_jobs_query(s, status)
+                     .offset((page - 1) * JOBS_PER_PAGE)
+                     .limit(JOBS_PER_PAGE)).all()
     return {"jobs": [{
         "id": j.id, "serial": j.serial, "status": j.status, "title": j.title or "",
         "model": j.model_name or "", "error": j.error or "",
@@ -479,6 +556,8 @@ async def admin_harvest_jobs_api(s: Session = Depends(get_db)):
         "source": j.source,
         "createdAt": j.created_at.strftime("%m-%d %H:%M") if j.created_at else "",
     } for j in jobs],
+        "page": page, "totalPages": max(1, -(-total // JOBS_PER_PAGE)),
+        "total": total,
         "workerRunning": harvest_worker.worker_running(),
         "preheatRunning": media.preheat_running(),
         "preheatProgress": media.preheat_progress()}
