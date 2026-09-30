@@ -518,8 +518,8 @@ window.PC = (function () {
       '<div class="lightbox__bar-end">' +
       '<button class="icon-btn" type="button" data-lb-close aria-label="' + t("Close viewer") + '">' + icon("close") + "</button>" +
       "</div></div>" +
-      '<div class="lightbox__stage">' +
       '<img class="lightbox__backdrop" data-lb-backdrop alt="" aria-hidden="true">' +
+      '<div class="lightbox__stage">' +
       '<button class="lightbox__nav lightbox__nav--prev" type="button" data-lb-prev aria-label="' + t("Previous photo") + '">' + icon("left") + "</button>" +
       '<img class="lightbox__img" data-lb-img alt="">' +
       '<button class="lightbox__nav lightbox__nav--next" type="button" data-lb-next aria-label="' + t("Next photo") + '">' + icon("right") + "</button>" +
