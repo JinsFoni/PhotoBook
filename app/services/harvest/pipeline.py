@@ -79,7 +79,11 @@ def download_stream(url: str, dest: Path, *,
 
         sha = hashlib.sha256()
         if done:
-            sha.update(tmp.read_bytes())  # 已下载部分计入校验
+            # 已下载部分计入校验 —— 分块流式读: read_bytes() 会把整个 .part
+            # (可达数 GB)一次性载入内存, 是容器内存峰值暴冲的元凶
+            with open(tmp, "rb") as pf:
+                for chunk in iter(lambda: pf.read(4 * 1024 * 1024), b""):
+                    sha.update(chunk)
 
         mode = "ab" if (r.status_code == 206 and done) else "wb"
         with open(tmp, mode) as f:
