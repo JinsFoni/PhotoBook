@@ -49,6 +49,9 @@ window.PC = (function () {
   /* ---------- theme(本地偏好): dark / light / blur 三态循环 ------------- */
   var THEME_KEY = "pc.theme.v1";
   var THEMES = ["dark", "light", "blur"];
+  var LB_BG_KEY = "pc.lbBg.v1";  /* 灯箱背景: solid / blur, 全局持久化 */
+  var lbBg = "solid";
+  try { var _lb = localStorage.getItem(LB_BG_KEY); if (_lb === "blur" || _lb === "solid") lbBg = _lb; } catch (e) {}
   var state = { theme: "dark", favs: { model: [], collection: [], photo: [] } };
 
   try {
@@ -516,6 +519,7 @@ window.PC = (function () {
       '<button class="icon-btn" type="button" data-lb-close aria-label="' + t("Close viewer") + '">' + icon("close") + "</button>" +
       "</div></div>" +
       '<div class="lightbox__stage">' +
+      '<img class="lightbox__backdrop" data-lb-backdrop alt="" aria-hidden="true">' +
       '<button class="lightbox__nav lightbox__nav--prev" type="button" data-lb-prev aria-label="' + t("Previous photo") + '">' + icon("left") + "</button>" +
       '<img class="lightbox__img" data-lb-img alt="">' +
       '<button class="lightbox__nav lightbox__nav--next" type="button" data-lb-next aria-label="' + t("Next photo") + '">' + icon("right") + "</button>" +
@@ -523,6 +527,7 @@ window.PC = (function () {
       '<div class="lightbox__foot">' +
       '<span class="lightbox__counter" data-lb-counter></span>' +
       '<div class="lightbox__foot-actions">' +
+      '<button class="icon-btn" type="button" data-lb-bg aria-pressed="' + (lbBg === "blur" ? "true" : "false") + '" title="' + t("Backdrop: blurred cover") + '">' + icon(lbBg === "blur" ? "blur" : "moon") + "</button>" +
       '<button class="fav fav--labelled" type="button" data-fav="photo" data-fav-key="" aria-pressed="false" title="' + t("Favourite photo") + '">' +
       icon("heart") + '<span data-fav-label>' + t("Save") + '</span><span class="sr">' + t("Add to favourites") + "</span></button>" +
       '<a class="btn btn--ghost btn--sm" data-lb-download download>' + icon("download") + "<span>" + t("Download") + "</span></a>" +
@@ -533,6 +538,7 @@ window.PC = (function () {
     el.querySelector("[data-lb-img]").setAttribute("draggable", "false"); /* 防原生拖图 */
 
     el.querySelector("[data-lb-close]").addEventListener("click", close);
+    el.querySelector("[data-lb-bg]").addEventListener("click", toggleBackdrop);
     el.querySelector("[data-lb-prev]").addEventListener("click", function () { go(-1); });
     el.querySelector("[data-lb-next]").addEventListener("click", function () { go(1); });
     el.querySelector("[data-lb-img]").addEventListener("click", toggleZoom);
@@ -717,6 +723,45 @@ window.PC = (function () {
 
   /* 鼠标拖拽过程中抑制原生图片拖拽与文本选择 */
 
+  /* 灯箱背景切换: solid 纯黑/纯白底 ↔ blur 当前图虚化垫底(轮播图同款配方)。
+     全局持久化(localStorage), 所有页面共用 */
+  function toggleBackdrop() {
+    lbBg = lbBg === "blur" ? "solid" : "blur";
+    try { localStorage.setItem(LB_BG_KEY, lbBg); } catch (e) {}
+    paintBackdropBtn();
+    paintBackdrop();
+  }
+
+  function paintBackdropBtn() {
+    if (!lb.el) return;
+    var b = lb.el.querySelector("[data-lb-bg]");
+    if (!b) return;
+    b.setAttribute("aria-pressed", lbBg === "blur" ? "true" : "false");
+    b.innerHTML = icon(lbBg === "blur" ? "blur" : "moon");
+    b.title = lbBg === "blur" ? t("Backdrop: blurred cover") : t("Backdrop: solid");
+  }
+
+  function paintBackdrop() {
+    if (!lb.el) return;
+    var bd = lb.el.querySelector("[data-lb-backdrop]");
+    if (!bd) return;
+    var p = lb.photos[lb.index];
+    if (lbBg !== "blur" || !p) {
+      bd.removeAttribute("src");
+      bd.dataset.ready = "false";
+      lb.el.dataset.bg = "solid";
+      return;
+    }
+    lb.el.dataset.bg = "blur";
+    /* 垫底图用当前照片的 1800w 预览(已在切图预取的缓存里, 零额外请求) */
+    var src = lightboxSrc(p, 1800);
+    if (bd.dataset.src === src && bd.dataset.ready === "true") return;
+    bd.dataset.src = src;
+    bd.dataset.ready = "false";
+    bd.src = src;
+    bd.onload = function () { if (bd.dataset.src === src) bd.dataset.ready = "true"; };
+  }
+
   function paint() {
     var el = lb.el;
     if (!el) return;
@@ -771,6 +816,7 @@ window.PC = (function () {
     var dl = el.querySelector("[data-lb-download]");
     dl.setAttribute("href", lightboxSrc(p));
     dl.setAttribute("download", (p.file || "").split("/").pop());
+    paintBackdrop();
   }
 
   /* ---------- justified photo wall -------------------------------------- */

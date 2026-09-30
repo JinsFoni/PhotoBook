@@ -162,6 +162,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "{title} — photo {n}": {"zh-CN": "{title} — 第 {n} 张", "zh-TW": "{title} — 第 {n} 張"},
     "Photo {n}": {"zh-CN": "第 {n} 张", "zh-TW": "第 {n} 張"},
     "Archive export is coming soon": {"zh-CN": "打包下载即将上线", "zh-TW": "打包下載即將上線"},
+    "Backdrop: blurred cover": {"zh-CN": "虚化垫底背景", "zh-TW": "虛化墊底背景"},
+    "Backdrop: solid": {"zh-CN": "纯色背景", "zh-TW": "純色背景"},
 
     # ---- 数量词(计数)-------------------------------------------------------
     "collection": {"zh-CN": "个写真集", "zh-TW": "個寫真集"},
