@@ -261,26 +261,16 @@ window.PC = (function () {
     toastTimer = setTimeout(function () { toastEl.dataset.open = "false"; }, 2200);
   }
 
-  /* ---------- image reveal ---------------------------------------------- */
+  /* ---------- image reveal ----------------------------------------------
+   * 图片一到就完整显示, 不做透明度淡入。淡入(半透明图叠在占位底上)
+   * 在滚动场景会被反复触发, 视觉上就是「卡片闪」; skeleton 占位底
+   * 保留在图下不动, 图到达即覆盖, 观感是「直接出现」而非「浮现」。 */
   function revealImages(root) {
     (root || document).querySelectorAll(".frame img:not([data-reveal])").forEach(function (img) {
       img.setAttribute("data-reveal", "1");
-      function done() {
-        img.classList.add("is-loaded");
-        var f = img.parentElement;
-        if (f) f.classList.remove("skeleton");
-      }
-      if (img.complete && img.naturalWidth > 0) {
-        /* 已解码(缓存命中/虚拟化卡槽复用重建): 同帧到位, 不重播淡入。
-         * 否则滚动时每张滚入的卡都重新 520ms 淡入, 半透明图叠在
-         * --void 占位底上 = 用户看到的「滑动时闪」 */
-        img.style.transition = "none";
-        done();
-        requestAnimationFrame(function () { img.style.transition = ""; });
-      } else {
-        img.addEventListener("load", done, { once: true });
-        img.addEventListener("error", done, { once: true });
-      }
+      img.classList.add("is-loaded");
+      var f = img.parentElement;
+      if (f) f.classList.remove("skeleton");
     });
   }
 

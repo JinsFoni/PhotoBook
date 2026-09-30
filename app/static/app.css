@@ -831,11 +831,14 @@ table { border-collapse: collapse; }
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform var(--t-img) var(--ease), opacity 520ms var(--ease);
+  /* 不做 opacity 淡入: 滚动反复触发半透明叠底 = 闪烁; 保留 transform 过渡(hover 缩放) */
+  transition: transform var(--t-img) var(--ease);
 }
 
 /* a frame reserves its space and shows a neutral placeholder until the image
-   arrives, then fades in. Nothing reflows, nothing pops. */
+   arrives, then the image covers it in the same frame. Nothing reflows,
+   nothing fades — fading was re-triggered on every virtualized slot reuse
+   and read as flicker while scrolling. */
 .frame.skeleton img { opacity: 0; }
 .frame img.is-loaded { opacity: 1; }
 /* 历史类名 frame--3x4 实际已全局 2/3(全站统一卡片比例),
