@@ -149,5 +149,8 @@ templates.env.globals["boot_json"] = boot_json
 templates.env.globals["asset_ver"] = ASSET_VER
 templates.env.globals["blur_src_json"] = blur_src_json
 templates.env.globals["t"] = i18n.translate
+from .db import local_dt as _local_dt  # noqa: E402
+templates.env.globals["local_time"] = lambda dt: (
+    _local_dt(dt).strftime("%m-%d %H:%M") if dt else "")
 templates.env.globals["lang"] = i18n.get_language
 templates.env.globals["LANGUAGES"] = i18n.LANGUAGES

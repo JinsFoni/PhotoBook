@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import hash_password, require_admin
 from ..config import settings
-from ..db import (Collection, Favorite, HarvestHistory, HarvestJob, Model, Photo,
+from ..db import (Collection, Favorite, HarvestHistory, HarvestJob, local_dt, Model, Photo,
                   Session as DbSession, Setting, Tag, User)
 from ..database import get_db
 from ..i18n import t
@@ -590,6 +590,11 @@ async def admin_harvest_delete(job_id: int, s: Session = Depends(get_db),
                             + "flash=" + quote(t("任务已删除")), 303)
 
 
+def local_time_fmt(dt):
+    d = local_dt(dt)
+    return d.strftime("%m-%d %H:%M") if d else ""
+
+
 @router.get("/api/harvest/jobs")
 async def admin_harvest_jobs_api(s: Session = Depends(get_db),
                                  page: int = 1, status: str = ""):
@@ -611,7 +616,7 @@ async def admin_harvest_jobs_api(s: Session = Depends(get_db),
         "model": j.model_name or "", "error": _job_display_error(s, j),
         "bytesDone": j.bytes_done, "bytesTotal": j.bytes_total,
         "source": j.source,
-        "createdAt": j.created_at.strftime("%m-%d %H:%M") if j.created_at else "",
+        "createdAt": local_time_fmt(j.created_at),
     } for j in jobs],
         "page": page, "totalPages": max(1, -(-total // JOBS_PER_PAGE)),
         "total": total,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import (Boolean, DateTime, Float, ForeignKey, Index, Integer,
                         String, Text, UniqueConstraint)
@@ -11,6 +11,23 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def local_dt(dt: datetime | None) -> datetime | None:
+    """DB 里的 naive UTC 时间 → 本地时间(展示用)。
+
+    优先 ZoneInfo("Asia/Shanghai"); slim 镜像无 tzdata 时回退固定 +8
+    (中国无夏令时, 固定偏移永远正确)。输入 None 原样返回。
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)  # SQLite 存的是 naive UTC
+    try:
+        from zoneinfo import ZoneInfo
+        return dt.astimezone(ZoneInfo("Asia/Shanghai"))
+    except Exception:
+        return dt.astimezone(timezone(timedelta(hours=8)))
 
 
 class Base(DeclarativeBase):
