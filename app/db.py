@@ -78,6 +78,8 @@ class Collection(Base):
     status: Mapped[str] = mapped_column(String(20), default="published")  # processing|draft|published|hidden
     featured: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_weight: Mapped[int] = mapped_column(Integer, default=0)
+    # 源站(buondua)序号:采集导入时写入,浏览器联动脚本用它精确判定「已入库」
+    source_serial: Mapped[int | None] = mapped_column(Integer, index=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 

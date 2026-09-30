@@ -44,6 +44,7 @@ def _migrate() -> None:
         "ALTER TABLE users ADD COLUMN language VARCHAR(8) NOT NULL DEFAULT ''",
         "ALTER TABLE harvest_jobs ADD COLUMN archive_dir VARCHAR(500)",
         "ALTER TABLE harvest_jobs ADD COLUMN collection_slug VARCHAR(220)",
+        "ALTER TABLE collections ADD COLUMN source_serial INTEGER",
     )
     with engine.connect() as conn:
         for stmt in stmts:
@@ -53,6 +54,42 @@ def _migrate() -> None:
             except Exception:
                 pass  # 列已存在
     _backfill_collection_slug()
+    _backfill_source_serial()
+
+
+def _backfill_source_serial() -> None:
+    """一次性回填:存量采集导入的写真集无 source_serial, 浏览器联动无法判「已入库」。
+
+    路径: job.collection_slug → collection, serial 从任务行直接拷贝。
+    幂等: 只更新 source_serial 为空的行。与 _backfill_collection_slug 有先后依赖:
+    它先补齐 job.collection_slug, 这里才能覆盖存量任务。
+    """
+    from sqlalchemy import select
+
+    from .db import Collection, HarvestJob
+
+    s = SessionLocal()
+    try:
+        jobs = s.scalars(select(HarvestJob).where(
+            HarvestJob.collection_slug.is_not(None),
+            HarvestJob.status.in_(["done", "exists"]))).all()
+        if not jobs:
+            return
+        fixed = 0
+        for job in jobs:
+            col = s.scalar(select(Collection).where(Collection.slug == job.collection_slug))
+            if col is None or col.source_serial is not None:
+                continue
+            col.source_serial = job.serial
+            fixed += 1
+        if fixed:
+            s.commit()
+            logging.getLogger("photobook").info(
+                "backfilled source_serial on %d collections", fixed)
+    except Exception:
+        logging.getLogger("photobook").exception("source_serial backfill failed")
+    finally:
+        s.close()
 
 
 def _backfill_collection_slug() -> None:

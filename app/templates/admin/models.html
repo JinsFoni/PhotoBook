@@ -44,7 +44,7 @@
                   <a class="btn btn--quiet btn--sm" href="/admin/models/{{ m.id }}/edit" aria-label="{{ t('编辑') }}" title="{{ t('编辑') }}"
                      style="display:inline-flex;align-items:center;padding:4px 6px">{{ icon('edit') }}</a>
                   <form method="post" action="/admin/models/{{ m.id }}/delete" style="display:inline"
-                        onsubmit="return confirm({{ t('删除模特 {n}?其写真将一并删除。', n=m.name) | tojson }})">
+                        onsubmit='return confirm({{ t('删除模特 {n}?其写真将一并删除。', n=m.name) | tojson }})'>
                     <button class="btn btn--quiet btn--sm" type="submit" aria-label="{{ t('删') }}" title="{{ t('删') }}"
                             style="color:var(--danger, #c0392b);display:inline-flex;align-items:center;padding:4px 6px">{{ icon('trash') }}</button>
                   </form>

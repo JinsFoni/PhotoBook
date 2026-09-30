@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from .. import media, settings_store
-from ...db import HarvestHistory, HarvestJob
+from ...db import Collection, HarvestHistory, HarvestJob
 from ...database import SessionLocal
 from . import net, pipeline
 from .filters import check_title
@@ -32,12 +32,16 @@ def _now():
 
 # ---- 队列操作 ---------------------------------------------------------------
 
+# 未落终态的任务状态(浏览器联动判定「下载中」也用它)
+ACTIVE_JOB_STATES = ("queued", "parsing", "downloading", "extracting")
+
+
 def enqueue(s, serial: int, url: str, source: str = "auto") -> HarvestJob | None:
     """入队(历史去重 + 排队去重)。返回新任务或 None。"""
     if s.get(HarvestHistory, serial):
         return None
     exists = s.scalar(select(HarvestJob).where(HarvestJob.serial == serial,
-                                               HarvestJob.status.in_(["queued", "parsing", "downloading", "extracting"])))
+                                               HarvestJob.status.in_(ACTIVE_JOB_STATES)))
     if exists:
         return None
     job = HarvestJob(serial=serial, url=url, source=source, status="queued")
@@ -244,7 +248,13 @@ def _run_job(job_id: int) -> None:
             else:
                 extra = f",跳过 {r['videos']} 个视频" if r["videos"] else ""
                 job.collection_slug = r["slug"]
+                # 序号落到写真集上: 浏览器联动脚本按 source_serial 精确判定「已入库」
+                col = s.scalar(select(Collection).where(Collection.slug == r["slug"]))
+                if col is not None:
+                    col.source_serial = job.serial
+                s.commit()  # 先落库释放写锁: queue_import_thumbs 用独立连接写状态
                 nq = media.queue_import_thumbs(r["slug"])
+                job = s.get(HarvestJob, job_id)
                 job.error = f"→ {r['photos']} 张已入库{extra},缩略图生成中#{nq}"
             s.commit()
         except Exception as e:

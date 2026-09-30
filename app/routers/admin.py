@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..services import media, tagging
+from . import ext_api
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
@@ -628,8 +629,19 @@ async def admin_settings(request: Request, s: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "admin/settings.html", {
         "page": "admin", "conf": conf,
         "harvest_keys": settings_store.HARVEST_KEYS,
+        "ext_key_tail": (settings_store.get_setting(s, ext_api.API_KEY_SETTING) or "")[-4:],
+        "script_url": str(request.base_url).rstrip("/") + "/static/buondua-bridge.user.js",
         "flash": request.query_params.get("flash", ""),
     })
+
+
+# ---- 浏览器联动 ---------------------------------------------------------------
+
+@router.post("/settings/ext-key")
+async def admin_ext_key_reset(s: Session = Depends(get_db)):
+    key = ext_api.reset_api_key(s)
+    msg = t("API Key 已重置: {k}(请立即复制,之后只显示尾号)", k=key)
+    return RedirectResponse(f"/admin/settings?flash={quote(msg)}", 303)
 
 
 @router.post("/settings")

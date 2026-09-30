@@ -77,6 +77,25 @@
 
             <button class="btn" type="submit">{{ t('保存设置') }}</button>
           </form>
+
+          <div style="border-top:1px solid var(--line);margin-top:var(--s6);padding-top:var(--s5)">
+            <h2 class="t-h3" style="margin-bottom:var(--s2)">{{ t('浏览器联动(BuonDua 助手)') }}</h2>
+            <p class="t-small" style="color:var(--ink-2);margin-bottom:var(--s3)">
+              {{ t('在油猴(Tampermonkey)安装 BuonDua 助手脚本后,浏览 buondua.com 时卡片右下角会出现下载按钮,点击即可推送到本站任务队列;已在库中的写真显示「已入库」。') }}
+            </p>
+            <ol class="t-small" style="color:var(--ink-2);margin:0 0 var(--s3) 1.2em;line-height:1.9">
+              <li>{{ t('安装脚本:') }} <a class="link" href="{{ script_url }}">{{ script_url }}</a><br>
+                  <span style="color:var(--ink-3)">{{ t('(用安装了 Tampermonkey 的浏览器打开此链接,按提示安装;脚本随本站自动更新)') }}</span></li>
+              <li>{{ t('在脚本菜单「设置 PhotoBook」中填入本站地址与下方 API Key') }}</li>
+            </ol>
+            <div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap">
+              <span class="t-small" style="color:var(--ink-3)">{{ t('当前 API Key 尾号:') }} <code style="color:var(--ink)">·{{ ext_key_tail or '—' }}</code></span>
+              <form method="post" action="/admin/settings/ext-key"
+                    onsubmit='return confirm({{ t('重置后旧 Key 立即失效,脚本需重新配置。确定重置?') | tojson }})'>
+                <button class="btn btn--quiet btn--sm" type="submit">{{ t('重置 API Key') }}</button>
+              </form>
+            </div>
+          </div>
         </div>
       </div>
     </div>
