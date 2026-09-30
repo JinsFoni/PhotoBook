@@ -44,6 +44,7 @@ def _migrate() -> None:
         "ALTER TABLE users ADD COLUMN language VARCHAR(8) NOT NULL DEFAULT ''",
         "ALTER TABLE harvest_jobs ADD COLUMN archive_dir VARCHAR(500)",
         "ALTER TABLE harvest_jobs ADD COLUMN collection_slug VARCHAR(220)",
+        "ALTER TABLE harvest_jobs ADD COLUMN updated_at TIMESTAMP",
         "ALTER TABLE collections ADD COLUMN source_serial INTEGER",
     )
     with engine.connect() as conn:

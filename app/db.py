@@ -166,6 +166,8 @@ class HarvestJob(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(default=None)
     finished_at: Mapped[datetime | None] = mapped_column(default=None)
+    # 最后一次进度更新时间: 看门狗据此判定进行中任务是否停滞
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=utcnow)
 
     __table_args__ = (Index("ix_jobs_status_id", "status", "id"),)
 

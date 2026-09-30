@@ -23,6 +23,10 @@ log = logging.getLogger("harvest")
 
 _stop = threading.Event()
 _thread: threading.Thread | None = None
+
+# 进行中任务进度停滞判定阈值(秒): 超过则视为卡死, 重置回 queued 重跑。
+# 断点续传已下载部分不白费(.part 保留, download_stream 自动 Range 续传)。
+STALE_SECONDS = 30 * 60
 _scan_lock = threading.Lock()
 
 
@@ -137,6 +141,7 @@ def _run_job(job_id: int) -> None:
             return
         job.status = "parsing"
         job.started_at = _now()
+        job.updated_at = job.started_at
         s.commit()
 
         conf = settings_store.harvest_conf(s)
@@ -207,6 +212,7 @@ def _run_job(job_id: int) -> None:
         def progress(done: int, total: int) -> None:
             job.bytes_done = done
             job.bytes_total = total or job.bytes_total
+            job.updated_at = _now()
             try:
                 s.commit()
             except Exception:
@@ -294,9 +300,51 @@ def _run_job(job_id: int) -> None:
         s.close()
 
 
+def _recover_and_watchdog() -> None:
+    """启动恢复 + 空闲看门狗, 防「downloading 永久卡住」两类场景:
+
+    ① 启动时上次运行未完成(容器重启/进程被杀) → 进行中任务重置回 queued。
+       在 start_worker 里启动时同步执行一次。
+    ② 运行中 worker 线程意外死亡(如 iter_content 阻塞超时未生效) →
+       消费循环里周期执行: updated_at 超时未更新的进行中任务重置回 queued。
+    """
+    s = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc).timestamp() - STALE_SECONDS
+        rows = s.scalars(select(HarvestJob).where(
+            HarvestJob.status.in_(ACTIVE_JOB_STATES))).all()
+        reset: list[int] = []
+        for job in rows:
+            ref = job.updated_at or job.started_at or job.created_at
+            if ref is not None and ref.tzinfo is None:
+                ref = ref.replace(tzinfo=timezone.utc)  # SQLite 存的是 naive UTC
+            if ref is None or ref.timestamp() < cutoff:
+                reset.append(job.id)
+        for job_id in reset:
+            job = s.get(HarvestJob, job_id)
+            if job is None:
+                continue
+            job.status = "queued"
+            job.error = "进度停滞/上次运行中断, 自动重新排队(已下载部分续传)"
+            s.commit()
+            log.warning("watchdog reset job #%s (%s) -> queued", job_id, job.serial)
+        if rows and not reset:
+            log.info("watchdog: %d active job(s) healthy", len(rows))
+    except Exception:
+        log.exception("watchdog pass failed")
+    finally:
+        s.close()
+
+
 def _consume_loop() -> None:
     """串行消费:取最早排队任务 → 执行 → 重试逻辑(失败不阻塞队列)。"""
+    last_watchdog = 0.0
     while not _stop.is_set():
+        # 每 5 分钟做一次看门狗扫描(worker 线程意外卡死后本循环不再执行,
+        # 但正常运行时能兜底其它异常场景)
+        if time.time() - last_watchdog > 300:
+            last_watchdog = time.time()
+            _recover_and_watchdog()
         s = SessionLocal()
         try:
             job = s.scalar(select(HarvestJob)
@@ -323,6 +371,9 @@ def start_worker() -> None:
     if _thread and _thread.is_alive():
         return
     _stop.clear()
+    # 上次运行遗留的进行中任务(容器重启/被杀): 立即恢复回 queued,
+    # .part 断点续传, 已下载部分不白费
+    _recover_and_watchdog()
     _thread = threading.Thread(target=_consume_loop, name="harvest-worker", daemon=True)
     _thread.start()
 
