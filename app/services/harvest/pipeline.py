@@ -23,13 +23,32 @@ def human(n: float) -> str:
     return f"{n:.1f}TB"
 
 
+# 进行中的下载流: key -> Response。看门狗发现任务停滞时,
+# 从其它线程 close() 对应流, 立即解堵阻塞中的 iter_content(实测有效)。
+_STREAMS: dict = {}
+
+
+def close_stream(key) -> bool:
+    """关闭指定 key 的进行中下载流(另一线程调用)。返回是否找到并关闭。"""
+    r = _STREAMS.pop(key, None)
+    if r is None:
+        return False
+    try:
+        r.close()
+        return True
+    except Exception:
+        return False
+
+
 def download_stream(url: str, dest: Path, *,
                     expected_sha256: str = "",
                     max_bytes: int = 4 * 1024**3,
-                    on_progress=None) -> Path:
+                    on_progress=None,
+                    stream_key=None) -> Path:
     """流式下载,支持 Range 断点续传。完成后校验 SHA256。
 
     on_progress(done_bytes, total_bytes) — total 可能为 0(未知)。
+    stream_key — 注册键(worker 传 job_id), 看门狗可从其它线程 close 解堵。
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
@@ -47,6 +66,8 @@ def download_stream(url: str, dest: Path, *,
     from .net import _proxy
     r = cr.get(url, impersonate="chrome", headers=headers, stream=True,
                timeout=(20, 120), proxy=_proxy())
+    if stream_key is not None:
+        _STREAMS[stream_key] = r
     try:
         if r.status_code not in (200, 206):
             raise RuntimeError(f"下载失败 HTTP {r.status_code}")
@@ -71,6 +92,8 @@ def download_stream(url: str, dest: Path, *,
                 if on_progress:
                     on_progress(done, total)
     finally:
+        if stream_key is not None:
+            _STREAMS.pop(stream_key, None)
         r.close()
 
     digest = sha.hexdigest()

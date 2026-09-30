@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -23,10 +25,17 @@ log = logging.getLogger("harvest")
 
 _stop = threading.Event()
 _thread: threading.Thread | None = None
+_watchdog: threading.Thread | None = None
 
 # 进行中任务进度停滞判定阈值(秒): 超过则视为卡死, 重置回 queued 重跑。
 # 断点续传已下载部分不白费(.part 保留, download_stream 自动 Range 续传)。
 STALE_SECONDS = 30 * 60
+
+# 任务运行所有权: job_id -> token。看门狗重置卡死任务时删除记录,
+# 僵尸线程(卡死后网络复通)复苏后 token 不匹配, 不得写终态/清文件,
+# 避免覆盖新运行的状态或误删新运行的 .part。
+_run_tokens: dict[int, str] = {}
+
 _scan_lock = threading.Lock()
 
 
@@ -131,7 +140,15 @@ def _finish(s, job: HarvestJob, status: str, error: str | None = None) -> None:
 
 
 def _run_job(job_id: int) -> None:
-    """执行单个任务(独立 session,串行调用)。"""
+    """执行单个任务(独立 session,串行调用)。
+
+    token = 运行所有权。看门狗发现进度停滞会撤销 token 并把任务重置回
+    queued —— 卡死线程多半阻塞在网络读上, join 不动, 只能放任它挂着;
+    旧线程若之后复苏, token 不匹配, 不得写终态或清理文件
+    (此时新运行可能已在跑同一任务)。
+    """
+    token = uuid.uuid4().hex
+    _run_tokens[job_id] = token
     s = SessionLocal()
     library_root = None
     archive_tmp = None
@@ -221,7 +238,8 @@ def _run_job(job_id: int) -> None:
         pipeline.download_stream(info["direct_url"], archive_file,
                                  expected_sha256=info["sha256"],
                                  max_bytes=4 * 1024**3,
-                                 on_progress=progress)
+                                 on_progress=progress,
+                                 stream_key=job_id)
 
         # 6. 解压 + 归档
         work_dir = archive_tmp / f"work-{job.serial}"
@@ -272,31 +290,43 @@ def _run_job(job_id: int) -> None:
                 job.archive_dir = str(final_dir)
                 s.commit()
     except FileExistsError:
-        job = s.get(HarvestJob, job_id)
-        if job:
-            _finish(s, job, "exists")
-            s.commit()
+        if _run_tokens.get(job_id) == token:  # 僵尸线程不得写终态
+            job = s.get(HarvestJob, job_id)
+            if job:
+                _finish(s, job, "exists")
+                s.commit()
     except Exception as e:
-        log.exception("job %s failed", job_id)
-        job = s.get(HarvestJob, job_id)
-        if job:
-            _finish(s, job, "failed", str(e)[:500])
-            s.commit()
+        if _run_tokens.get(job_id) == token:
+            log.exception("job %s failed", job_id)
+            job = s.get(HarvestJob, job_id)
+            if job:
+                _finish(s, job, "failed", str(e)[:500])
+                s.commit()
+        else:
+            # 看门狗已重置本任务(解堵 close 引发的异常属预期): 静默退出
+            log.warning("job #%s: stale thread exception ignored (token revoked): %s",
+                        job_id, str(e)[:120])
     finally:
-        # 清理:压缩包与临时工作目录一律删除(不保留)
+        # 清理:压缩包与临时工作目录一律删除(不保留)。
+        # 僵尸防护: token 已被看门狗撤销 → 新运行可能正在跑同一任务,
+        # 旧线程不得清理(*.part 是新运行的续传基础)。
         import shutil
-        try:
-            if archive_tmp and archive_tmp.exists():
-                for p in archive_tmp.glob("*.part"):
-                    p.unlink(missing_ok=True)
-                for p in archive_tmp.glob("*.rar"):
-                    p.unlink(missing_ok=True)
-                for p in archive_tmp.glob("*.zip"):
-                    p.unlink(missing_ok=True)
-                for d in archive_tmp.glob("work-*"):
-                    shutil.rmtree(d, ignore_errors=True)
-        except Exception:
-            pass
+        if _run_tokens.get(job_id) == token:
+            try:
+                if archive_tmp and archive_tmp.exists():
+                    for p in archive_tmp.glob("*.part"):
+                        p.unlink(missing_ok=True)
+                    for p in archive_tmp.glob("*.rar"):
+                        p.unlink(missing_ok=True)
+                    for p in archive_tmp.glob("*.zip"):
+                        p.unlink(missing_ok=True)
+                    for d in archive_tmp.glob("work-*"):
+                        shutil.rmtree(d, ignore_errors=True)
+            except Exception:
+                pass
+            _run_tokens.pop(job_id, None)
+        else:
+            log.warning("job #%s: stale thread exited, cleanup skipped", job_id)
         s.close()
 
 
@@ -310,7 +340,8 @@ def _recover_and_watchdog() -> None:
     """
     s = SessionLocal()
     try:
-        cutoff = datetime.now(timezone.utc).timestamp() - STALE_SECONDS
+        stale = sys.modules[__name__].STALE_SECONDS  # 运行时可调(测试缩短)
+        cutoff = datetime.now(timezone.utc).timestamp() - stale
         rows = s.scalars(select(HarvestJob).where(
             HarvestJob.status.in_(ACTIVE_JOB_STATES))).all()
         reset: list[int] = []
@@ -327,6 +358,10 @@ def _recover_and_watchdog() -> None:
             job.status = "queued"
             job.error = "进度停滞/上次运行中断, 自动重新排队(已下载部分续传)"
             s.commit()
+            # 解堵: close 卡死线程阻塞中的下载流(实测能立刻抛异常退出)
+            pipeline.close_stream(job_id)
+            # 撤销所有权: 卡死的旧线程复苏后不得再碰这个任务
+            _run_tokens.pop(job_id, None)
             log.warning("watchdog reset job #%s (%s) -> queued", job_id, job.serial)
         if rows and not reset:
             log.info("watchdog: %d active job(s) healthy", len(rows))
@@ -337,14 +372,12 @@ def _recover_and_watchdog() -> None:
 
 
 def _consume_loop() -> None:
-    """串行消费:取最早排队任务 → 执行 → 重试逻辑(失败不阻塞队列)。"""
-    last_watchdog = 0.0
+    """串行消费:取最早排队任务 → 执行 → 重试逻辑(失败不阻塞队列)。
+
+    看门狗在独立线程(_watchdog_loop)运行: _run_job 同步阻塞在本循环里,
+    下载线程卡死时循环自身冻结, 内嵌看门狗永远轮不到执行(1.0.26 缺陷)。
+    """
     while not _stop.is_set():
-        # 每 5 分钟做一次看门狗扫描(worker 线程意外卡死后本循环不再执行,
-        # 但正常运行时能兜底其它异常场景)
-        if time.time() - last_watchdog > 300:
-            last_watchdog = time.time()
-            _recover_and_watchdog()
         s = SessionLocal()
         try:
             job = s.scalar(select(HarvestJob)
@@ -361,13 +394,23 @@ def _consume_loop() -> None:
         _run_job(job_id)
 
 
+def _watchdog_loop() -> None:
+    """独立看门狗线程: 每 60s 扫描一次进度停滞的活动任务。
+
+    与消费循环分离 —— 下载线程卡死会把 _run_job/消费循环一起冻结,
+    看门狗必须有自己的线程才能真正执行到(任务 #1 事故教训)。
+    """
+    while not _stop.wait(timeout=60.0):
+        _recover_and_watchdog()
+
+
 def start_worker() -> None:
-    """启动后台消费线程 + APScheduler 定时扫描。
+    """启动后台消费线程 + 看门狗线程 + APScheduler 定时扫描。
 
     消费线程无条件启动(手动提交的任务要随时处理);
     定时扫描仅在 HARVEST_ENABLED=1 时注册(后台「定时扫描开启」开关仍逐轮生效)。
     """
-    global _thread
+    global _thread, _watchdog
     if _thread and _thread.is_alive():
         return
     _stop.clear()
@@ -376,6 +419,8 @@ def start_worker() -> None:
     _recover_and_watchdog()
     _thread = threading.Thread(target=_consume_loop, name="harvest-worker", daemon=True)
     _thread.start()
+    _watchdog = threading.Thread(target=_watchdog_loop, name="harvest-watchdog", daemon=True)
+    _watchdog.start()
 
     from ...config import settings
     if not settings.harvest_enabled:
