@@ -980,6 +980,17 @@ window.PC = (function () {
       syncAll();
     });
 
+    /* 滚动进行中给 <html> 挂 is-scrolling: CSS 侧抑制 hover 缩放/浮层,
+       避免 Safari 内容经过静止指针时反复触发缩放过渡(卡片闪烁) */
+    var scrollTimer = 0;
+    window.addEventListener("scroll", function () {
+      document.documentElement.classList.add("is-scrolling");
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(function () {
+        document.documentElement.classList.remove("is-scrolling");
+      }, 160);
+    }, { passive: true });
+
     window.addEventListener("scroll", function () {
       var bar = document.querySelector("[data-sticky-bar]");
       if (!bar) return;

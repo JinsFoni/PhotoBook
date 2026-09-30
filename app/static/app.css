@@ -848,6 +848,15 @@ table { border-collapse: collapse; }
 .frame--2x3 { aspect-ratio: 2 / 3; }
 .frame--1x1 { aspect-ratio: 1 / 1; }
 
+/* 滚动进行中抑制 hover 效果: Safari 在内容滚动经过静止指针时会重新派发
+   hover, 每张卡都触发一次 720ms 缩放过渡, 视觉上就是「滑动时卡片闪/抖」。
+   html.is-scrolling 由 app.js 在 scroll 事件上挂载, 停止 160ms 后移除。 */
+html.is-scrolling .hoverable:hover .frame img,
+html.is-scrolling .hoverable:focus-within .frame img { transform: none; }
+
+html.is-scrolling .hoverable:hover .reveal,
+html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
+
 .hoverable:hover .frame img,
 .hoverable:focus-within .frame img { transform: scale(1.035); }
 
