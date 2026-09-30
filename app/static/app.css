@@ -1775,7 +1775,6 @@ table { border-collapse: collapse; }
 .lightbox[data-bg="blur"] .lightbox__progress i { background: rgba(255, 255, 255, 0.9); }
 /* 收藏点亮态在白字下也用 accent, 保持高识别 */
 .lightbox[data-bg="blur"] .fav[aria-pressed="true"] { color: var(--accent); }
-.lightbox[data-bg="blur"] .lightbox__img { box-shadow: 0 8px 60px rgba(0, 0, 0, 0.45); }
 
 .lightbox__bar,
 .lightbox__foot { position: relative; z-index: 1; }
