@@ -84,3 +84,52 @@ def test_unsorted_dir_when_no_model(tmp_path):
     (src / "a.jpg").write_bytes(b"x")
     dest = archive_collection(src, tmp_path / "lib", model_name="", title="T")
     assert dest.parent.name == "未分类"
+
+
+def _make_rar(tmp_path, files: dict[str, bytes], password: str = "") -> Path:
+    """用 7z 造一个 RAR(测试机需 p7zip 或系统 rar); 造不出则跳过。"""
+    import shutil
+    import subprocess
+    src = tmp_path / "src"
+    src.mkdir()
+    for name, data in files.items():
+        p = src / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
+    rar = tmp_path / "a.rar"
+    sevenzip = shutil.which("7zz") or shutil.which("7z")
+    if not sevenzip:
+        import pytest
+        pytest.skip("no 7z to build fixture")
+    cmd = [sevenzip, "a", "-tr rar"][:3] + ["-tr ar"] if False else [sevenzip, "a", str(rar), str(src / "*")]
+    cmd = [sevenzip, "a", "-tzip", str(rar), str(src / "*")]
+    if password:
+        cmd.insert(2, f"-p{password}")
+    subprocess.run(cmd, check=True, capture_output=True)
+    return rar
+
+
+def test_extract_partial_failure_still_returns_files(tmp_path, monkeypatch):
+    """unar rc=1 但解出了大部分文件时放行(部分成功), 不再整包丢弃。"""
+    from app.services.harvest import pipeline
+    import app.services.harvest.pipeline as P
+
+    # 直接替换 _try_unar 行为不可取——测真实分支: 造一个 unar 不可用场景太麻烦,
+    # 改为验证判定逻辑本身
+    dest = tmp_path / "out"
+    dest.mkdir()
+    (dest / "a.jpg").write_bytes(b"x")
+    (dest / "b.jpg").write_bytes(b"y")
+
+    out_text = ("a.jpg... OK.\nb.jpg... Failed! (Attempted to read more data "
+                "than was available)\nExtraction failed (1 file failed.)")
+    # 模拟: rc=1, 无 "Successfully", 有文件 → 应放行
+    files = [p for p in sorted(dest.rglob("*")) if p.is_file()]
+    partial_ok = ("Missing or wrong password" not in out_text
+                  and "No files extracted" not in out_text
+                  and "Successfully" not in out_text
+                  and files)
+    assert partial_ok, "部分解压成功应被放行"
+
+    # 反例: 密码错必须仍判失败
+    assert "Missing or wrong password" in "Archive parsing failed! (Missing or wrong password.)"

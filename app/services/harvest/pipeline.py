@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import shutil
 import subprocess
 from pathlib import Path
 
 from curl_cffi import requests as cr
+
+log = logging.getLogger(__name__)
 
 from .filters import sanitize_path_part
 
@@ -134,9 +137,19 @@ def extract_archive(archive: Path, dest_dir: Path, password: str, *,
                                str(archive)],
                               capture_output=True, text=True, timeout=3600)
         out = (proc.stdout or "") + (proc.stderr or "")
-        if proc.returncode != 0 or "Successfully" not in out:
+        if "Missing or wrong password" in out or "No files extracted" in out:
             return False, out.strip()[:300]
-        return True, ""
+        if "Successfully" in out:
+            return True, ""
+        # rc=1 但解出了文件 = 部分成功(源包内个别文件损坏); 88/89 完好
+        # 远好于整包丢弃, 放行并告警
+        files = [p for p in sorted(dest_dir.rglob("*")) if p.is_file()]
+        if files:
+            bad = [ln.strip()[:120] for ln in out.splitlines() if "Failed!" in ln]
+            log.warning("unar partial extraction (%d files ok): %s",
+                        len(files), "; ".join(bad[:3]))
+            return True, ""
+        return False, out.strip()[:300]
 
     last_err = ""
     tools = (_try_7zz, _try_unar)

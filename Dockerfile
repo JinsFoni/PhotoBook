@@ -1,9 +1,10 @@
 # PhotoBook — FastAPI + SQLite 单体
 FROM python:3.12-slim
 
-# 7z 用于采集流程解压 RAR/ZIP;curl 供健康检查
+# 7z/unar 用于采集流程解压 RAR/ZIP(7z 快, RAR5 新压缩方式由 unar 兜底);
+# curl 供健康检查
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        p7zip-full curl \
+        p7zip-full unar curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
