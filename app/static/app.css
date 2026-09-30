@@ -1746,21 +1746,26 @@ table { border-collapse: collapse; }
 .lightbox[data-bg="solid"] .lightbox__backdrop { opacity: 0; }
 .lightbox[data-bg="blur"] { background: rgba(8, 9, 10, 0.82); }
 /* blur 模式: 顶/底栏无实体底, 文字/图标白色浮在虚化上。
-   垫底是照片的放大虚化, 亮部照片会把白字「洗掉」—— 顶/底栏区域叠一层
-   自上而下的暗化渐变(轮播图同款手法), 任何照片下文字对比都稳定 */
-.lightbox[data-bg="blur"]::after {
+   垫底是照片的放大虚化, 亮部照片会把白字「洗掉」—— 顶/底栏区域
+   各自叠一条向外延伸的暗化渐变(轮播图同款手法), 保证文字对比;
+   渐变只存在于 bar/foot 自身区域, 绝不盖到中间的照片 */
+.lightbox[data-bg="blur"] .lightbox__bar::before,
+.lightbox[data-bg="blur"] .lightbox__foot::before {
   content: "";
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
   pointer-events: none;
-  background: linear-gradient(
-    rgba(8, 9, 10, 0.78) 0%,
-    rgba(8, 9, 10, 0.5) 14%,
-    rgba(8, 9, 10, 0) 34%,
-    rgba(8, 9, 10, 0) 68%,
-    rgba(8, 9, 10, 0.42) 86%,
-    rgba(8, 9, 10, 0.72) 100%
-  );
+}
+.lightbox[data-bg="blur"] .lightbox__bar::before {
+  inset: 0 0 auto 0;
+  height: 100%;
+  background: linear-gradient(rgba(8, 9, 10, 0.78), rgba(8, 9, 10, 0.55));
+}
+.lightbox[data-bg="blur"] .lightbox__foot::before {
+  inset: auto 0 0 0;
+  height: 100%;
+  background: linear-gradient(rgba(8, 9, 10, 0.55), rgba(8, 9, 10, 0.72));
 }
 .lightbox[data-bg="blur"] .lightbox__title,
 .lightbox[data-bg="blur"] .lightbox__counter,
@@ -1776,8 +1781,11 @@ table { border-collapse: collapse; }
 /* 收藏点亮态在白字下也用 accent, 保持高识别 */
 .lightbox[data-bg="blur"] .fav[aria-pressed="true"] { color: var(--accent); }
 
+/* ::before 渐变垫在栏内容之下(pointer-events:none + 后续内容自然居上) */
 .lightbox__bar,
 .lightbox__foot { position: relative; z-index: 1; }
+.lightbox__bar > *,
+.lightbox__foot > * { position: relative; z-index: 1; }
 .lightbox__bar {
   height: 60px;
   display: flex;
