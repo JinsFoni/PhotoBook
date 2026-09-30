@@ -1745,13 +1745,29 @@ table { border-collapse: collapse; }
 .lightbox__backdrop[data-ready="true"] { opacity: 1; }
 .lightbox[data-bg="solid"] .lightbox__backdrop { opacity: 0; }
 .lightbox[data-bg="blur"] { background: rgba(8, 9, 10, 0.82); }
-/* blur 模式: 顶/底栏无实体底, 文字/图标全白系浮在虚化上(轮播图同款对比处理) */
+/* blur 模式: 顶/底栏无实体底, 文字/图标白色浮在虚化上。
+   垫底是照片的放大虚化, 亮部照片会把白字「洗掉」—— 顶/底栏区域叠一层
+   自上而下的暗化渐变(轮播图同款手法), 任何照片下文字对比都稳定 */
+.lightbox[data-bg="blur"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    rgba(8, 9, 10, 0.78) 0%,
+    rgba(8, 9, 10, 0.5) 14%,
+    rgba(8, 9, 10, 0) 34%,
+    rgba(8, 9, 10, 0) 68%,
+    rgba(8, 9, 10, 0.42) 86%,
+    rgba(8, 9, 10, 0.72) 100%
+  );
+}
 .lightbox[data-bg="blur"] .lightbox__title,
 .lightbox[data-bg="blur"] .lightbox__counter,
 .lightbox[data-bg="blur"] .lightbox__nav,
 .lightbox[data-bg="blur"] .icon-btn,
 .lightbox[data-bg="blur"] .fav,
-.lightbox[data-bg="blur"] .btn--ghost { color: rgba(255, 255, 255, 0.92); }
+.lightbox[data-bg="blur"] .btn--ghost { color: rgba(255, 255, 255, 0.94); text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45); }
 .lightbox[data-bg="blur"] .icon-btn:hover,
 .lightbox[data-bg="blur"] .fav:hover,
 .lightbox[data-bg="blur"] .lightbox__nav:hover { color: #ffffff; }
@@ -1761,6 +1777,8 @@ table { border-collapse: collapse; }
 .lightbox[data-bg="blur"] .fav[aria-pressed="true"] { color: var(--accent); }
 .lightbox[data-bg="blur"] .lightbox__img { box-shadow: 0 8px 60px rgba(0, 0, 0, 0.45); }
 
+.lightbox__bar,
+.lightbox__foot { position: relative; z-index: 1; }
 .lightbox__bar {
   height: 60px;
   display: flex;
