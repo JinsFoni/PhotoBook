@@ -20,7 +20,7 @@ UA_IMPERSONATE = "chrome"
 # 按「出口 IP + TLS 指纹」联合概率拦截:机房代理出口 + chrome 指纹实测 100% 403,
 # safari17_0 实测 6/6 过盾且完整两段式跳转 3/3 落地 MediaFire。chrome 留作重试
 # 兕底(住宅出口/换代理场景 chrome 是通的)。
-OUO_IMPERSONATE = "safari17_0"
+OUO_IMPERSONATE = "chrome"  # 2026-09-30 实测: safari17_0 被 ouo CF 盾全拦(0/3), chrome 全过(3/3)
 
 
 def _proxy() -> str | None:
@@ -222,7 +222,7 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
     """
     proxy = _proxy()
     for attempt in range(3):
-        imp = OUO_IMPERSONATE if attempt < 2 else UA_IMPERSONATE
+        imp = OUO_IMPERSONATE if attempt < 2 else "safari17_0"  # 末轮换 safari 兑底(出口指纹多样性)
         s = cr.Session(impersonate=imp, proxy=proxy)
         try:
             url = link
