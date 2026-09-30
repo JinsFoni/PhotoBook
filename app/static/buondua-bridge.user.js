@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.0.1
+// @version      1.0.2
 // @description  在 buondua.com 卡片右下角显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -112,7 +112,7 @@
 
   // ---- 样式 -----------------------------------------------------------------
   const CSS = `
-  .pb-badge{position:absolute;right:8px;bottom:8px;z-index:5;min-width:26px;height:26px;
+  .pb-badge{position:absolute;right:8px;bottom:8px;z-index:9999;min-width:26px;height:26px;
     display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:0 8px;
     border-radius:13px;border:0;cursor:pointer;font-size:12px;font-weight:600;
     color:#fff;background:rgba(20,20,24,.72);box-shadow:0 1px 4px rgba(0,0,0,.35);
