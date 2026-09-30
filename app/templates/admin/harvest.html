@@ -76,7 +76,7 @@
             <nav class="chip-row" style="margin-bottom:var(--s4)" aria-label="{{ t('状态筛选') }}" data-status-filters>
               {% for key, label in [('', '全部'), ('active', '进行中'), ('done', '已完成'), ('skipped', '已跳过'), ('failed', '失败')] %}
               <a class="chip" href="/admin/harvest{% if key %}?status={{ key }}{% endif %}"
-                 {% if cur_status == key %}aria-pressed="true"{% endif %} data-status-chip="{{ key }}">{{ t(label) }} <span class="num" style="color:inherit;opacity:.55">{{ chip_counts[key] }}</span></a>
+                 {% if cur_status == key %}aria-pressed="true"{% endif %} data-status-chip="{{ key }}">{{ t(label) }} <span class="num" style="color:inherit;opacity:.55" data-chip-count="{{ key }}">{{ chip_counts[key] }}</span></a>
               {% endfor %}
             </nav>
 
@@ -234,6 +234,16 @@
       if (ti) ti.textContent = PC.t("共 {n} 条", { n: pg.total });
       updatePager(pg);
     }
+    if (pg.chipCounts) {
+      var CHIPS = [["", "全部"], ["active", "进行中"], ["done", "已完成"], ["skipped", "已跳过"], ["failed", "失败"]];
+      for (var i = 0; i < CHIPS.length; i++) {
+        var el = document.querySelector('[data-chip-count="' + CHIPS[i][0] + '"]');
+        if (el) el.textContent = pg.chipCounts[CHIPS[i][0]] || 0;
+      }
+    }
+    document.querySelectorAll("[data-status-chip]").forEach(function (c) {
+      c.setAttribute("aria-pressed", c.getAttribute("data-status-chip") === curStatus ? "true" : "false");
+    });
   }
 
   /* 按返回的页码更新上一页/下一页链接(翻页后轮询会继续带上新页码) */
@@ -251,12 +261,69 @@
   }
 
   function poll() {
-    var qs = "page=" + curPage + (curStatus ? "&status=" + curStatus : "");
-    fetch("/admin/api/harvest/jobs?" + qs, { credentials: "same-origin" })
+    fetch("/admin/api/harvest/jobs?page=" + curPage + (curStatus ? "&status=" + curStatus : ""), { credentials: "same-origin" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) { if (d) render(d.jobs, d.workerRunning, { running: d.preheatRunning, progress: d.preheatProgress }, d); })
       .catch(function () {});
   }
+
+  /* 翻页/筛选原地加载: 拦截链接点击 → fetch → 重绘, 页面不刷新、滚动位置不变 */
+  function loadPage(page, status, push) {
+    curPage = page; curStatus = status;
+    var savedY = window.scrollY;
+    fetch("/admin/api/harvest/jobs?page=" + page + (status ? "&status=" + status : ""), { credentials: "same-origin" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        render(d.jobs, d.workerRunning, { running: d.preheatRunning, progress: d.preheatProgress }, d);
+        /* 新页内容变矮时浏览器会把 scrollY 钳到新的最大值, 位置会漂移;
+           渲染后立即恢复到原位置(钳到合法范围), 保证视口不动 */
+        requestAnimationFrame(function () {
+          var maxY = document.documentElement.scrollHeight - window.innerHeight;
+          window.scrollTo({ top: Math.min(savedY, Math.max(0, maxY)), left: 0, behavior: "instant" });
+        });
+        if (push) {
+          var url = "/admin/harvest" + (status || page > 1 ? "?" : "") +
+            (status ? "status=" + status : "") +
+            (status && page > 1 ? "&" : "") + (page > 1 ? "page=" + page : "");
+          history.pushState({ page: page, status: status }, "", url);
+        }
+      })
+      .catch(function () {});
+  }
+
+  /* 鼠标点下时阻止默认焦点: 链接获得焦点会触发"滚进视口",
+     在 html{scroll-behavior:smooth} 下表现为点击后页面滚动位置漂移。
+     键盘 Tab+Enter 不经 mousedown, 不受影响。 */
+  function noFocusScroll(container) {
+    container.addEventListener("mousedown", function (e) {
+      if (e.target.closest("a")) e.preventDefault();
+    });
+  }
+  noFocusScroll(document.querySelector(".pager"));
+  noFocusScroll(document.querySelector("[data-status-filters]"));
+
+  document.querySelector(".pager").addEventListener("click", function (e) {
+    var a = e.target.closest("a.pager__prev, a.pager__next");
+    if (!a || a.getAttribute("aria-disabled") === "true") { if (a) e.preventDefault(); return; }
+    e.preventDefault();
+    var m = a.href.match(/page=(\d+)/);
+    loadPage(m ? parseInt(m[1], 10) : 1, curStatus, true);
+  });
+
+  document.querySelector("[data-status-filters]").addEventListener("click", function (e) {
+    var c = e.target.closest("a.chip");
+    if (!c) return;
+    e.preventDefault();
+    loadPage(1, c.getAttribute("data-status-chip") || "", true);
+  });
+
+  window.addEventListener("popstate", function () {
+    var p = new URLSearchParams(location.search);
+    var pg = parseInt(p.get("page") || "1", 10) || 1;
+    loadPage(pg, p.get("status") || "", false);
+  });
+
   poll();
   setInterval(poll, 2000);
 })();

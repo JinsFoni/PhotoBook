@@ -589,7 +589,7 @@ async def admin_harvest_delete(job_id: int, s: Session = Depends(get_db),
 @router.get("/api/harvest/jobs")
 async def admin_harvest_jobs_api(s: Session = Depends(get_db),
                                  page: int = 1, status: str = ""):
-    """轮询端点:返回当前页任务状态(2s 轮询用)。页码/筛选由前端透传保持。"""
+    """轮询/翻页/筛选端点:页码与筛选由前端透传,原地重绘不整页刷新。"""
     status = status if status in JOB_STATUS_GROUPS else ""
     total = s.scalar(select(func.count()).select_from(
         _jobs_query(s, status).subquery())) or 0
@@ -597,6 +597,11 @@ async def admin_harvest_jobs_api(s: Session = Depends(get_db),
     jobs = s.scalars(_jobs_query(s, status)
                      .offset((page - 1) * JOBS_PER_PAGE)
                      .limit(JOBS_PER_PAGE)).all()
+    status_counts = dict(s.execute(
+        select(HarvestJob.status, func.count(HarvestJob.id)).group_by(HarvestJob.status)).all())
+    chip_counts = {g: sum(status_counts.get(st, 0) for st in sts)
+                   for g, sts in JOB_STATUS_GROUPS.items()}
+    chip_counts[""] = sum(status_counts.values())
     return {"jobs": [{
         "id": j.id, "serial": j.serial, "status": j.status, "title": j.title or "",
         "model": j.model_name or "", "error": _job_display_error(s, j),
@@ -606,6 +611,7 @@ async def admin_harvest_jobs_api(s: Session = Depends(get_db),
     } for j in jobs],
         "page": page, "totalPages": max(1, -(-total // JOBS_PER_PAGE)),
         "total": total,
+        "chipCounts": chip_counts,
         "workerRunning": harvest_worker.worker_running(),
         "preheatRunning": media.preheat_running(),
         "preheatProgress": media.preheat_progress()}
