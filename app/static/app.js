@@ -270,8 +270,14 @@ window.PC = (function () {
         var f = img.parentElement;
         if (f) f.classList.remove("skeleton");
       }
-      if (img.complete && img.naturalWidth > 0) done();
-      else {
+      if (img.complete && img.naturalWidth > 0) {
+        /* 已解码(缓存命中/虚拟化卡槽复用重建): 同帧到位, 不重播淡入。
+         * 否则滚动时每张滚入的卡都重新 520ms 淡入, 半透明图叠在
+         * --void 占位底上 = 用户看到的「滑动时闪」 */
+        img.style.transition = "none";
+        done();
+        requestAnimationFrame(function () { img.style.transition = ""; });
+      } else {
         img.addEventListener("load", done, { once: true });
         img.addEventListener("error", done, { once: true });
       }

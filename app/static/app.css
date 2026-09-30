@@ -369,6 +369,8 @@ table { border-collapse: collapse; }
   background: var(--scrim);
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
+  /* 独立合成层: 避免 Safari 滚动时 backdrop 每帧重模糊下层内容导致的抖动/闪烁 */
+  transform: translateZ(0);
 }
 
 /* 顶栏轻霜玻璃(全站统一, 灯箱同源深色薄霜):
