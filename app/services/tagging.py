@@ -34,6 +34,26 @@ def _get_or_create_tag(s: Session, name: str) -> Tag:
     return t
 
 
+def prune_empty_tags(s: Session) -> int:
+    """删除既无合集也无模特关联的孤儿标签, 返回删除数。
+
+    关联表(collection_tags/model_tags)无 ORM 级联: 删除合集/模特后,
+    其 tag 关联靠 DB 外键 CASCADE 清掉, 但 tag 本体会变成 0 关联孤儿,
+    继续显示在前台发现页与后台标签页。在合集/模特删除提交后调用。
+    幂等: 无孤儿时为空操作。
+    """
+    orphan_ids = s.scalars(select(Tag.id).where(
+        ~Tag.collections.any(), ~Tag.models.any())).all()
+    for tid in orphan_ids:
+        t = s.get(Tag, tid)
+        if t:
+            s.delete(t)
+    if orphan_ids:
+        s.commit()
+        log.info("prune_empty_tags: 删除孤儿标签 %d 个", len(orphan_ids))
+    return len(orphan_ids)
+
+
 def apply_tags(s: Session, collection: Collection | None,
                model: Model | None, tags: list[str]) -> int:
     """把 tag 幂等挂到合集与模特。返回本次新关联数(用于日志/统计)。
