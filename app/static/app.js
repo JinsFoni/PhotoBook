@@ -750,8 +750,6 @@ window.PC = (function () {
       bd.removeAttribute("src");
       bd.dataset.ready = "false";
       lb.el.dataset.bg = "solid";
-      setScrim("top", false);
-      setScrim("bottom", false);
       return;
     }
     lb.el.dataset.bg = "blur";
@@ -764,49 +762,7 @@ window.PC = (function () {
     bd.onload = function () {
       if (bd.dataset.src !== src) return;
       bd.dataset.ready = "true";
-      measureScrims(src);
     };
-  }
-
-  /* 自适应压暗: 照片对应边缘过亮(白字会被洗掉)时才在顶/底栏淡入暗化层,
-     边缘本身够暗则保持透明 —— 栏区与虚化垫底始终统一, 照片永不被盖 */
-  var LB_EDGE_LUMA = 0.42;
-  var _scrimToken = 0;
-  function measureScrims(src) {
-    if (!lb.el || lbBg !== "blur") return;
-    var token = ++_scrimToken;
-    var img = new Image();
-    img.onload = function () {
-      if (token !== _scrimToken || lbBg !== "blur") return; /* 已过期: 别覆盖新照片的测量 */
-      try {
-        var c = document.createElement("canvas");
-        var w = 120;
-        var h = Math.max(8, Math.round((img.naturalHeight / img.naturalWidth) * w));
-        c.width = w; c.height = h;
-        var ctx = c.getContext("2d");
-        ctx.drawImage(img, 0, 0, w, h);
-        var data = ctx.getImageData(0, 0, w, h).data;
-        var band = Math.max(2, Math.round(h * 0.08));
-        var top = 0, bot = 0;
-        for (var y = 0; y < band; y++) {
-          for (var x = 0; x < w; x++) {
-            var i = (y * w + x) * 4;
-            top += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-            var j = ((h - 1 - y) * w + x) * 4;
-            bot += 0.2126 * data[j] + 0.7152 * data[j + 1] + 0.0722 * data[j + 2];
-          }
-        }
-        var n = band * w * 255;
-        setScrim("top", top / n > LB_EDGE_LUMA);
-        setScrim("bottom", bot / n > LB_EDGE_LUMA);
-      } catch (e) { /* canvas 被跨域污染等: 保持现状 */ }
-    };
-    img.src = src;
-  }
-
-  function setScrim(which, on) {
-    if (!lb.el) return;
-    lb.el.style.setProperty("--lb-scrim-" + which, on ? "1" : "0");
   }
 
   function paint() {
@@ -863,8 +819,6 @@ window.PC = (function () {
     var dl = el.querySelector("[data-lb-download]");
     dl.setAttribute("href", lightboxSrc(p));
     dl.setAttribute("download", (p.file || "").split("/").pop());
-    setScrim("top", false);
-    setScrim("bottom", false);
     paintBackdrop();
   }
 
