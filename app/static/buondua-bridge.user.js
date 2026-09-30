@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.0.0
+// @version      1.0.1
 // @description  在 buondua.com 卡片右下角显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -21,7 +21,43 @@
   let BASE = (GM_getValue("pb_base", "") || "").replace(/\/+$/, "");
   let KEY = GM_getValue("pb_key", "") || "";
 
-  GM_registerMenuCommand("设置 PhotoBook", function () {
+  GM_registerMenuCommand("设置 PhotoBook", promptSettings);
+
+  GM_registerMenuCommand("刷新入库状态", function () { queryAndRender(); });
+
+  if (!BASE || !KEY) {
+    console.info("[PB] 未配置,菜单「设置 PhotoBook」或右下角红色徽标开始配置");
+    showOff("PhotoBook 未配置,点此设置");
+    return;
+  }
+  pingThenBoot(false);
+
+  // ---- 可见状态徽标(未配置/未连接时显示, 避免静默失败) ----
+  function showOff(text) {
+    let el = document.getElementById("pb-off");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "pb-off";
+      el.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:99999;" +
+        "padding:8px 14px;border-radius:20px;background:rgba(176,66,48,.92);" +
+        "color:#fff;font-size:13px;font-weight:600;cursor:pointer;" +
+        "box-shadow:0 2px 8px rgba(0,0,0,.3)";
+      el.addEventListener("click", function () {
+        el.textContent = "连接中…";
+        promptSettings();
+      });
+      (document.body || document.documentElement).appendChild(el);
+    }
+    el.style.display = "block";
+    el.textContent = "📷 " + text;
+  }
+
+  function hideOff() {
+    const el = document.getElementById("pb-off");
+    if (el) el.style.display = "none";
+  }
+
+  function promptSettings() {
     const b = prompt("PhotoBook 地址(如 http://192.168.0.100:8777)", BASE);
     if (b === null) return;
     const k = prompt("API Key(管理后台 → 设置 → 浏览器联动)", KEY);
@@ -31,15 +67,7 @@
     GM_setValue("pb_base", BASE);
     GM_setValue("pb_key", KEY);
     pingThenBoot(true);
-  });
-
-  GM_registerMenuCommand("刷新入库状态", function () { queryAndRender(); });
-
-  if (!BASE || !KEY) {
-    console.info("[PB] 未配置,菜单「设置 PhotoBook」开始配置");
-    return;
   }
-  pingThenBoot(false);
 
   // ---- 连通性 ---------------------------------------------------------------
   let pingOk = false;
@@ -48,10 +76,16 @@
       pingOk = ok;
       if (ok) {
         console.info("[PB] connected, server", data && data.version);
+        hideOff();
         boot();
       } else {
-        console.warn("[PB] ping 失败,请检查地址/Key", notify);
-        if (notify) alert("PhotoBook 连接失败,请检查地址与 API Key");
+        console.warn("[PB] ping 失败");
+        showOff("未连接,点此检查设置/重试");
+        if (notify) alert(
+          "PhotoBook 连接失败。\n常见原因:\n" +
+          "1. Tampermonkey 弹出的跨域授权提示未点「总是允许」\n" +
+          "2. 地址或 API Key 不对\n" +
+          "3. NAS 服务未启动");
       }
     });
   }
