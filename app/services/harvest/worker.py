@@ -257,7 +257,7 @@ def _run_job(job_id: int) -> None:
         s.commit()
 
         # 7. 导入平台(library → media + 建库)。导入后写真置 processing
-        #    (前台不可见),缩略图队列生成 900/1800 两档后才翻转 published。
+        #    (前台不可见),缩略图队列生成 900/2400 两档后才翻转 published。
         #    导入失败 → 任务判 failed 并记录归档残留路径:删除该任务时
         #    会连带清理(残留未入库, 不删就是孤儿);重试也能走 failed 重跑路径
         try:

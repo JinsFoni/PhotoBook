@@ -25,15 +25,16 @@ THUMB_RE = re.compile(r"^(\d+)(?:x(\d+))?/(.+)\.(jpg|jpeg|png|webp)$", re.I)
 
 Image.MAX_IMAGE_PIXELS = 400 * 1024 * 1024  # 原图可达 40MP+
 
-# 档位策略(分层设计):
-#   900  网格 + 照片墙(入库时异步生成)
-#   1800 灯箱 fit 预览(入库时异步生成)
-#   2400 灯箱自动高清升级 — 不预热、不入库生成, 纯按需(谁看过全屏谁才有);
-#        10 万张规模固定存储 48GB(原图的 3%), 2400 档体积随观看增长不随库容。
+# 档位策略(两档, 都预热):
+#   900  网格 + 照片墙
+#   2400 灯箱显示档(前端恒用, 见 app.js 的 LB_W) — 全屏 fit 无差, 体积约 286KB/张。
+# 灯箱从不请求真原图(24MP 原图解码是切图卡顿根源), 原图只服务下载与 1:1 放大。
+# 曾有 1800 档: 本库 70% 原图宽 ≤1800, "只缩不放"下 1800 与 2400 输出字节完全相同,
+# 两档并存就是纯重复副本; 且屏宽驱动的 1800/2400 双档让灯箱大屏永远打不到热缓存
+# (2400 无人预热 → 每张现场解码 230~900ms)。故收敛为单档预热。
 WALL_W = 900
-PREVIEW_W = 1800
 HD_W = 2400
-PREHEAT_WIDTHS = (WALL_W, PREVIEW_W)
+PREHEAT_WIDTHS = (WALL_W, HD_W)
 
 # 缩略图生成全局并发上限。单张 19MP 图解码峰值 ~170MB,
 # 不限流时浏览器并发 8 张就能把容器打到 1.4GB(NAS 实测);
@@ -41,9 +42,11 @@ PREHEAT_WIDTHS = (WALL_W, PREVIEW_W)
 # NAS 级 CPU 单张 1~3s,排队等 1 轮远好于内存打爆。
 _gen_sem = threading.Semaphore(2)
 
-# 入库缩略图队列: 采集/手动导入完成后, 后台线程逐张生成 WALL/PREVIEW 两档。
+# 入库缩略图队列: 采集/手动导入完成后, 后台线程逐张生成 WALL/HD 两档。
 # 生成完 → 写真从 processing 翻转 published(前台可见)。
-# 单张 ~0.2s(19MP draft 解码), 299 张的写真约 1 分钟内就绪。
+# 单张两档合计约 0.33s(窄图 0.20s / 宽图 0.63s 加权, 实测): 299 张的写真
+# 约 1~2 分钟就绪。2400 档在宽图上比 1800 贵约 2 倍 —— draft() 只为 1800
+# 能选到 1/2 降采样档, 2400 要求全尺寸解码。
 _thumb_queue: list[str] = []   # collection slug 列表(去重由入队方保证)
 _thumb_lock = threading.Lock()
 _thumb_wake = threading.Event()
@@ -311,10 +314,11 @@ _t0 = [0.0]
 
 
 def preheat_all(batch: int = 4) -> None:
-    """预热全部照片的常用尺寸(900 网格/照片墙 / 1800 灯箱预览)。
+    """巡检全库, 补齐 PREHEAT_WIDTHS 各档缺失的缩略图(900 网格/照片墙 + 2400 灯箱)。
 
-    2400(高清升级)不预热: 纯按需, 存储随观看增长而非库容(10 万张规模
-    固定档合计 48GB)。幂等:已有缓存的文件直接跳过。daemon 线程,不阻塞启动。"""
+    幂等:已有缓存的文件直接跳过, 全命中时零停顿。daemon 线程, 不阻塞启动。
+    顺序按新入库优先 —— 换档后补齐全库是小时级(每张生成 + _preheat_gap 0.3s),
+    让最近采集的部分先热, 用户真会翻到的那批不等长尾。"""
 
     # 新一轮预热周期:清掉上次 shutdown 置位的停机信号,
     # 否则同进程内二次启动(测试/热重启)时预热线程会立即退出
@@ -333,7 +337,8 @@ def preheat_all(batch: int = 4) -> None:
         try:
             s = SessionLocal()
             try:
-                files = list(s.scalars(select(Photo.filename)).all())
+                files = list(s.scalars(
+                    select(Photo.filename).order_by(Photo.created_at.desc())).all())
             finally:
                 s.close()
             with _preheat_lock:
@@ -353,7 +358,7 @@ def preheat_all(batch: int = 4) -> None:
 
 
 # ---- 入库缩略图队列 -------------------------------------------------------------
-# 采集/手动导入完成后异步生成 900/1800 两档;生成完把写真从 processing
+# 采集/手动导入完成后异步生成 900/2400 两档;生成完把写真从 processing
 # 翻转 published,前台才可见。队列元素为 collection slug。
 
 def _publish_ready(slug: str) -> None:

@@ -334,13 +334,17 @@ async def healthz():
 
 
 # 媒体与缩略图
+# 同步 def 而非 async: 缩略图未命中时 PIL 解码+编码是纯阻塞调用,
+# 写在事件循环里会把同进程的所有请求一起冻住(实测一张 19MP 冷生成
+# 230~340ms 期间, 本应 2~4ms 的热缓存请求被拖到 776ms)。
+# 交 Starlette 线程池后并发受 media._gen_sem 约束, 内存上限才有实际闸门。
 @app.get("/media/{path:path}")
-async def media(path: str, request: Request):
+def media(path: str, request: Request):
     return serve_media(path, request)
 
 
 @app.get("/t/{spec:path}")
-async def thumb(spec: str, request: Request):
+def thumb(spec: str, request: Request):
     return serve_thumb(spec, request)
 
 

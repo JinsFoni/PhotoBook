@@ -484,7 +484,7 @@ window.PC = (function () {
 
   /* ---------- lightbox -------------------------------------------------- */
   var LB_ZOOM = 1.5; /* 放大倍数: fit 尺寸 ×1.5(可调) */
-  var lb = { photos: [], index: 0, title: "", collection: "", zoom: false, hi: false, el: null,
+  var lb = { photos: [], index: 0, title: "", collection: "", zoom: false, hi: false, el: null, bdFront: null,
              pan: { x: 0, y: 0 }, dragging: false, dragMoved: false, dragStart: null, tstart: null };
 
   function lightboxSrc(p, w) {
@@ -492,14 +492,16 @@ window.PC = (function () {
     return "/t/" + w + "/" + p.file + ".webp";     /* 缩放版:服务端只缩不放,磁盘缓存 */
   }
 
-  /* 高清版目标宽: 吸附固定档(1800/2400), 消灭屏宽驱动的档位漂移 ——
-     连续取值会让每种屏宽生成一个独立缓存档(2160/2268…), 10 万张规模
-     下每档都是 150GB 级。1800: 小屏足够; 2400: 桌面全屏无差。
-     原图缩到此尺寸后与真原图在屏幕上肉眼无差, 但体积从 10–25MB 降到约 1–2MB */
-  function hiWidth() {
-    var m = Math.max(window.innerWidth || 0, window.innerHeight || 0);
-    return m * 1.5 <= 2100 ? 1800 : 2400;
-  }
+  /* 灯箱显示档: 恒 2400, 与后端 PREHEAT_WIDTHS 里的 HD_W 一一对应。
+     曾用屏宽判档(m*1.5<=2100 ? 1800 : 2400) —— 于是 1440px 以上的桌面全部
+     落到 2400, 而 2400 当年不预热, 首开每张都要服务端现场解码 230~900ms。
+     屏宽判档还让每种窗口尺寸各生成一个缓存档(2160/2268…), 档位漂移必须消灭。
+     固定一档: 桌面全屏无差, 小屏/移动端只多下 20% 字节, 换来永远命中热缓存。
+     注: 这里不乘 DPR —— 1:1 放大走真原图(见 upgradeOriginal), fit 显示 2400 已够。 */
+  var LB_W = 2400;
+  /* 垫底/氛围档: 与后端 WALL_W 及网格页 /t/900/ 同一 URL —— 开灯箱前网格图
+     必已看过, HTTP 缓存必命中, 首开垫底层零请求零等待(Immich thumbnail 层) */
+  var WALL_W = 900;
 
   function lightboxEl() {
     if (lb.el) return lb.el;
@@ -514,10 +516,19 @@ window.PC = (function () {
       '<div class="lightbox__bar-end">' +
       '<button class="icon-btn" type="button" data-lb-close aria-label="' + t("Close viewer") + '">' + icon("close") + "</button>" +
       "</div></div>" +
-      '<img class="lightbox__backdrop" data-lb-backdrop alt="" aria-hidden="true">' +
+      /* 氛围层双缓冲: 两块同式样交替, 新图永远在旧图之上淡入,
+         旧图等新图完全不透明后再撤 —— 任何时刻至少一层完全不透明,
+         结构上杜绝换图黑帧(单元素换 src 在重模糊下会有空帧)。
+         外包一层容器, 层间 zIndex 交替不与顶/底栏(z-index:1)跨层比较 */
+      '<div class="lightbox__bdwrap" aria-hidden="true">' +
+      '<img class="lightbox__backdrop" data-lb-bd="a" alt="" decoding="async">' +
+      '<img class="lightbox__backdrop" data-lb-bd="b" alt="" decoding="async">' +
+      "</div>" +
       '<div class="lightbox__stage">' +
+      /* 垫底层: 900 档先上屏撑住画面, 主图 2400 就绪后淡入盖住 */
+      '<img class="lightbox__under" data-lb-under alt="" aria-hidden="true" decoding="async">' +
       '<button class="lightbox__nav lightbox__nav--prev" type="button" data-lb-prev aria-label="' + t("Previous photo") + '">' + icon("left") + "</button>" +
-      '<img class="lightbox__img" data-lb-img alt="">' +
+      '<img class="lightbox__img" data-lb-img alt="" decoding="async">' +
       '<button class="lightbox__nav lightbox__nav--next" type="button" data-lb-next aria-label="' + t("Next photo") + '">' + icon("right") + "</button>" +
       "</div>" +
       '<div class="lightbox__foot">' +
@@ -616,9 +627,13 @@ window.PC = (function () {
     lb.title = opts.title || "";
     lb.collection = opts.collection || "";
     lb.zoom = false;
+    lbShownUrl = "";   /* 重开不沿用上次舞台上的图, 走入场淡入 */
     el.dataset.open = "true";
     document.body.classList.add("is-locked");
     paint();
+    /* 打开即预取 ±1(Immich initializePreloads): 用户浏览首图的 1~2s 里
+       邻图 2400 已在下载, 首次翻页直接命中 */
+    lbPrefetch();
     el.querySelector("[data-lb-close]").focus();
   }
 
@@ -626,6 +641,7 @@ window.PC = (function () {
     if (!lb.el) return;
     lb.el.dataset.open = "false";
     document.body.classList.remove("is-locked");
+    lbShownUrl = "";
   }
 
   function go(step) {
@@ -633,6 +649,9 @@ window.PC = (function () {
     lb.index = (lb.index + step + lb.photos.length) % lb.photos.length;
     lb.zoom = false;
     paint();
+    /* 导航瞬间沿方向补预取(Immich updateAfterNavigation), 不等当前图上屏
+       —— 连翻时每步都提前一个身位。lbEntry 幂等, 已缓存的邻图零请求 */
+    lbPrefetch();
   }
 
   /* 1:1 放大专用:按需加载真原图并替换(预览档用于 fit 显示已足够) */
@@ -722,31 +741,109 @@ window.PC = (function () {
 
   function paintBackdrop() {
     if (!lb.el) return;
-    var bd = lb.el.querySelector("[data-lb-backdrop]");
-    if (!bd) return;
+    var a = lb.el.querySelector('[data-lb-bd="a"]');
+    var b = lb.el.querySelector('[data-lb-bd="b"]');
+    if (!a || !b) return;
     var p = lb.photos[lb.index];
     if (lbBg !== "blur" || !p) {
-      bd.removeAttribute("src");
-      bd.dataset.ready = "false";
+      a.removeAttribute("src"); b.removeAttribute("src");
+      a.dataset.ready = "false"; b.dataset.ready = "false";
+      a.style.zIndex = ""; b.style.zIndex = "";
+      lb.bdFront = null;
       lb.el.dataset.bg = "solid";
       return;
     }
     lb.el.dataset.bg = "blur";
-    /* 垫底图用当前照片的预览档(与主图同 URL, 已在切图预取的缓存里, 零额外请求) */
-    var src = lightboxSrc(p, hiWidth());
-    if (bd.dataset.src === src && bd.dataset.ready === "true") return;
-    bd.dataset.src = src;
-    bd.dataset.ready = "false";
-    bd.src = src;
-    bd.onload = function () {
-      if (bd.dataset.src !== src) return;
-      bd.dataset.ready = "true";
+    /* 氛围层用 900 档: blur(46px) 下与 2400 无差, 且网格页已缓存 →
+       灯箱一开就出现, 不等主图 2400 下载解码(首开氛围即时)。 */
+    var src = lightboxSrc(p, WALL_W);
+    var front = lb.bdFront && lb.bdFront.dataset.ready === "true" ? lb.bdFront : null;
+    if (front && front.dataset.src === src) return;   /* 同图幂等 */
+    /* 双缓冲: 新图加载到非前图层, onload 后置顶淡入; 旧前图层等新层
+       完全不透明后再撤。换图瞬间旧氛围始终铺在屏上, 黑帧不可能出现 */
+    var back = front === a ? b : a;
+    var reveal = function () {
+      if (back.dataset.src !== src) return;                    /* 已被更新的加载覆盖 */
+      if (lbBg !== "blur" || lb.photos[lb.index] !== p) return; /* stale */
+      back.style.zIndex = "2";
+      if (front) front.style.zIndex = "1";
+      back.dataset.ready = "true";
+      lb.bdFront = back;
+      if (front) setTimeout(function () {
+        /* 期间未被新一轮换前 → 撤旧层(在新层之下淡出, 不可见) */
+        if (lb.bdFront === back) { front.dataset.ready = "false"; front.style.zIndex = ""; }
+      }, 650);
     };
+    back.dataset.src = src;
+    if (back.dataset.src === src && back.complete && back.naturalWidth > 0) {
+      /* 同 URL 曾在这层加载过(solid 往返/翻回去): 不重触发 onload, 直接揭示 */
+      back.onload = null;
+      reveal();
+      return;
+    }
+    back.onload = reveal;
+    back.src = src;
   }
 
-  /* 已加载过的灯箱图 URL 记录: 预取/升级不重复发请求(浏览器内存缓存虽快,
-     仍省去 decode() 排队; 也避免快速翻页时预取与升级双发同 URL) */
-  var lbSeen = {};
+  /* ---------- 灯箱图 LRU --------------------------------------------------
+     有界且**持有 Image 对象**: 只记 URL 的话, 预取的 Image 一出作用域就被 GC,
+     解码位图随之释放, 翻回去要重新解码 —— 这是翻页体感最差的一条。
+     2400 档解码位图约 30MB/张, 上限据此取, 再大就是拿内存换命中。 */
+  var LB_CACHE_MAX = 6;
+  var lbCache = {};
+  var lbCacheOrder = [];
+  var lbShownUrl = "";   /* 舞台上已有的图: 有 → 切图不抹白, 直接换 src */
+  var lbHoldUrl = "";    /* 正在加载的当前图: 从创建 entry 到上屏前也受 LRU 保护
+                            (go() 里预取紧随其后, 若只护 lbShownUrl 则旧图受护、
+                            新图反遭淘汰, 丢掉刚解码的位图) */
+  var lbSeq = 0;         /* 连翻时的过期响应守卫 */
+
+  function lbEntry(u) {
+    var e = lbCache[u];
+    if (e) return e;
+    e = { img: new Image(), ready: false, p: null };
+    lbCache[u] = e;
+    lbCacheOrder.push(u);
+    for (var i = 0; i < lbCacheOrder.length && Object.keys(lbCache).length > LB_CACHE_MAX;) {
+      var old = lbCacheOrder[i];
+      /* 新进来的、正上屏的、正在加载的都不淘汰 */
+      if (old === u || old === lbShownUrl || old === lbHoldUrl) { i++; continue; }
+      lbCacheOrder.splice(i, 1);
+      delete lbCache[old];
+    }
+    return e;
+  }
+
+  /* 用 decode() 而非 onload: onload 只代表字节到齐, 真正上屏时主线程还要
+     解码 2400 档的 8.6MP —— 那才是切图卡顿的来源。失败不缓存 promise,
+     下次翻到这张会重试。 */
+  function lbReady(u) {
+    var e = lbEntry(u);
+    if (e.ready) return Promise.resolve(e);
+    if (e.p) return e.p;
+    var img = e.img;
+    if (!img.src) img.src = u;
+    var w = img.decode ? img.decode() : new Promise(function (res, rej) {
+      img.onload = res; img.onerror = rej;
+    });
+    e.p = w.then(function () {
+      e.ready = true; e.p = null; return e;
+    }, function () { e.p = null; return null; });
+    return e.p;
+  }
+
+  /* 邻图预取: 在 open()/go() 导航瞬间调用(Immich initializePreloads /
+     updateAfterNavigation 时机), 让邻图下载解码与用户看图的时间重叠;
+     不在当前图 onready 后才发。lbEntry 幂等, 已就绪的邻图零开销,
+     故双向 ±1 固定预取即可, 不需方向取消(每步净新增下i仅为 1 张)。 */
+  function lbPrefetch() {
+    var n = lb.photos.length;
+    if (n < 2) return;
+    [1, -1].forEach(function (d) {
+      var q = lb.photos[(lb.index + d + n) % n];
+      if (q) lbReady(lightboxSrc(q, LB_W));
+    });
+  }
 
   function paint() {
     var el = lb.el;
@@ -754,7 +851,7 @@ window.PC = (function () {
     var p = lb.photos[lb.index];
     if (!p) return;
     var img = el.querySelector("[data-lb-img]");
-    img.dataset.ready = "false";
+    var first = !lbShownUrl;   /* 无画面可留 → 走上屏淡入 */
     img.dataset.zoomed = "false";
     img.dataset.full = "false"; /* 视图上屏后置 true(预览档即终档) */
     lb.hi = false;              /* 切图后真原图需重新按需加载 */
@@ -765,35 +862,54 @@ window.PC = (function () {
     img.style.transform = "";
     el.dataset.zoom = "false"; /* 切图/重开时退出放大模式(容器+图同步复位) */
     img.style.cursor = "zoom-in";
+    if (first) img.dataset.ready = "false";
+    img.alt = lb.title ? t("{title} — photo {n}", { title: lb.title, n: lb.index + 1 }) : t("Photo {n}", { n: lb.index + 1 });
 
-    /* 预取策略(与显示档一致): 小屏(终档 1800)预取 ±1/±2 共 4 张,
-       大屏(终档 2400)预取 ±1 两张 —— 翻页方向优先。预取即终图,
-       切到时浏览器内存缓存直接命中, 无升级二次请求。 */
-    var vw = hiWidth();
-    var dirs = vw === 1800 ? [1, -1, 2, -2] : [1, -1];
-    dirs.forEach(function (d) {
-      var q = lb.photos[(lb.index + d + lb.photos.length) % lb.photos.length];
-      if (!q) return;
-      var u = lightboxSrc(q, vw);
-      if (lbSeen[u]) return;
-      var pre = new Image();
-      pre.src = u;
-      lbSeen[u] = 1;
-    });
+    /* 垫底层先行: 900 档与网格页同 URL 必命中 HTTP 缓存, 同步换上,
+       主图就绪前舞台始终有画面; dataset.src 守卫丢弃连翻时的过期 onload */
+    var under = el.querySelector("[data-lb-under]");
+    var uSrc = lightboxSrc(p, WALL_W);
+    if (under.dataset.src !== uSrc) {
+      under.dataset.src = uSrc;
+      under.dataset.ready = "false";
+      under.src = uSrc;
+      under.onload = function () {
+        if (under.dataset.src !== uSrc) return;
+        under.dataset.ready = "true";
+        /* 旧帧冻结问题: 主图还压着上一张旧图而 2400 迟迟不到时,
+           画面是"卡住的旧图"。给热路径 120ms 宽限(缓存命中时硬切
+           已完成, 不折腾); 超时仍未上屏 → 淡出旧帧露出模糊垫底,
+           "由虚到实"替代冻结帧(Immich 多层渐显思路) */
+        setTimeout(function () {
+          if (seq !== lbSeq || lbShownUrl === url) return;
+          if (el.dataset.zoom === "true") return;
+          img.dataset.ready = "false";
+        }, 120);
+      };
+    }
+    paintBackdrop();   /* 氛围层同为 900 档, 立即出现, 不等主图 */
 
-    /* fit 显示用终档同档图秒显(1800/2400 服务端已缓存, 预取命中时
-       内存秒回; 24MP 原图全尺寸解码是切图卡顿根源, 故从不取原图);
-       大屏上屏后再升级 2400w? 不 — vw 已是 hiWidth(), 无需升级。
-       过期响应丢弃(已切走则不上屏) */
-    var view = new Image();
-    view.src = lightboxSrc(p, vw);
-    view.onload = function () {
-      if (lb.photos[lb.index] !== p) return;
-      img.src = view.src;
-      img.alt = lb.title ? t("{title} — photo {n}", { title: lb.title, n: lb.index + 1 }) : t("Photo {n}", { n: lb.index + 1 });
+    /* 主图终档 2400(服务端已预热; 未命中时也只生成这一档, 不再有二次升级);
+       就绪后淡入盖住垫底层。从不取 24MP 原图全尺寸解码。
+       预取已上移到 open()/go() 导航瞬间, 不在此处排队 */
+    var url = lightboxSrc(p, LB_W);
+    lbHoldUrl = url;
+    var seq = ++lbSeq;
+    lbReady(url).then(function (e) {
+      if (!e || seq !== lbSeq || lb.photos[lb.index] !== p) return;
+      /* 舞台上已有图 → 保持 opacity 1 硬切, 不再经历"抹白 300ms + 淡入 300ms" */
+      img.src = url;
       img.dataset.ready = "true";
-      img.dataset.full = "true"; /* vw 即终档, 免升级 */
-    };
+      img.dataset.full = "true"; /* LB_W 即终档, 免升级 */
+      lbShownUrl = url;
+      /* 主图完全不透明后再撤垫底层: 它比主图大 1.2% 且带 blur,
+         一直压在底下会露出模糊光晕。350ms > 主图 300ms 淡入,
+         撤的过程主图已完整覆盖, 无缝。若 2400 加载失败, 垫底层
+         留在原地 → 优雅降级为模糊 900 图而非旧图/空屏 */
+      setTimeout(function () {
+        if (under.dataset.src === uSrc) under.dataset.ready = "false";
+      }, 350);
+    });
 
     var title = el.querySelector("[data-lb-title]");
     title.textContent = lb.title || "";
@@ -812,7 +928,6 @@ window.PC = (function () {
     var dl = el.querySelector("[data-lb-download]");
     dl.setAttribute("href", lightboxSrc(p));
     dl.setAttribute("download", (p.file || "").split("/").pop());
-    paintBackdrop();
   }
 
   /* ---------- justified photo wall -------------------------------------- */

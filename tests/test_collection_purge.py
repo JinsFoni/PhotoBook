@@ -38,9 +38,9 @@ def _mk_collection_with_photos():
 
 
 def _gen_thumbs(rel: str):
-    from app.services.media import ensure_cached
-    assert ensure_cached(rel, 900)
-    assert ensure_cached(rel, 1800)
+    from app.services.media import PREHEAT_WIDTHS, ensure_cached
+    for w in PREHEAT_WIDTHS:
+        assert ensure_cached(rel, w)
 
 
 def _cache_paths(rel: str) -> list[str]:
