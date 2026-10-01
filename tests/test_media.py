@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
-from app.services.media import THUMB_RE, thumb_url
+from app.services.media import PREHEAT_WIDTHS, THUMB_RE, thumb_url
 
 
 def test_thumb_url_width_only():
@@ -17,6 +20,18 @@ def test_thumb_url_width_height():
 
 def test_thumb_url_none_placeholder():
     assert thumb_url(None, 900).startswith("data:image/gif")
+
+
+def test_lightbox_display_tier_is_preheated():
+    """灯箱显示档必须落在后端预热的档位里。
+
+    两者曾各自演化: 前端按屏宽取 1800/2400, 后端只预热 900/1800 —— 于是
+    1440px 以上的桌面每一次开灯箱都打在未预热的 2400 上, 服务端现场解码
+    230~900ms, 还连带把同进程的其他请求一起卡住。"""
+    js = (Path(__file__).resolve().parent.parent / "app" / "static" / "app.js").read_text("utf-8")
+    m = re.search(r"var LB_W = (\d+);", js)
+    assert m, "app.js 里找不到灯箱档位常量 LB_W"
+    assert int(m.group(1)) in PREHEAT_WIDTHS
 
 
 def test_thumb_re_width_only():

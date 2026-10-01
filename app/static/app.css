@@ -1744,6 +1744,10 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
    与首页轮播 hero__bg 同配方。backdrop 挂在 .lightbox 根层(而非 stage 内),
    顶/底栏透出同一片虚化, 不再有「上下黑条」的割裂感。
    solid 模式整层隐藏, 恢复纯色背景 */
+/* 氛围层双缓冲容器: 必须自建层叠上下文(z-index:0), 否则内层 backdrop
+   的 zIndex 交替会泄漏到灯箱根层, 盖住 stage 主图与顶/底栏;
+   建立后两块 backdrop 的交替只在容器内部生效, 容器整体仍在 stage 之下 */
+.lightbox__bdwrap { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .lightbox__backdrop {
   position: absolute;
   inset: 0;
@@ -1832,6 +1836,34 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lightbox[data-zoom="true"] .lightbox__stage.dragging,
 .lightbox[data-zoom="true"] .lightbox__stage.dragging * { user-select: none; }
 .lightbox[data-zoom="true"] .lightbox__img { -webkit-user-drag: none; }
+
+.lightbox__under {
+  /* 垫底层(Immich thumbnail 层思路): 900 档网格图同 URL 必命中缓存,
+     开灯箱/切图瞬间先上屏撑住画面, 主图 2400 就绪后淡入盖住它。
+     blur(2px) + 轻放大: 掩盖 900→视口的插值柔边, 呈现"由虚到实"的过渡 */
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  filter: blur(2px);
+  transform: scale(1.012);
+  opacity: 0;
+  transition: opacity 200ms var(--ease);
+  pointer-events: none;
+}
+.lightbox__under[data-ready="true"] { opacity: 1; }
+/* 放大模式: 主图内联尺寸可能超出 stage, 垫底层隐藏避免边缘穿帮 */
+.lightbox[data-zoom="true"] .lightbox__under { opacity: 0 !important; }
+
+/* blur 模式下氛围层(backdrop blur46+scale1.12)已把同图玻璃化铺满全屏;
+   垫底层若再保留自己的 blur+scale1.012, 同一源图两层各自重采样,
+   换图时边缘光晕会呈抖动感。此模式下关掉自身模糊与放大,
+   边缘与主图严格重合(仅作主图未就绪时的画面保底) */
+.lightbox[data-bg="blur"] .lightbox__under { filter: none; transform: none; }
 
 .lightbox__nav {
   position: absolute;
