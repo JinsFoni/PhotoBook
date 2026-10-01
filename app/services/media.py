@@ -457,3 +457,28 @@ def queue_import_thumbs(slug: str) -> int:
     ensure_import_worker()
     _thumb_wake.set()
     return n
+
+
+def recover_stuck_processing() -> int:
+    """启动自愈:重启会丢内存缩略图队列,卡在 processing 的写真将永远不可见。
+    扫描全部 processing 集合重新入队(幂等:缩略图已存在的 ensure_cached
+    直接命中,随后 _publish_ready 正常翻转)。返回入队数量。"""
+    from ..database import SessionLocal
+    from ..db import Collection
+
+    s = SessionLocal()
+    try:
+        slugs = [row for row in s.scalars(
+            select(Collection.slug).where(Collection.status == "processing")).all()]
+    finally:
+        s.close()
+    for slug in slugs:
+        with _thumb_lock:
+            if slug not in _thumb_queue:
+                _thumb_queue.append(slug)
+    if slugs:
+        ensure_import_worker()
+        _thumb_wake.set()
+        log.warning("recovered %d stuck processing collection(s): %s",
+                    len(slugs), ", ".join(x[:40] for x in slugs))
+    return len(slugs)
