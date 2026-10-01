@@ -80,18 +80,40 @@
   document.querySelector("[data-f-name]").value = f.name;
   tagSel.value = f.tag; agencySel.value = f.agency;
 
-  function card(m) {
+  /* 骨架与填充分离(与 /collections 同策略): img 节点跨复用存活,
+     换 src 时旧位图保留至新图可绘制 — 无空白帧闪烁。 */
+  function cardShell() {
     return '<article class="model-card hoverable">' +
-      '<div style="position:relative"><a href="/models/' + m.slug + '" aria-label="' + PC.escapeHtml(m.name) + '">' +
-      '<div class="frame skeleton" style="aspect-ratio:2/3">' + (m.avatar ? '<img src="/t/900/' + m.avatar + '.webp" alt="' + PC.escapeHtml(m.name) + '" loading="lazy" decoding="async">' : '') + '</div></a>' +
-      '<div class="card__fav reveal"><button class="fav fav--bare" type="button" data-fav="model" data-fav-key="' + m.slug + '" aria-pressed="false" title="' + PC.t("Favourite model") + '">' +
+      '<div style="position:relative"><a data-card-link href="#" aria-label="">' +
+      '<div class="frame skeleton" style="aspect-ratio:2/3"><img alt="" loading="lazy" decoding="async"></div></a>' +
+      '<div class="card__fav reveal"><button class="fav fav--bare" type="button" data-fav="model" data-fav-key="" aria-pressed="false">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.2s-7.4-4.5-7.4-9.6A4.3 4.3 0 0 1 12 7.9a4.3 4.3 0 0 1 7.4 2.7c0 5.1-7.4 9.6-7.4 9.6z"/></svg>' +
       '<span class="sr">' + PC.t("Add to favourites") + '</span></button></div></div>' +
       '<div class="card__caption"><div class="card__caption-main">' +
-      '<h3 class="model-card__name card__title-vm"><a href="/models/' + m.slug + '">' + m.name + "</a></h3>" +
-      '<p class="card__sub"><span>' + PC.t(m.count === 1 ? "{n} collection" : "{n} collections", { n: m.count }) + "</span></p>" +
-      (m.tags.length ? '<p class="model-card__tags">' + m.tags.join(", ") + "</p>" : "") +
+      '<h3 class="model-card__name card__title-vm"><a data-card-title href="#"></a></h3>' +
+      '<p class="card__sub"><span data-card-count></span></p>' +
+      '<p class="model-card__tags" data-card-tags></p>' +
       "</div></div></article>";
+  }
+
+  function fillCard(root, m) {
+    var link = root.querySelector("[data-card-link]");
+    link.href = "/models/" + m.slug;
+    link.setAttribute("aria-label", PC.escapeHtml(m.name));
+    var img = root.querySelector("img");
+    img.alt = PC.escapeHtml(m.name);
+    if (m.avatar) {
+      if (img.getAttribute("src") !== "/t/900/" + m.avatar + ".webp") img.src = "/t/900/" + m.avatar + ".webp";
+    } else if (img.getAttribute("src")) {
+      img.removeAttribute("src");
+    }
+    root.querySelector("[data-fav-key]").setAttribute("data-fav-key", m.slug);
+    var tl = root.querySelector("[data-card-title]");
+    tl.href = "/models/" + m.slug;
+    tl.textContent = m.name;
+    root.querySelector("[data-card-count]").textContent =
+      PC.t(m.count === 1 ? "{n} collection" : "{n} collections", { n: m.count });
+    root.querySelector("[data-card-tags]").textContent = m.tags.join(", ");
   }
 
   function filtered() {
@@ -151,7 +173,8 @@
     if (!VM_ON) {
       /* 手机降级: 全量渲染一次 */
       if (win.count !== list.length) {
-        grid.innerHTML = list.map(card).join("");
+        grid.innerHTML = list.map(cardShell).join("");
+        Array.prototype.forEach.call(grid.children, function (el, i) { fillCard(el, list[i]); });
         cells = [];
         win.count = list.length;
       }
@@ -185,7 +208,7 @@
         el.style.width = Math.round(m.colW) + "px";
         if (el.dataset.idx !== String(idx)) {
           el.dataset.idx = String(idx);
-          swapCell(el, list[idx], idx);
+          fillCell(el, list[idx]);
         }
       } else {
         el.style.display = "none";
@@ -195,31 +218,10 @@
     win.first = first; win.count = count; win.top = top; win.w = m.w;
   }
 
-  /* 槽内容交换(与 /collections 同策略): 预解码封面后再重写 innerHTML,
-     避免复用槽重建时新 img 未绘制、透出深色占位底的一闪。 */
-  function coverUrl(m) { return "/t/900/" + m.avatar + ".webp"; }
-  function swapCell(el, item, idx) {
-    if (!item.avatar) { el.innerHTML = card(item); return; }
-    var want = coverUrl(item);
-    var token = String(idx);
-    var img = new Image();
-    img.src = want;
-    var write = function () {
-      if (el.dataset.idx !== token || el.dataset.src !== want) return;
-      el.innerHTML = card(item);
-      var im = el.querySelector("img");
-      if (im) im.src = want;
-    };
-    el.dataset.src = want;
-    if (img.decode) {
-      img.decode().then(write, function () { write(); });
-    } else {
-      if (img.complete) write();
-      else {
-        img.onload = write;
-        img.onerror = write;
-      }
-    }
+  /* 槽填充: 空槽建骨架, 复用槽只更新内容, img 永不重建。 */
+  function fillCell(el, item) {
+    if (!el.firstChild) el.innerHTML = cardShell();
+    fillCard(el, item);
   }
 
   var ticking = false;

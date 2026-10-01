@@ -80,17 +80,38 @@
   document.querySelector("[data-f-name]").value = f.name;
   tagSel.value = f.tag; modelSel.value = f.model;
 
-  function card(c) {
+  /* 卡片骨架(不含 src, 图由 fillCell 挂载)与内容更新分离:
+     虚拟化复用槽时 img 节点跨卡片存活 — 换 src 时浏览器保留旧位图
+     直到新图可绘制, 从根上消除「重建 DOM → 新 img 走加载管线 →
+     数帧空白透出深色底」的闪烁(Chrome/Safari 录屏实证)。 */
+  function cardShell() {
     return '<article class="collection-card hoverable">' +
-      '<div style="position:relative"><a href="/collections/' + c.slug + '" aria-label="' + PC.escapeHtml(c.title) + '"><div class="frame skeleton" style="aspect-ratio:2/3">' +
-      '<img src="/t/900/' + c.cover + '.webp" alt="' + PC.escapeHtml(c.title) + '" loading="lazy" decoding="async"></div></a>' +
-      '<div class="card__fav reveal"><button class="fav fav--bare" type="button" data-fav="collection" data-fav-key="' + c.slug + '" aria-pressed="false" title="' + PC.t("Favourite collection") + '">' +
+      '<div style="position:relative"><a data-card-link href="#" aria-label=""><div class="frame skeleton" style="aspect-ratio:2/3">' +
+      '<img alt="" loading="lazy" decoding="async"></div></a>' +
+      '<div class="card__fav reveal"><button class="fav fav--bare" type="button" data-fav="collection" data-fav-key="" aria-pressed="false">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.2s-7.4-4.5-7.4-9.6A4.3 4.3 0 0 1 12 7.9a4.3 4.3 0 0 1 7.4 2.7c0 5.1-7.4 9.6-7.4 9.6z"/></svg>' +
       '<span class="sr">' + PC.t("Add to favourites") + '</span></button></div></div>' +
       '<div class="card__caption"><div class="card__caption-main">' +
-      '<h3 class="card__title"><a href="/collections/' + c.slug + '">' + PC.escapeHtml(c.title) + "</a></h3>" +
-      '<p class="card__sub"><a href="/models/' + c.model_slug + '">' + c.model_name + "</a><span>" + PC.t("{n} photos", { n: c.count }) + "</span></p>" +
+      '<h3 class="card__title"><a data-card-title href="#"></a></h3>' +
+      '<p class="card__sub"><a data-card-model href="#"></a><span data-card-count></span></p>' +
       "</div></div></article>";
+  }
+
+  function fillCard(root, c) {
+    var link = root.querySelector("[data-card-link]");
+    link.href = "/collections/" + c.slug;
+    link.setAttribute("aria-label", PC.escapeHtml(c.title));
+    var img = root.querySelector("img");
+    img.alt = PC.escapeHtml(c.title);
+    if (img.getAttribute("src") !== coverUrl(c)) img.src = coverUrl(c);
+    root.querySelector("[data-fav-key]").setAttribute("data-fav-key", c.slug);
+    var tl = root.querySelector("[data-card-title]");
+    tl.href = "/collections/" + c.slug;
+    tl.textContent = c.title;
+    var ml = root.querySelector("[data-card-model]");
+    ml.href = "/models/" + c.model_slug;
+    ml.textContent = c.model_name;
+    root.querySelector("[data-card-count]").textContent = PC.t("{n} photos", { n: c.count });
   }
 
   function filtered() {
@@ -150,7 +171,8 @@
     if (!VM_ON) {
       /* 手机降级: 全量渲染一次 */
       if (win.count !== list.length) {
-        grid.innerHTML = list.map(card).join("");
+        grid.innerHTML = list.map(cardShell).join("");
+        Array.prototype.forEach.call(grid.children, function (el, i) { fillCard(el, list[i]); });
         cells = [];
         win.count = list.length;
       }
@@ -184,7 +206,7 @@
         el.style.width = Math.round(m.colW) + "px";
         if (el.dataset.idx !== String(idx)) {
           el.dataset.idx = String(idx);
-          swapCell(el, list[idx], idx);
+          fillCell(el, list[idx]);
         }
       } else {
         el.style.display = "none";
@@ -194,35 +216,12 @@
     win.first = first; win.count = count; win.top = top; win.w = m.w;
   }
 
-  /* 槽内容交换: 先预解码新封面(img.decode()), 完成后才重写 innerHTML 并
-     赋已缓存的 src —— 绘制层无空白帧。复用槽在旧内容上等待(短晳显示旧图),
-     避免「重建 → 新 img 未绘制 → 透出深色占位底」的一闪(用户录屏实证)。 */
+  /* 槽填充: 空槽建骨架, 复用槽只更新内容。img 节点永不重建,
+     src 变化时旧图保持绘制直至新图就绪 — 无空白帧。 */
   function coverUrl(c) { return "/t/900/" + c.cover + ".webp"; }
-  function swapCell(el, item, idx) {
-    var want = coverUrl(item);
-    var token = String(idx);
-    var img = new Image();
-    img.src = want;
-    var write = function () {
-      /* 滚动已把槽派给别的卡片或渲染重置: 作废 */
-      if (el.dataset.idx !== token || el.dataset.src !== want) return;
-      el.innerHTML = card(item);
-      var im = el.querySelector("img");
-      if (im) im.src = want; /* 同 URL, 已解码, 首帧即出 */
-    };
-    el.dataset.src = want;
-    if (img.decode) {
-      img.decode().then(write, function () {
-        /* 解码失败(404 等): 降级直接写, 让 onerror 流程接管 */
-        write();
-      });
-    } else {
-      if (img.complete) write();
-      else {
-        img.onload = write;
-        img.onerror = write;
-      }
-    }
+  function fillCell(el, item) {
+    if (!el.firstChild) el.innerHTML = cardShell();
+    fillCard(el, item);
   }
 
   var ticking = false;
