@@ -185,7 +185,7 @@
         el.style.width = Math.round(m.colW) + "px";
         if (el.dataset.idx !== String(idx)) {
           el.dataset.idx = String(idx);
-          el.innerHTML = card(list[idx]);
+          swapCell(el, list[idx], idx);
         }
       } else {
         el.style.display = "none";
@@ -193,6 +193,33 @@
       }
     }
     win.first = first; win.count = count; win.top = top; win.w = m.w;
+  }
+
+  /* 槽内容交换(与 /collections 同策略): 预解码封面后再重写 innerHTML,
+     避免复用槽重建时新 img 未绘制、透出深色占位底的一闪。 */
+  function coverUrl(m) { return "/t/900/" + m.avatar + ".webp"; }
+  function swapCell(el, item, idx) {
+    if (!item.avatar) { el.innerHTML = card(item); return; }
+    var want = coverUrl(item);
+    var token = String(idx);
+    var img = new Image();
+    img.src = want;
+    var write = function () {
+      if (el.dataset.idx !== token || el.dataset.src !== want) return;
+      el.innerHTML = card(item);
+      var im = el.querySelector("img");
+      if (im) im.src = want;
+    };
+    el.dataset.src = want;
+    if (img.decode) {
+      img.decode().then(write, function () { write(); });
+    } else {
+      if (img.complete) write();
+      else {
+        img.onload = write;
+        img.onerror = write;
+      }
+    }
   }
 
   var ticking = false;

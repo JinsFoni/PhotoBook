@@ -184,7 +184,7 @@
         el.style.width = Math.round(m.colW) + "px";
         if (el.dataset.idx !== String(idx)) {
           el.dataset.idx = String(idx);
-          el.innerHTML = card(list[idx]);
+          swapCell(el, list[idx], idx);
         }
       } else {
         el.style.display = "none";
@@ -192,6 +192,37 @@
       }
     }
     win.first = first; win.count = count; win.top = top; win.w = m.w;
+  }
+
+  /* 槽内容交换: 先预解码新封面(img.decode()), 完成后才重写 innerHTML 并
+     赋已缓存的 src —— 绘制层无空白帧。复用槽在旧内容上等待(短晳显示旧图),
+     避免「重建 → 新 img 未绘制 → 透出深色占位底」的一闪(用户录屏实证)。 */
+  function coverUrl(c) { return "/t/900/" + c.cover + ".webp"; }
+  function swapCell(el, item, idx) {
+    var want = coverUrl(item);
+    var token = String(idx);
+    var img = new Image();
+    img.src = want;
+    var write = function () {
+      /* 滚动已把槽派给别的卡片或渲染重置: 作废 */
+      if (el.dataset.idx !== token || el.dataset.src !== want) return;
+      el.innerHTML = card(item);
+      var im = el.querySelector("img");
+      if (im) im.src = want; /* 同 URL, 已解码, 首帧即出 */
+    };
+    el.dataset.src = want;
+    if (img.decode) {
+      img.decode().then(write, function () {
+        /* 解码失败(404 等): 降级直接写, 让 onerror 流程接管 */
+        write();
+      });
+    } else {
+      if (img.complete) write();
+      else {
+        img.onload = write;
+        img.onerror = write;
+      }
+    }
   }
 
   var ticking = false;
