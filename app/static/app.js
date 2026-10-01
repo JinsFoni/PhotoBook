@@ -635,24 +635,7 @@ window.PC = (function () {
     paint();
   }
 
-  /* 高清升级:后台加载 ≤2400w 高清版(约 1–2MB),异步解码完才上屏(不闪烁、
-     不卡顿);decode() 不阻塞主线程,老浏览器回退 onload。
-     过期竞态防护:加载期间已切走则丢弃。真原图(10–25MB)仅在
-     1:1 放大时由 upgradeOriginal 按需加载 */
-  function upgradeFull(p, img) {
-    if (img.dataset.full === "true" || !p) return;
-    var hi = new Image();
-    hi.src = lightboxSrc(p, hiWidth());
-    var swap = function () {
-      if (lb.photos[lb.index] !== p || img.dataset.full === "true") return;
-      img.src = hi.src;
-      img.dataset.full = "true";
-    };
-    if (hi.decode) { hi.decode().then(swap, swap); }
-    else { hi.onload = swap; }
-  }
-
-  /* 1:1 放大专用:按需加载真原图并替换(高清版用于 fit 显示已足够) */
+  /* 1:1 放大专用:按需加载真原图并替换(预览档用于 fit 显示已足够) */
   function upgradeOriginal(p, img) {
     if (!p || lb.hi) return;
     var full = new Image();
@@ -749,8 +732,8 @@ window.PC = (function () {
       return;
     }
     lb.el.dataset.bg = "blur";
-    /* 垫底图用当前照片的 1800w 预览(已在切图预取的缓存里, 零额外请求) */
-    var src = lightboxSrc(p, 1800);
+    /* 垫底图用当前照片的预览档(与主图同 URL, 已在切图预取的缓存里, 零额外请求) */
+    var src = lightboxSrc(p, hiWidth());
     if (bd.dataset.src === src && bd.dataset.ready === "true") return;
     bd.dataset.src = src;
     bd.dataset.ready = "false";
@@ -761,6 +744,10 @@ window.PC = (function () {
     };
   }
 
+  /* 已加载过的灯箱图 URL 记录: 预取/升级不重复发请求(浏览器内存缓存虽快,
+     仍省去 decode() 排队; 也避免快速翻页时预取与升级双发同 URL) */
+  var lbSeen = {};
+
   function paint() {
     var el = lb.el;
     if (!el) return;
@@ -769,7 +756,7 @@ window.PC = (function () {
     var img = el.querySelector("[data-lb-img]");
     img.dataset.ready = "false";
     img.dataset.zoomed = "false";
-    img.dataset.full = "false"; /* 切图后重新升级高清版 */
+    img.dataset.full = "false"; /* 视图上屏后置 true(预览档即终档) */
     lb.hi = false;              /* 切图后真原图需重新按需加载 */
     lb.zoom = false;
     lb.pan = { x: 0, y: 0 };
@@ -779,23 +766,33 @@ window.PC = (function () {
     el.dataset.zoom = "false"; /* 切图/重开时退出放大模式(容器+图同步复位) */
     img.style.cursor = "zoom-in";
 
-    /* 预取相邻两张(环形):首次浏览时提前进缓存,后续切换近瞬时 */
-    [1, -1].forEach(function (d) {
+    /* 预取策略(与显示档一致): 小屏(终档 1800)预取 ±1/±2 共 4 张,
+       大屏(终档 2400)预取 ±1 两张 —— 翻页方向优先。预取即终图,
+       切到时浏览器内存缓存直接命中, 无升级二次请求。 */
+    var vw = hiWidth();
+    var dirs = vw === 1800 ? [1, -1, 2, -2] : [1, -1];
+    dirs.forEach(function (d) {
       var q = lb.photos[(lb.index + d + lb.photos.length) % lb.photos.length];
-      if (q) { var pre = new Image(); pre.src = lightboxSrc(q, 1800); }
+      if (!q) return;
+      var u = lightboxSrc(q, vw);
+      if (lbSeen[u]) return;
+      var pre = new Image();
+      pre.src = u;
+      lbSeen[u] = 1;
     });
 
-    /* fit 显示先用 1800w 预览图秒显(24MP 原图全尺寸解码是切图卡顿根源);
-       随后自动后台升级 ≤2400w 高清版——点开即高清,无需任何操作。
+    /* fit 显示用终档同档图秒显(1800/2400 服务端已缓存, 预取命中时
+       内存秒回; 24MP 原图全尺寸解码是切图卡顿根源, 故从不取原图);
+       大屏上屏后再升级 2400w? 不 — vw 已是 hiWidth(), 无需升级。
        过期响应丢弃(已切走则不上屏) */
     var view = new Image();
-    view.src = lightboxSrc(p, 1800);
+    view.src = lightboxSrc(p, vw);
     view.onload = function () {
       if (lb.photos[lb.index] !== p) return;
       img.src = view.src;
       img.alt = lb.title ? t("{title} — photo {n}", { title: lb.title, n: lb.index + 1 }) : t("Photo {n}", { n: lb.index + 1 });
       img.dataset.ready = "true";
-      upgradeFull(p, img); /* 预览上屏后立即升级高清版 */
+      img.dataset.full = "true"; /* vw 即终档, 免升级 */
     };
 
     var title = el.querySelector("[data-lb-title]");
