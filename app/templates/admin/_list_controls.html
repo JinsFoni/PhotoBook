@@ -1,0 +1,26 @@
+{% macro pager(base_url, q, cur_page, total_pages, total_count) -%}
+{# 管理端列表分页(服务端渲染): 与任务队列同款视觉, 翻页即整页跳转。
+   q 为当前搜索词(空串时不拼进 URL, 保持地址干净)。 #}
+{% set qs = ('q=' + (q | urlencode)) if q else '' %}
+{% set sep = '&' if qs else '' %}
+{% set prev_page = [cur_page - 1, 1] | max %}
+{% set next_page = [cur_page + 1, total_pages] | min %}
+<nav class="pager" style="display:flex;align-items:center;gap:var(--s3);margin-top:var(--s4);flex-wrap:wrap" aria-label="{{ t('分页') }}">
+  <a class="btn btn--quiet btn--sm pager__prev" href="{{ base_url }}?{{ qs }}{{ sep }}page={{ prev_page }}"
+     {% if cur_page <= 1 %}aria-disabled="true" tabindex="-1"{% endif %}>{{ t('上一页') }}</a>
+  <span class="t-small num" style="color:var(--ink-3)">{{ t('第 {p} / {total} 页', p=cur_page, total=total_pages) }}</span>
+  <a class="btn btn--quiet btn--sm pager__next" href="{{ base_url }}?{{ qs }}{{ sep }}page={{ next_page }}"
+     {% if cur_page >= total_pages %}aria-disabled="true" tabindex="-1"{% endif %}>{{ t('下一页') }}</a>
+  <span class="t-small num" style="color:var(--ink-3);margin-left:auto">{{ t('共 {n} 条', n=total_count) }}</span>
+</nav>
+{%- endmacro %}
+
+{% macro search_box(base_url, q, placeholder) -%}
+{# 列表页搜索框: GET 提交到当前页, 空查询时省略 q 参数。 #}
+<form method="get" action="{{ base_url }}" style="display:flex;gap:var(--s2);align-items:center">
+  <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ placeholder }}"
+         style="max-width:220px" aria-label="{{ t('搜索') }}">
+  {% if q %}<a class="btn btn--quiet btn--sm" href="{{ base_url }}">{{ t('清除') }}</a>{% endif %}
+  <button class="btn btn--sm" type="submit">{{ t('搜索') }}</button>
+</form>
+{%- endmacro %}

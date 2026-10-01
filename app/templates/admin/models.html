@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% from '_ui.html' import icon %}
+{% from 'admin/_list_controls.html' import pager, search_box %}
 {% block title %}{{ t('Admin Models') }} — Photo Collection{% endblock %}
 {% block body %}
 <div class="shell">
@@ -24,8 +25,11 @@
         <div>
           {% if error %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)"><p class="state__text" style="margin:0">{{ error }}</p></div>{% endif %}
           <div class="section-head">
-            <h2 class="section-title">{{ t('{n} models in total', n=models | length) }}</h2>
-            <a class="btn btn--sm" href="/admin/models/new">{{ t('+ New model') }}</a>
+            <h2 class="section-title">{{ t('{n} models in total', n=total_count) }}</h2>
+            <div style="display:flex;gap:var(--s3);align-items:center;flex-wrap:wrap">
+              {{ search_box('/admin/models', q, t('名称 / Slug / 艺名')) }}
+              <a class="btn btn--sm" href="/admin/models/new">{{ t('+ New model') }}</a>
+            </div>
           </div>
           <table style="width:100%;border-collapse:collapse">
             <thead><tr class="t-small" style="text-align:left;color:var(--ink-3);border-bottom:1px solid var(--line)">
@@ -53,6 +57,8 @@
               {% endfor %}
             </tbody>
           </table>
+
+          {{ pager('/admin/models', q, cur_page, total_pages, total_count) }}
         </div>
       </div>
     </div>

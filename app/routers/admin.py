@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..services import media, tagging
 from . import ext_api
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..auth import hash_password, require_admin
@@ -55,6 +55,28 @@ def _clamp_page(page: int, total: int, per_page: int) -> int:
     """把请求页码限制在 [1, total_pages];无数据时返回 1。"""
     pages = max(1, -(-total // per_page))
     return min(max(1, page), pages)
+
+
+def _paged_items(s: Session, q, page: int, per_page: int, order_by) -> tuple[list, int, int, int]:
+    """通用列表分页:返回 (items, page, total_pages, total)。
+
+    与 _clamp_page 一样把页码钳回合法范围,越界(如删完最后一页的最后一条)
+    自动落到有效页。
+    """
+    total = s.scalar(select(func.count()).select_from(q.order_by(None).subquery())) or 0
+    page = _clamp_page(page, total, per_page)
+    items = s.scalars(q.order_by(order_by)
+                      .offset((page - 1) * per_page).limit(per_page)).all()
+    return items, page, max(1, -(-total // per_page)), total
+
+
+def _search_q(model, q: str, *columns):
+    """列表页搜索:q 非空时对给定列做不区分大小写的 LIKE,空串返回原查询。"""
+    base = select(model)
+    if q:
+        like = f"%{q.lower()}%"
+        return base.where(or_(*[func.lower(col).like(like) for col in columns]))
+    return base
 
 
 def _thumb_status_text(s: Session, job) -> str | None:
@@ -133,15 +155,23 @@ async def dashboard(request: Request, s: Session = Depends(get_db)):
 
 # ---- Models CRUD ----------------------------------------------------------------
 
+ADMIN_PAGE_SIZE = 50  # 模特/写真集列表每页条数
+
+
 @router.get("/models")
-async def admin_models(request: Request, s: Session = Depends(get_db)):
-    models = s.scalars(select(Model).order_by(Model.name)).all()
+async def admin_models(request: Request, s: Session = Depends(get_db),
+                       q: str = "", page: int = 1):
+    q = q.strip()[:100]
+    query = _search_q(Model, q, Model.name, Model.slug, Model.stage_name)
+    models, page, total_pages, total = _paged_items(
+        s, query, page, ADMIN_PAGE_SIZE, Model.name)
     counts = dict(s.execute(
         select(Collection.model_id, func.count(Collection.id))
         .group_by(Collection.model_id)).all())
     return templates.TemplateResponse(request, "admin/models.html", {
         "page": "admin", "models": models,
         "col_counts": counts, "error": request.query_params.get("error", ""),
+        "q": q, "cur_page": page, "total_pages": total_pages, "total_count": total,
     })
 
 
@@ -233,12 +263,17 @@ async def admin_model_delete(model_id: int, s: Session = Depends(get_db)):
 # ---- Collections CRUD ------------------------------------------------------------
 
 @router.get("/collections")
-async def admin_collections(request: Request, s: Session = Depends(get_db)):
-    cols = s.scalars(select(Collection).order_by(desc(Collection.id))).all()
+async def admin_collections(request: Request, s: Session = Depends(get_db),
+                            q: str = "", page: int = 1):
+    q = q.strip()[:100]
+    query = _search_q(Collection, q, Collection.title, Collection.slug)
+    cols, page, total_pages, total = _paged_items(
+        s, query, page, ADMIN_PAGE_SIZE, desc(Collection.id))
     models = s.scalars(select(Model).order_by(Model.name)).all()
     return templates.TemplateResponse(request, "admin/collections.html", {
         "page": "admin", "collections": cols, "models": models,
         "error": request.query_params.get("error", ""),
+        "q": q, "cur_page": page, "total_pages": total_pages, "total_count": total,
     })
 
 
