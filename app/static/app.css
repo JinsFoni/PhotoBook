@@ -2024,3 +2024,6 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   .frame img { transform: none !important; }
   .skeleton::after { display: none; }
 }
+
+/* JS 局部刷新用的隐藏占位(hidden 属性默认 display:none, 但 .state 无此规则时保险) */
+.state[hidden] { display: none; }

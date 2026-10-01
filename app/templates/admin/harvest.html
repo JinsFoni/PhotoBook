@@ -24,8 +24,8 @@
         </nav>
 
         <div>
-          {% if flash %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)">
-            <p class="state__text" style="margin:0">{{ flash }}</p></div>{% endif %}
+          {% if flash %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)" data-flash>
+            <p class="state__text" style="margin:0">{{ flash }}</p></div>{% else %}<div class="state" hidden data-flash style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)"><p class="state__text" style="margin:0"></p></div>{% endif %}
 
           <!-- 双入口 -->
           <div class="grid grid--2" style="gap:var(--s5)">
@@ -156,6 +156,51 @@
 
   var curPage = {{ cur_page }};
   var curStatus = "{{ cur_status }}";
+  var flashBox = document.querySelector("[data-flash]");
+
+  /* 操作(删除/重试/取消)后的局部刷新: fetch POST → 返回列表 payload →
+     复用 render() 重绘当前页, 页面不刷新、滚动位置不变(与翻页同模式);
+     返回的 flash 显示在原服务端渲染的提示条里, 同步 URL 查询串保持
+     刷新/回退后位置一致 */
+  function action(fmtUrl, back) {
+    fetch(fmtUrl, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "X-Requested-With": "fetch", "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body: "back=" + encodeURIComponent(back)
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.status);
+        return r.json();
+      })
+      .then(function (d) {
+        if (!d) return;
+        render(d.jobs, d.workerRunning, { running: d.preheatRunning, progress: d.preheatProgress }, d);
+        if (flashBox) {
+          if (d.flash) {
+            flashBox.querySelector(".state__text").textContent = d.flash;
+            flashBox.hidden = false;
+          } else {
+            flashBox.hidden = true;
+          }
+        }
+        var url = "/admin/harvest" + (curStatus || curPage > 1 ? "?" : "") +
+          (curStatus ? "status=" + curStatus : "") +
+          (curStatus && curPage > 1 ? "&" : "") + (curPage > 1 ? "page=" + curPage : "");
+        history.replaceState(null, "", url);
+      })
+      .catch(function () { location.reload(); });   /* 网络异常兑底: 整页刷新 */
+  }
+
+  tbody.addEventListener("submit", function (e) {
+    var f = e.target.closest("form");
+    if (!f || !/^\/admin\/harvest\/\d+\/(delete|retry|cancel)$/.test(f.getAttribute("action"))) return;
+    e.preventDefault();
+    var back = (f.querySelector('[name="back"]') || {}).value ||
+      (curStatus ? "?status=" + curStatus + (curPage > 1 ? "&page=" + curPage : "")
+                 : (curPage > 1 ? "?page=" + curPage : ""));
+    action(f.getAttribute("action"), back);
+  });
 
   function fmtMB(n) { return Math.round((n || 0) / 1048576); }
 

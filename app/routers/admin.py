@@ -519,8 +519,41 @@ async def admin_harvest_import(s: Session = Depends(get_db)):
     return RedirectResponse(f"/admin/harvest?flash={quote(msg)}", 303)
 
 
+def _is_ajax(request: Request) -> bool:
+    return request.headers.get("x-requested-with") == "fetch"
+
+
+def _action_response(request: Request, s: Session, status: str, page: int,
+                     back: str, flash: str):
+    """AJAX 请求返回列表 payload(前端原地重绘, 不整页刷新);
+    普通表单提交保持 303 重定向(无 JS 环境兼容)。"""
+    if _is_ajax(request):
+        payload = _harvest_list_payload(s, status, page)
+        if flash:
+            payload["flash"] = flash
+        return payload
+    target = f"/admin/harvest{back}"
+    if flash:
+        target += ("&" if back else "?") + "flash=" + quote(flash)
+    return RedirectResponse(target, 303)
+
+
+def _back_params(back: str) -> tuple[str, int]:
+    """从白名单形态的 back 查询串解析 (status, page),供 AJAX 响应重绘当前页。
+
+    仅接受本方 _back_qs 生成的形态: ?status=<组>&page=<n> / 子集。
+    """
+    m = re.fullmatch(r"\?status=(active|done|skipped|failed)(?:&page=(\d+))?"
+                     r"|\?page=(\d+)", back or "")
+    if not m:
+        return "", 1
+    if m.group(3):
+        return "", int(m.group(3))
+    return m.group(1), int(m.group(2) or 1)
+
+
 @router.post("/harvest/{job_id}/retry")
-async def admin_harvest_retry(job_id: int, s: Session = Depends(get_db),
+async def admin_harvest_retry(request: Request, job_id: int, s: Session = Depends(get_db),
                               back: str = Form("")):
     job = s.get(HarvestJob, job_id)
     if job and job.status in ("failed", "skipped"):
@@ -532,21 +565,23 @@ async def admin_harvest_retry(job_id: int, s: Session = Depends(get_db),
         if hist:
             s.delete(hist)
         s.commit()
-    return RedirectResponse(f"/admin/harvest{back}", 303)
+    status, page = _back_params(back)
+    return _action_response(request, s, status, page, back, "")
 
 
 @router.post("/harvest/{job_id}/cancel")
-async def admin_harvest_cancel(job_id: int, s: Session = Depends(get_db),
+async def admin_harvest_cancel(request: Request, job_id: int, s: Session = Depends(get_db),
                                back: str = Form("")):
     job = s.get(HarvestJob, job_id)
     if job and job.status == "queued":
         s.delete(job)
         s.commit()
-    return RedirectResponse(f"/admin/harvest{back}", 303)
+    status, page = _back_params(back)
+    return _action_response(request, s, status, page, back, "")
 
 
 @router.post("/harvest/{job_id}/delete")
-async def admin_harvest_delete(job_id: int, s: Session = Depends(get_db),
+async def admin_harvest_delete(request: Request, job_id: int, s: Session = Depends(get_db),
                                back: str = Form("")):
     """删除终态任务记录。
 
@@ -558,13 +593,13 @@ async def admin_harvest_delete(job_id: int, s: Session = Depends(get_db),
     # back 为操作前所在列表的查询串(?status=…&page=…),仅接受本方生成的白名单形态
     if back and not re.fullmatch(r"\?status=(active|done|skipped|failed)&page=\d+", back):
         back = ""
+    status, page = _back_params(back)
     job = s.get(HarvestJob, job_id)
     if not job:
-        return RedirectResponse(f"/admin/harvest{back}", 303)
+        return _action_response(request, s, status, page, back, "")
     if job.status not in ("done", "exists", "skipped", "failed"):
         # 运行中/排队中不能用删除(应走取消/等完成), 防误删进行中的任务记录
-        return RedirectResponse(f"/admin/harvest{back}" + ("&" if back else "?")
-                                + "flash=" + quote(t("任务进行中,不能删除")), 303)
+        return _action_response(request, s, status, page, back, t("任务进行中,不能删除"))
     if job.archive_dir:
         # failed(下载/导入失败)或存量 done(旧版 import 失败未改判)可能带归档残留;
         # 正常 done 任务无 archive_dir, 不会误删任何文件。
@@ -586,8 +621,7 @@ async def admin_harvest_delete(job_id: int, s: Session = Depends(get_db),
         s.delete(hist)
     s.delete(job)
     s.commit()
-    return RedirectResponse(f"/admin/harvest{back}" + ("&" if back else "?")
-                            + "flash=" + quote(t("任务已删除")), 303)
+    return _action_response(request, s, status, page, back, t("任务已删除"))
 
 
 def local_time_fmt(dt):
@@ -595,10 +629,8 @@ def local_time_fmt(dt):
     return d.strftime("%m-%d %H:%M") if d else ""
 
 
-@router.get("/api/harvest/jobs")
-async def admin_harvest_jobs_api(s: Session = Depends(get_db),
-                                 page: int = 1, status: str = ""):
-    """轮询/翻页/筛选端点:页码与筛选由前端透传,原地重绘不整页刷新。"""
+def _harvest_list_payload(s: Session, status: str, page: int) -> dict:
+    """任务列表分页 payload(API 与 AJAX 动作响应共用,保证前端重绘口径一致)。"""
     status = status if status in JOB_STATUS_GROUPS else ""
     total = s.scalar(select(func.count()).select_from(
         _jobs_query(s, status).subquery())) or 0
@@ -624,6 +656,13 @@ async def admin_harvest_jobs_api(s: Session = Depends(get_db),
         "workerRunning": harvest_worker.worker_running(),
         "preheatRunning": media.preheat_running(),
         "preheatProgress": media.preheat_progress()}
+
+
+@router.get("/api/harvest/jobs")
+async def admin_harvest_jobs_api(s: Session = Depends(get_db),
+                                 page: int = 1, status: str = ""):
+    """轮询/翻页/筛选端点:页码与筛选由前端透传,原地重绘不整页刷新。"""
+    return _harvest_list_payload(s, status, page)
 
 
 # ---- 设置 -----------------------------------------------------------------------
