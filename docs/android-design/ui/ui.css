@@ -142,27 +142,26 @@ body {
 .appbar .actions { display:flex; gap:20px; color:var(--ink2); align-items:center; }
 .appbar .actions svg { display:block; }
 
-/* ---------- 悬浮导航栏 · 液态玻璃(Liquid Glass) ----------
-   三层效果叠加:① 背景折射(SVG feDisplacementMap)+ ② 边缘高光
-   (多层 inset shadow)+ ③ 镜面流光(对角渐变 sheen) */
+/* ---------- 悬浮导航栏 · 液态玻璃(iOS 同款光学模型) ----------
+   与磨砂的区别:中心几乎透明清晰(blur 3px),折射集中在边缘一圈
+   (7px 透镜环:feDisplacementMap + mask 环带),外围套镜面高光环 */
 .tabbar {
   position:absolute; left:14px; right:14px; bottom:20px; height:64px; z-index:6;
   background:var(--bar-bg);
-  /* 基础磨砂(所有浏览器兜底) */
-  backdrop-filter:blur(12px) saturate(170%) brightness(1.05);
-  -webkit-backdrop-filter:blur(12px) saturate(170%) brightness(1.05);
-  /* 液态折射:Chrome 支持 SVG filter 混入 backdrop 链 */
+  /* 中心:薄玻璃,保透 */
+  backdrop-filter:blur(3px) saturate(165%) brightness(1.08);
+  -webkit-backdrop-filter:blur(3px) saturate(165%) brightness(1.08);
 }
 @supports (backdrop-filter: url(#liquid-glass)) {
   .tabbar {
-    backdrop-filter:url(#liquid-glass) blur(12px) saturate(170%) brightness(1.05);
-    -webkit-backdrop-filter:url(#liquid-glass) blur(12px) saturate(170%) brightness(1.05);
+    backdrop-filter:url(#liquid-glass) blur(3px) saturate(165%) brightness(1.08);
+    -webkit-backdrop-filter:url(#liquid-glass) blur(3px) saturate(165%) brightness(1.08);
   }
 }
 .tabbar {
   border:none; border-radius:999px;
   box-shadow:
-    0 12px 32px rgba(0,0,0,.24),
+    0 14px 36px rgba(0,0,0,.26),
     0 2px 8px rgba(0,0,0,.12),
     inset 0 1px 1px var(--glass-hi),
     inset 0 -1px 1px var(--glass-lo),
@@ -170,29 +169,41 @@ body {
   display:flex; padding:6px;
   overflow:hidden;
 }
-/* 镜面流光:左上入光 → 右下回收 */
+/* 透镜边缘环:只在 7px 环带内折射+强磨砂(凸透镜边缘效应),中心不受影响 */
 .tabbar::before {
+  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  padding:7px; box-sizing:border-box;
+  backdrop-filter:url(#liquid-glass) blur(7px) saturate(185%) brightness(1.12);
+  -webkit-backdrop-filter:url(#liquid-glass) blur(7px) saturate(185%) brightness(1.12);
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite:exclude;
+}
+/* 镜面高光环 + 斜向流光 */
+.tabbar::after {
   content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
   background:linear-gradient(115deg,
     var(--sheen-a) 0%, rgba(255,255,255,0) 30%,
     rgba(255,255,255,0) 68%, var(--sheen-b) 100%);
-}
-/* 折射亮环:边缘 1px 高光内描 */
-.tabbar::after {
-  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
   box-shadow:inset 0 0 0 1px var(--glass-hi);
-  opacity:.35;
 }
 .tab {
+  position:relative; z-index:2;
   flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
   font-size:11px; color:var(--ink2); letter-spacing:0.2px; border-radius:999px;
   transition:background .18s ease, color .18s ease, transform .28s cubic-bezier(.34,1.56,.64,1);
 }
 .tab svg { display:block; }
+.tab span { display:block; font-weight:400; }
+.tab.active span { font-weight:600; }
 .tab:active { transform:scale(.94); }
 .tab.active {
   background:var(--pill); color:var(--ink);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(0,0,0,.05);
+  /* 选中胶囊自身也是一小块凸透镜 */
+  backdrop-filter:blur(2px) saturate(180%) brightness(1.14);
+  -webkit-backdrop-filter:blur(2px) saturate(180%) brightness(1.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.05);
 }
 .tab.active svg { color:var(--accent); }
 

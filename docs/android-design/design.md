@@ -90,13 +90,13 @@
 ## 4. 导航结构
 
 悬浮胶囊导航栏(主流悬浮式):左右 14dp、距底 20dp、高 64dp、全圆角胶囊;
-**液态玻璃材质**(Liquid Glass,四层叠加):
-1. 背景折射:SVG `feDisplacementMap` 让玻璃后的内容产生透镜扭曲(Compose 对应 `RenderEffect` + RuntimeShader)
-2. 基础磨砂:`blur(12px) saturate(170%) brightness(1.05)`
-3. 边缘光:多层 inset 阴影(顶部高光/底部暗反/内发光)+ 1px 内描亮环
-4. 镜面流光:115° 对角渐变 sheen(左上入光 → 右下回收)
+**液态玻璃材质**(iOS 同款光学模型,中心清透、边缘折射):
+1. 中心薄玻璃:blur(3px) saturate(165%) brightness(1.08) —— 中心几乎透明,不读作磨砂
+2. 边缘透镜环:外圈 7dp 环带内 blur(7px) saturate(185%) + 同心折射(凸透镜边缘效应,mask 环带实现)
+3. 边缘光:多层 inset 阴影(顶部高光/底部暗反/内发光)+ 镜面高光环(1px 内描 + 115° 流光)
+4. 背景折射:SVG feDisplacementMap 让环带后的内容产生透镜扭曲
 
-激活态 = 10% 墨/白胶囊底 + 绯红图标 + 展开标签,未激活仅图标(ink3);按压 0.94 spring 回弹。
+激活态 = 10% 墨/白胶囊底(自带 2dp 微透镜)+ 绯红图标 + 600 字重标签,未激活仅图标+400 字重(ink2);按压 0.94 spring 回弹。
 
 ```
 发现(Explore)  写真(Collections)  模特(Models)  收藏(Favorites)
