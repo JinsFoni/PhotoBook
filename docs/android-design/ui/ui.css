@@ -142,20 +142,18 @@ body {
 .appbar .actions { display:flex; gap:20px; color:var(--ink2); align-items:center; }
 .appbar .actions svg { display:block; }
 
-/* ---------- 悬浮导航栏 · 液态玻璃(iOS 同款光学模型) ----------
-   与磨砂的区别:中心几乎透明清晰(blur 3px),折射集中在边缘一圈
-   (7px 透镜环:feDisplacementMap + mask 环带),外围套镜面高光环 */
+/* ---------- 悬浮导航栏 · 液态玻璃(iOS 同款,整栏均匀) ----------
+   整栏一块玻璃:折射 + 薄磨砂 + 边缘高光 + 镜面流光,均匀作用,无内外分区 */
 .tabbar {
   position:absolute; left:14px; right:14px; bottom:20px; height:64px; z-index:6;
   background:var(--bar-bg);
-  /* 中心:薄玻璃,保透 */
-  backdrop-filter:blur(3px) saturate(165%) brightness(1.08);
-  -webkit-backdrop-filter:blur(3px) saturate(165%) brightness(1.08);
+  backdrop-filter:url(#liquid-glass) blur(6px) saturate(165%) brightness(1.08);
+  -webkit-backdrop-filter:url(#liquid-glass) blur(6px) saturate(165%) brightness(1.08);
 }
-@supports (backdrop-filter: url(#liquid-glass)) {
+@supports not (backdrop-filter: url(#liquid-glass)) {
   .tabbar {
-    backdrop-filter:url(#liquid-glass) blur(3px) saturate(165%) brightness(1.08);
-    -webkit-backdrop-filter:url(#liquid-glass) blur(3px) saturate(165%) brightness(1.08);
+    backdrop-filter:blur(6px) saturate(165%) brightness(1.08);
+    -webkit-backdrop-filter:blur(6px) saturate(165%) brightness(1.08);
   }
 }
 .tabbar {
@@ -169,18 +167,7 @@ body {
   display:flex; padding:6px;
   overflow:hidden;
 }
-/* 透镜边缘环:只在 7px 环带内折射+强磨砂(凸透镜边缘效应),中心不受影响 */
-.tabbar::before {
-  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
-  padding:7px; box-sizing:border-box;
-  backdrop-filter:url(#liquid-glass) blur(7px) saturate(185%) brightness(1.12);
-  -webkit-backdrop-filter:url(#liquid-glass) blur(7px) saturate(185%) brightness(1.12);
-  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite:xor;
-  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite:exclude;
-}
-/* 镜面高光环 + 斜向流光 */
+/* 镜面高光环 + 斜向流光(整栏一层) */
 .tabbar::after {
   content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
   background:linear-gradient(115deg,
