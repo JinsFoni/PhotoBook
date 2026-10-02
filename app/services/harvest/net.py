@@ -8,13 +8,42 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass, field
 
 from curl_cffi import requests as cr
 
+log = logging.getLogger("harvest")
+
 UA_IMPERSONATE = "chrome"
+
+# ouo 短链落地到的非 MediaFire 网盘 → 展示名。命中则重试无意义,
+# 直接抛 UnsupportedHostError 让任务带上明确报错。
+OTHER_HOSTS = {
+    "terabox": "TeraBox",        # terabox.app/.com/app/link/share/club/freeterabox
+    "1024tera": "TeraBox",       # 1024tera.com
+    "terasharelink": "TeraBox",  # terasharelink.com
+    "4funbox": "TeraBox",
+    "mirrobox": "TeraBox",
+    "nephobox": "TeraBox",
+    "pixeldrain": "Pixeldrain",
+    "mega.nz": "MEGA",
+    "gofile": "GoFile",
+    "krakenfiles": "KrakenFiles",
+    "workupload": "Workupload",
+    "hitfile": "HitFile",
+    "turbobit": "Turbobit",
+}
+
+
+class UnsupportedHostError(RuntimeError):
+    """短链落地到不支持下载的网盘平台(包不在 MediaFire)。"""
+
+    def __init__(self, host: str):
+        self.host = host
+        super().__init__(f"不支持{host}网盘下载")
 
 # ouo.io/ouo.press 专用指纹。ouo 套了 Cloudflare 人机盾(Cf-Mitigated: challenge),
 # 按「出口 IP + TLS 指纹」联合概率拦截:机房代理出口 + chrome 指纹实测 100% 403,
@@ -205,6 +234,10 @@ def _ouo_step(s, link: str, *, wait: float = 3.0) -> str | None:
     final = str(r3.url)
     if "mediafire.com/file/" in final:
         return final
+    # 落地到其他网盘(terabox 等): 短链活着, 只是托管不在 MediaFire。
+    # 分类由 resolve_ouo 统一处理(抛 UnsupportedHostError / 记日志)。
+    if "ouo.io/" not in final and "ouo.press/" not in final:
+        log.warning("ouo %s landed on non-mediafire host: %s", code, final[:120])
     # 落地 URL 可能缺尾部路径(如 .../file/<key>),完整链接在响应体里
     m = re.search(r'(https?://www\.mediafire\.com/file/[^"\'\s]+)', r3.text)
     return m.group(1) if m else final
@@ -217,8 +250,8 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
     需把同样流程再走一遍(最多 max_hops 轮)才到达 MediaFire。
 
     CF 盾是概率拦截:单会话被盾/流程断掉 → 换新会话重试(safari17_0 优先,
-    末轮 chrome 兕底, 兼容住宅出口场景)。落地到非 ouo/mediafire 域说明
-    短链本身坏了, 重试无意义直接返回 None。
+    末轮 chrome 兕底, 兼容住宅出口场景)。落地到其他网盘(terabox 等)
+    抛 UnsupportedHostError(重试无意义);完全未知的域返回 None。
     """
     proxy = _proxy()
     for attempt in range(3):
@@ -233,8 +266,14 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
                 if "mediafire.com/file/" in final and "mediafire.com/download" not in final:
                     return final
                 if "ouo.io/" not in final and "ouo.press/" not in final:
-                    return None  # 落地到未知域: 短链坏, 重试无意义
+                    # 落地到外部网盘: 已知平台抛错(带平台名), 完全未知域判短链坏
+                    for frag, name in OTHER_HOSTS.items():
+                        if frag in final:
+                            raise UnsupportedHostError(name)
+                    return None
                 url = final  # 下一段短码,继续
+        except UnsupportedHostError:
+            raise  # 已知网盘平台, 原样上抛(带平台名)
         except Exception:
             pass
     return None

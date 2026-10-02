@@ -308,6 +308,7 @@ table { border-collapse: collapse; }
 .section { padding-block: var(--s9); }
 .section--tight { padding-block: var(--s8); }
 .section--flush-top { padding-top: 0; }
+.section--flush-bottom { padding-bottom: 0; }
 
 .section-head {
   display: flex;
