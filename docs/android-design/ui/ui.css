@@ -62,6 +62,7 @@ body {
   --ink:#0c0d0f; --ink2:#565656; --ink3:#8e8e8e;
   --accent:#b01b2e; --line:#e3e3e1; --line2:#cfcfcd;
   --paper-solid:#ffffff;
+  --bar-bg:rgba(255,255,255,.86); --pill:rgba(12,13,15,.07);
 }
 /* ---------- TOKENS · DARK ---------- */
 .screen.dark {
@@ -69,6 +70,7 @@ body {
   --ink:#f7f7f5; --ink2:#a0a3a8; --ink3:#6e7276;
   --accent:#e0455a; --line:#24262a; --line2:#33363b;
   --paper-solid:#0c0d0f;
+  --bar-bg:rgba(22,24,27,.74); --pill:rgba(255,255,255,.10);
 }
 /* ---------- TOKENS · BLUR(虚化主题,同 Web data-theme=blur)----------
    垫底代表图 blur+saturate + 深色纱,面板半透明霜玻璃,
@@ -79,6 +81,7 @@ body {
   --accent:#e0455a;
   --line:rgba(255,255,255,.14); --line2:rgba(255,255,255,.22);
   --paper-solid:#0c0d0f;
+  --bar-bg:rgba(12,13,15,.60); --pill:rgba(255,255,255,.10);
   background:#101114;
 }
 
@@ -98,14 +101,13 @@ body {
   background:linear-gradient(to bottom, rgba(8,9,10,.78), rgba(8,9,10,.66));
 }
 
-/* blur 主题:顶栏/底栏霜玻璃(Web 同源 blur(20px) saturate(140%)) */
-.screen.blur .appbar,
-.screen.blur .tabbar {
+/* blur 主题:顶栏霜玻璃(Web 同源 blur(20px) saturate(140%));
+   悬浮导航栏走 --bar-bg 玻璃 token */
+.screen.blur .appbar {
   background:rgba(12,13,15,.55);
   backdrop-filter:blur(20px) saturate(140%);
   -webkit-backdrop-filter:blur(20px) saturate(140%);
 }
-.screen.blur .tabbar { background:rgba(12,13,15,.62); }
 
 /* .screen 需要独立堆叠上下文,保证 z-index:-1 的垫底层不穿透手机框 */
 .screen { isolation:isolate; }
@@ -130,18 +132,26 @@ body {
 .appbar .actions { display:flex; gap:20px; color:var(--ink2); align-items:center; }
 .appbar .actions svg { display:block; }
 
+/* ---------- 悬浮胶囊导航栏(主流悬浮式) ---------- */
 .tabbar {
-  position:absolute; bottom:0; left:0; right:0; height:86px;
-  background:var(--paper); border-top:1px solid var(--line);
-  display:flex; padding:9px 8px 24px; z-index:6;
+  position:absolute; left:14px; right:14px; bottom:20px; height:64px; z-index:6;
+  background:var(--bar-bg);
+  backdrop-filter:blur(20px) saturate(140%);
+  -webkit-backdrop-filter:blur(20px) saturate(140%);
+  border:1px solid var(--line2); border-radius:999px;
+  display:flex; padding:6px;
+  box-shadow:0 10px 28px rgba(0,0,0,.22);
 }
 .tab {
-  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
-  font-size:11px; color:var(--ink3); position:relative; letter-spacing:0.3px;
+  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  font-size:10px; color:var(--ink3); letter-spacing:0.3px; border-radius:999px;
+  transition:background .18s ease, color .18s ease;
 }
-.tab.active { color:var(--ink); }
-.tab.active::before { content:""; position:absolute; top:-10px; width:24px; height:2px; background:var(--accent); }
 .tab svg { display:block; }
+.tab span { display:none; }
+.tab.active { background:var(--pill); color:var(--ink); }
+.tab.active span { display:block; }
+.tab.active svg { color:var(--accent); }
 
 /* ---------- 通用组件 ---------- */
 .chip {
