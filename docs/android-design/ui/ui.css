@@ -110,13 +110,8 @@ body {
   background:linear-gradient(to bottom, rgba(8,9,10,.78), rgba(8,9,10,.66));
 }
 
-/* blur 主题:顶栏霜玻璃(Web 同源 blur(20px) saturate(140%));
-   悬浮导航栏走 --bar-bg 玻璃 token */
-.screen.blur .appbar {
-  background:rgba(12,13,15,.55);
-  backdrop-filter:blur(20px) saturate(140%);
-  -webkit-backdrop-filter:blur(20px) saturate(140%);
-}
+/* 顶栏在所有主题下均透明(背景延伸式沉浸,栏区只透出页面底色);
+   液态玻璃只保留给悬浮导航栏 */
 
 /* .screen 需要独立堆叠上下文,保证 z-index:-1 的垫底层不穿透手机框 */
 .screen { isolation:isolate; }
