@@ -68,3 +68,14 @@ def test_worker_records_unsupported_host(s, monkeypatch):
         assert j.error == "不支持TeraBox网盘下载"
     finally:
         _cleanup([serial])
+
+
+def test_terabox_sibling_domains(monkeypatch):
+    """TeraBox 姊妹域(1024tera/terasharelink 等)同样识别为 TeraBox。"""
+    for url in ("https://www.1024tera.com/sharing/link?surl=abc",
+                "https://terasharelink.com/s/abc",
+                "https://teraboxapp.com/s/abc"):
+        monkeypatch.setattr(net, "_ouo_step", lambda s, u, **kw: url)
+        with pytest.raises(net.UnsupportedHostError) as ei:
+            net.resolve_ouo("https://ouo.io/x")
+        assert ei.value.host == "TeraBox", url

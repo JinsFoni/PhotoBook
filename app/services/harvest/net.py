@@ -22,7 +22,12 @@ UA_IMPERSONATE = "chrome"
 # ouo 短链落地到的非 MediaFire 网盘 → 展示名。命中则重试无意义,
 # 直接抛 UnsupportedHostError 让任务带上明确报错。
 OTHER_HOSTS = {
-    "terabox": "TeraBox",
+    "terabox": "TeraBox",        # terabox.app/.com/app/link/share/club/freeterabox
+    "1024tera": "TeraBox",       # 1024tera.com
+    "terasharelink": "TeraBox",  # terasharelink.com
+    "4funbox": "TeraBox",
+    "mirrobox": "TeraBox",
+    "nephobox": "TeraBox",
     "pixeldrain": "Pixeldrain",
     "mega.nz": "MEGA",
     "gofile": "GoFile",
