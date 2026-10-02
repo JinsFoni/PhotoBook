@@ -283,8 +283,8 @@ body {
 }
 
 /* ---------- S4 灯箱 ---------- */
-.lightbox-screen { background:#000; display:flex; flex-direction:column; }
-.lb-full { position:relative; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+.lightbox-screen { background:#000; }
+.lb-full { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
 .lb-full img { max-width:100%; max-height:100%; object-fit:contain; }
 /* 灯箱全出血:照片延伸到状态栏后面,状态栏白字叠加(overlay-on-media);
    顶部整段轻纱同时罩住状态栏与控件行,保证白字可读 */
@@ -295,20 +295,19 @@ body {
 }
 .lb-top {
   position:absolute; top:38px; left:0; right:0; height:44px; z-index:5;
-  display:flex; align-items:center; justify-content:space-between; padding:0 18px;
+  display:flex; align-items:center; justify-content:center;
   color:#f7f7f5; text-shadow:0 1px 8px rgba(0,0,0,.5);
 }
 .lb-top svg { filter:drop-shadow(0 1px 6px rgba(0,0,0,.5)); }
 .lb-top .idx { font-size:13.5px; letter-spacing:1px; }
-.lb-bottom { position:relative; z-index:5; color:#f7f7f5; padding:26px 18px 0; }
-.lb-bottom .lb-title { font-size:16px; }
-.tabbar-space { flex:none; }
-.lb-bottom .lb-sub { font-size:11.5px; color:#f7f7f590; margin-top:4px; letter-spacing:0.4px; }
-.lb-actions { display:flex; gap:38px; margin-top:18px; align-items:center; }
-.lb-actions .act {
-  display:flex; flex-direction:column; align-items:center; gap:6px;
-  font-size:11px; color:#f7f7f5b8;
+.lb-bottom {
+  position:absolute; bottom:0; left:0; right:0; z-index:5;
+  display:flex; justify-content:center; padding:34px 18px 36px;
+  color:#f7f7f5;
+  background:linear-gradient(to top, rgba(8,9,10,.52), rgba(8,9,10,0));
 }
+.lb-actions { display:flex; gap:44px; align-items:center; }
+.lb-actions .act { display:flex; align-items:center; }
 .lb-actions .act.faved { color:#e0455a; }
 .lb-actions .act.dim { opacity:.4; }
 
