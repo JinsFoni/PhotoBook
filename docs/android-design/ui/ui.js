@@ -59,21 +59,33 @@ function renderStatusbar() {
   </div>`;
 }
 
-/* 主题切换(写 URL 参数,刷新后保持) */
+/* 主题切换(三态循环:浅色→深色→虚化,与 Web 端一致;URL 参数保持) */
+const THEMES = ['light', 'dark', 'blur'];
+const THEME_LABEL = { light:'☾ 深色', dark:'✦ 虚化', blur:'☀ 浅色' };
+const THEME_TAG = { light:'Light', dark:'Dark', blur:'Blur 虚化' };
+
+function currentTheme() {
+  const screen = document.querySelector('.screen');
+  for (const t of THEMES) if (screen.classList.contains(t)) return t;
+  return 'light';
+}
 function applyThemeFromURL() {
   const t = new URLSearchParams(location.search).get('t');
   const screen = document.querySelector('.screen');
   if (!screen) return;
-  if (t === 'dark') { screen.classList.remove('light'); screen.classList.add('dark'); }
-  else if (t === 'light') { screen.classList.remove('dark'); screen.classList.add('light'); }
+  if (t && THEMES.includes(t)) {
+    screen.classList.remove('light', 'dark', 'blur');
+    screen.classList.add(t);
+  }
   const btn = document.querySelector('.theme-btn');
-  if (btn) btn.textContent = screen.classList.contains('dark') ? '☀ 浅色' : '☾ 深色';
+  if (btn) btn.textContent = THEME_LABEL[currentTheme()];
+  const tag = document.querySelector('.pb-tag');
+  if (tag) tag.textContent = THEME_TAG[currentTheme()];
 }
 function toggleTheme() {
-  const screen = document.querySelector('.screen');
-  const toDark = !screen.classList.contains('dark');
+  const next = THEMES[(THEMES.indexOf(currentTheme()) + 1) % THEMES.length];
   const url = new URL(location);
-  url.searchParams.set('t', toDark ? 'dark' : 'light');
+  url.searchParams.set('t', next);
   location.href = url;
 }
 

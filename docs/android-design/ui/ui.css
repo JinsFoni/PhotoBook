@@ -61,13 +61,54 @@ body {
   --paper:#ffffff; --paper2:#f1f1ef; --paper3:#e8e8e6;
   --ink:#0c0d0f; --ink2:#565656; --ink3:#8e8e8e;
   --accent:#b01b2e; --line:#e3e3e1; --line2:#cfcfcd;
+  --paper-solid:#ffffff;
 }
 /* ---------- TOKENS · DARK ---------- */
 .screen.dark {
   --paper:#0c0d0f; --paper2:#16181b; --paper3:#1e2124;
   --ink:#f7f7f5; --ink2:#a0a3a8; --ink3:#6e7276;
   --accent:#e0455a; --line:#24262a; --line2:#33363b;
+  --paper-solid:#0c0d0f;
 }
+/* ---------- TOKENS · BLUR(虚化主题,同 Web data-theme=blur)----------
+   垫底代表图 blur+saturate + 深色纱,面板半透明霜玻璃,
+   阅读对比度靠 --ink 不变保证 */
+.screen.blur {
+  --paper:rgba(12,13,15,.28); --paper2:rgba(12,13,15,.72); --paper3:rgba(22,24,27,.72);
+  --ink:#f7f7f5; --ink2:#b3b6bb; --ink3:#7d8186;
+  --accent:#e0455a;
+  --line:rgba(255,255,255,.14); --line2:rgba(255,255,255,.22);
+  --paper-solid:#0c0d0f;
+  background:#101114;
+}
+
+/* 虚化垫底层:真实 <img> 承载(Web 同源做法),深色纱保证前景对比 */
+.blur-canvas {
+  position:absolute; inset:0; z-index:-1;
+  opacity:0; visibility:hidden; transition:opacity .55s ease, visibility .55s;
+  pointer-events:none;
+}
+.screen.blur .blur-canvas { opacity:1; visibility:visible; }
+.blur-canvas img {
+  width:100%; height:100%; object-fit:cover; display:block;
+  filter:blur(42px) saturate(1.12); transform:scale(1.15);
+}
+.blur-canvas::after {
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(to bottom, rgba(8,9,10,.78), rgba(8,9,10,.66));
+}
+
+/* blur 主题:顶栏/底栏霜玻璃(Web 同源 blur(20px) saturate(140%)) */
+.screen.blur .appbar,
+.screen.blur .tabbar {
+  background:rgba(12,13,15,.55);
+  backdrop-filter:blur(20px) saturate(140%);
+  -webkit-backdrop-filter:blur(20px) saturate(140%);
+}
+.screen.blur .tabbar { background:rgba(12,13,15,.62); }
+
+/* .screen 需要独立堆叠上下文,保证 z-index:-1 的垫底层不穿透手机框 */
+.screen { isolation:isolate; }
 
 .serif { font-family:Georgia,"Songti SC","Noto Serif SC",serif; }
 .num { font-variant-numeric:tabular-nums; }
@@ -108,7 +149,7 @@ body {
   border:1px solid var(--line2); border-radius:999px;
   font-size:12px; color:var(--ink2); background:transparent; white-space:nowrap;
 }
-.chip.on { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+.chip.on { background:var(--ink); color:var(--paper-solid); border-color:var(--ink); }
 
 .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px 13px; padding:0 18px; }
 .card .ph {
@@ -255,7 +296,7 @@ body {
 .field .input.err { border-color:var(--accent); }
 .field .hint { font-size:11px; color:var(--accent); margin-top:7px; }
 .btn-primary {
-  height:52px; background:var(--ink); color:var(--paper); border-radius:2px;
+  height:52px; background:var(--ink); color:var(--paper-solid); border-radius:2px;
   display:flex; align-items:center; justify-content:center; font-size:15.5px; letter-spacing:0.5px;
   margin-top:10px;
 }
