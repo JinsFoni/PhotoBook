@@ -211,7 +211,12 @@ def _run_job(job_id: int) -> None:
             s.commit()
             return
         link = target.shortlinks[0]
-        direct_page = net.resolve_ouo(link)
+        try:
+            direct_page = net.resolve_ouo(link)
+        except net.UnsupportedHostError as e:
+            _finish(s, job, "failed", str(e))
+            s.commit()
+            return
         if not direct_page:
             _finish(s, job, "failed", "短链解析失败")
             s.commit()
