@@ -36,6 +36,11 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        // JUnit VM 测试:android.util.Log 等返回默认值(MockWebServer 平台探测需要)
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -70,6 +75,9 @@ dependencies {
 
     debugImplementation(libs.compose.ui.tooling)
 
+}
+
+dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.turbine)
     testImplementation(libs.kotlinx.coroutines.test)
