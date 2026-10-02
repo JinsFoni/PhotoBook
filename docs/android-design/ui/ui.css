@@ -167,13 +167,12 @@ body {
   display:flex; padding:6px;
   overflow:hidden;
 }
-/* 镜面高光环 + 斜向流光 */
+/* 斜向流光(无描边) */
 .tabbar::after {
   content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
   background:linear-gradient(115deg,
     var(--sheen-a) 0%, rgba(255,255,255,0) 30%,
     rgba(255,255,255,0) 68%, var(--sheen-b) 100%);
-  box-shadow:inset 0 0 0 1px var(--glass-hi);
 }
 .tab {
   position:relative; z-index:2;
