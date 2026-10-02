@@ -67,9 +67,9 @@ class ExploreViewModelTest {
         server.enqueue(
             MockResponse().setBody(
                 """{"featured":[{"id":1,"slug":"a","title":"A","model_slug":"m","model_name":"M1",
-                   "cover":"/m/a/cover.jpg","coverThumb":"/t/900x/a/cover.webp","tags":["f"],"count":3}],
+                   "cover":"/m/a/cover.jpg","coverThumb":"t/600x/a/cover.webp","tags":["f"],"count":3}],
                    "latest":[{"id":2,"slug":"b","title":"B","model_slug":"m","model_name":"M2",
-                   "cover":"/m/b/cover.jpg","coverThumb":"/t/900x/b/cover.webp","tags":[],"count":5}],
+                   "cover":"/m/b/cover.jpg","coverThumb":"t/600x/b/cover.webp","tags":[],"count":5}],
                    "models":[],"tags":[],"stats":{"collections":2,"models":2}}""".replace("\n", "")
             )
         )
@@ -84,7 +84,7 @@ class ExploreViewModelTest {
         assertEquals(1, feed!!.featured.size)
         assertEquals("A", feed.featured[0].title)
         // URL 拼装:coverThumb 相对路径 + base(无双重前缀)
-        assertTrue(feed.featured[0].imageUrl!!.endsWith("/t/900x/a/cover.webp"))
+        assertEquals("http://localhost:8000/t/600x/a/cover.webp", feed.featured[0].imageUrl)
         assertEquals("/discover", server.takeRequest().path)
         assertNull(vm.state.value.error)
     }
