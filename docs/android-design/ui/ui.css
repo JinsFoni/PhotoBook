@@ -62,7 +62,10 @@ body {
   --ink:#0c0d0f; --ink2:#565656; --ink3:#8e8e8e;
   --accent:#b01b2e; --line:#e3e3e1; --line2:#cfcfcd;
   --paper-solid:#ffffff;
-  --bar-bg:rgba(255,255,255,.86); --pill:rgba(12,13,15,.07);
+  --bar-bg:rgba(255,255,255,.46); --pill:rgba(12,13,15,.07);
+  --glass-hi:rgba(255,255,255,.95); --glass-lo:rgba(255,255,255,.28);
+  --glass-glow:rgba(255,255,255,.16);
+  --sheen-a:rgba(255,255,255,.55); --sheen-b:rgba(255,255,255,.14);
 }
 /* ---------- TOKENS · DARK ---------- */
 .screen.dark {
@@ -70,7 +73,10 @@ body {
   --ink:#f7f7f5; --ink2:#a0a3a8; --ink3:#6e7276;
   --accent:#e0455a; --line:#24262a; --line2:#33363b;
   --paper-solid:#0c0d0f;
-  --bar-bg:rgba(22,24,27,.74); --pill:rgba(255,255,255,.10);
+  --bar-bg:rgba(22,24,27,.48); --pill:rgba(255,255,255,.10);
+  --glass-hi:rgba(255,255,255,.24); --glass-lo:rgba(255,255,255,.05);
+  --glass-glow:rgba(255,255,255,.05);
+  --sheen-a:rgba(255,255,255,.11); --sheen-b:rgba(255,255,255,.03);
 }
 /* ---------- TOKENS · BLUR(虚化主题,同 Web data-theme=blur)----------
    垫底代表图 blur+saturate + 深色纱,面板半透明霜玻璃,
@@ -81,7 +87,10 @@ body {
   --accent:#e0455a;
   --line:rgba(255,255,255,.14); --line2:rgba(255,255,255,.22);
   --paper-solid:#0c0d0f;
-  --bar-bg:rgba(12,13,15,.60); --pill:rgba(255,255,255,.10);
+  --bar-bg:rgba(12,13,15,.42); --pill:rgba(255,255,255,.10);
+  --glass-hi:rgba(255,255,255,.30); --glass-lo:rgba(255,255,255,.06);
+  --glass-glow:rgba(255,255,255,.06);
+  --sheen-a:rgba(255,255,255,.13); --sheen-b:rgba(255,255,255,.04);
   background:#101114;
 }
 
@@ -132,24 +141,59 @@ body {
 .appbar .actions { display:flex; gap:20px; color:var(--ink2); align-items:center; }
 .appbar .actions svg { display:block; }
 
-/* ---------- 悬浮胶囊导航栏(主流悬浮式) ---------- */
+/* ---------- 悬浮导航栏 · 液态玻璃(Liquid Glass) ----------
+   三层效果叠加:① 背景折射(SVG feDisplacementMap)+ ② 边缘高光
+   (多层 inset shadow)+ ③ 镜面流光(对角渐变 sheen) */
 .tabbar {
   position:absolute; left:14px; right:14px; bottom:20px; height:64px; z-index:6;
   background:var(--bar-bg);
-  backdrop-filter:blur(20px) saturate(140%);
-  -webkit-backdrop-filter:blur(20px) saturate(140%);
+  /* 基础磨砂(所有浏览器兜底) */
+  backdrop-filter:blur(12px) saturate(170%) brightness(1.05);
+  -webkit-backdrop-filter:blur(12px) saturate(170%) brightness(1.05);
+  /* 液态折射:Chrome 支持 SVG filter 混入 backdrop 链 */
+}
+@supports (backdrop-filter: url(#liquid-glass)) {
+  .tabbar {
+    backdrop-filter:url(#liquid-glass) blur(12px) saturate(170%) brightness(1.05);
+    -webkit-backdrop-filter:url(#liquid-glass) blur(12px) saturate(170%) brightness(1.05);
+  }
+}
+.tabbar {
   border:1px solid var(--line2); border-radius:999px;
+  box-shadow:
+    0 12px 32px rgba(0,0,0,.24),
+    0 2px 8px rgba(0,0,0,.12),
+    inset 0 1px 1px var(--glass-hi),
+    inset 0 -1px 1px var(--glass-lo),
+    inset 0 0 14px var(--glass-glow);
   display:flex; padding:6px;
-  box-shadow:0 10px 28px rgba(0,0,0,.22);
+  overflow:hidden;
+}
+/* 镜面流光:左上入光 → 右下回收 */
+.tabbar::before {
+  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  background:linear-gradient(115deg,
+    var(--sheen-a) 0%, rgba(255,255,255,0) 30%,
+    rgba(255,255,255,0) 68%, var(--sheen-b) 100%);
+}
+/* 折射亮环:边缘 1px 高光内描 */
+.tabbar::after {
+  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  box-shadow:inset 0 0 0 1px var(--glass-hi);
+  opacity:.55;
 }
 .tab {
   flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
   font-size:10px; color:var(--ink3); letter-spacing:0.3px; border-radius:999px;
-  transition:background .18s ease, color .18s ease;
+  transition:background .18s ease, color .18s ease, transform .28s cubic-bezier(.34,1.56,.64,1);
 }
 .tab svg { display:block; }
 .tab span { display:none; }
-.tab.active { background:var(--pill); color:var(--ink); }
+.tab:active { transform:scale(.94); }
+.tab.active {
+  background:var(--pill); color:var(--ink);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(0,0,0,.05);
+}
 .tab.active span { display:block; }
 .tab.active svg { color:var(--accent); }
 

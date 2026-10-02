@@ -90,8 +90,13 @@
 ## 4. 导航结构
 
 悬浮胶囊导航栏(主流悬浮式):左右 14dp、距底 20dp、高 64dp、全圆角胶囊;
-霜玻璃底(`--bar-bg` 随主题)+ hairline 描边 + 大投影;
-激活态 = 10% 墨/白胶囊底 + 绯红图标 + 展开标签,未激活仅图标(ink3)。
+**液态玻璃材质**(Liquid Glass,四层叠加):
+1. 背景折射:SVG `feDisplacementMap` 让玻璃后的内容产生透镜扭曲(Compose 对应 `RenderEffect` + RuntimeShader)
+2. 基础磨砂:`blur(12px) saturate(170%) brightness(1.05)`
+3. 边缘光:多层 inset 阴影(顶部高光/底部暗反/内发光)+ 1px 内描亮环
+4. 镜面流光:115° 对角渐变 sheen(左上入光 → 右下回收)
+
+激活态 = 10% 墨/白胶囊底 + 绯红图标 + 展开标签,未激活仅图标(ink3);按压 0.94 spring 回弹。
 
 ```
 发现(Explore)  写真(Collections)  模特(Models)  收藏(Favorites)
@@ -100,6 +105,7 @@
 - 「发现」「写真」页顶栏：透明 → 滚动后 paper + hairline 底线；词标 "Photo Collection" 衬线 17sp
 - 模特/写真详情、灯箱为全屏推入(无导航栏)；详情页滚动到底部收起顶栏
 - 列表内容底部预留 112dp(栏 64 + 底距 20 + 呼吸),滚动到底不被遮挡
+- Compose 落地:API 33+ 用 `RuntimeShader`(AGSL)写折射+磨砂+边缘光;API 31+ 退化为 `RenderEffect` blur + 静态渐变 sheen;更低版本退化为半透明胶囊 + 投影
 
 ## 5. 页面清单与状态
 
