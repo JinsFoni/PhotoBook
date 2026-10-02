@@ -29,6 +29,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideSessionStoreApi(store: SessionStore): dev.jinsfoni.photobook.data.prefs.SessionStoreApi = store
+
+    @Provides
+    @Singleton
     fun provideOkHttp(auth: AuthInterceptor): OkHttpClient =
         OkHttpClient.Builder()
             .addInterceptor(auth)
