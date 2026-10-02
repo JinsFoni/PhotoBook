@@ -111,7 +111,7 @@ body {
 .screen.blur .blur-canvas { opacity:1; visibility:visible; }
 .blur-canvas img {
   width:100%; height:100%; object-fit:cover; display:block;
-  filter:blur(42px) saturate(1.12); transform:scale(1.15);
+  filter:blur(42px) saturate(1.12); transform:scale(1.35);
 }
 .blur-canvas::after {
   content:""; position:absolute; inset:0;
