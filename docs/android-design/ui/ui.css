@@ -169,12 +169,12 @@ body {
   display:flex; padding:6px;
   overflow:hidden;
 }
-/* 透镜边缘环:只在 7px 环带内折射+强磨砂(凸透镜边缘效应),中心不受影响 */
+/* 透镜边缘环:只叠折射扭曲,磨砂/提亮与中心同参数(视觉统一) */
 .tabbar::before {
   content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
   padding:7px; box-sizing:border-box;
-  backdrop-filter:url(#liquid-glass) blur(7px) saturate(185%) brightness(1.12);
-  -webkit-backdrop-filter:url(#liquid-glass) blur(7px) saturate(185%) brightness(1.12);
+  backdrop-filter:url(#liquid-glass);
+  -webkit-backdrop-filter:url(#liquid-glass);
   -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite:xor;
   mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
