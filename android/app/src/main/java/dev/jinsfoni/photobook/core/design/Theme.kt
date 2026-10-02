@@ -36,9 +36,9 @@ fun PhotoColors.forMode(mode: ThemeMode): PhotoColors = when (mode) {
 @Composable
 fun PhotoTheme(
     modifier: Modifier = Modifier,
+    mode: ThemeMode = ThemeState.mode,
     content: @Composable () -> Unit,
 ) {
-    val mode = ThemeState.mode
     val colors = lightColors().forMode(mode)
     CompositionLocalProvider(
         LocalPhotoColors provides colors,

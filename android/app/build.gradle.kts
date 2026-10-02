@@ -66,6 +66,7 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.telephoto.zoomable.image.coil3)
     implementation(libs.haze)
+    implementation(libs.haze.blur)
 
     debugImplementation(libs.compose.ui.tooling)
 

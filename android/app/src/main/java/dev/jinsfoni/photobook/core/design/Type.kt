@@ -69,11 +69,27 @@ object PhotoType {
         lineHeight = 15.sp,
     )
 
-    // 页码(tab 11px、crumbs 11px、hero kick 11px)
+    // 页码/crumbs/hero kick(11px)
     val tag = TextStyle(
         fontWeight = FontWeight.Normal,
         fontSize = 11.sp,
         lineHeight = 15.sp,
+    )
+
+    // 底栏 tab 标签(11px、letter-spacing 0.2px)
+    val tabLabel = TextStyle(
+        fontWeight = FontWeight.Normal,
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
+        letterSpacing = 0.2.sp,
+    )
+
+    // 底栏选中 tab(600 字重,原型 .tab.active span)
+    val tabLabelActive = TextStyle(
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
+        letterSpacing = 0.2.sp,
     )
 
     // 灯箱页码(lb-top .idx 13.5px,tnum 等宽数字)

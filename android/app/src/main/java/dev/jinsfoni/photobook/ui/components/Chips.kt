@@ -26,6 +26,17 @@ fun Modifier.photoClickable(onClick: () -> Unit): Modifier = this.clickable(
     onClick = onClick,
 )
 
+/** 同上,但复用外部 interactionSource(按压态检测用)。 */
+@Composable
+fun Modifier.photoClickable(
+    interactionSource: MutableInteractionSource,
+    onClick: () -> Unit,
+): Modifier = this.clickable(
+    interactionSource = interactionSource,
+    indication = null,
+    onClick = onClick,
+)
+
 /** 标签 chip(原型 .chip:30dp 高、全圆角、1px 描边;on 态反色)。 */
 @Composable
 fun TagChip(

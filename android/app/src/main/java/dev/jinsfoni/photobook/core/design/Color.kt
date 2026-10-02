@@ -34,6 +34,9 @@ data class PhotoColors(
     val glassHi: Color,
     val glassLo: Color,
     val glassGlow: Color,
+    // 底栏斜向流光两端(ui.css --sheen-a/-b)
+    val sheenA: Color,
+    val sheenB: Color,
 )
 
 fun lightColors(): PhotoColors = PhotoColors(
@@ -53,6 +56,8 @@ fun lightColors(): PhotoColors = PhotoColors(
     glassHi = Color(0xD9FFFFFF),    // rgba(255,255,255,.85)
     glassLo = Color(0x33FFFFFF),    // rgba(255,255,255,.20)
     glassGlow = Color(0x1FFFFFFF),  // rgba(255,255,255,.12)
+    sheenA = Color(0x73FFFFFF),     // rgba(255,255,255,.45)
+    sheenB = Color(0x1FFFFFFF),     // rgba(255,255,255,.12)
 )
 
 fun darkColors(): PhotoColors = PhotoColors(
@@ -72,6 +77,8 @@ fun darkColors(): PhotoColors = PhotoColors(
     glassHi = Color(0x3DFFFFFF),    // rgba(255,255,255,.24)
     glassLo = Color(0x0DFFFFFF),    // rgba(255,255,255,.05)
     glassGlow = Color(0x0DFFFFFF),
+    sheenA = Color(0x1CFFFFFF),     // rgba(255,255,255,.11)
+    sheenB = Color(0x08FFFFFF),     // rgba(255,255,255,.03)
 )
 
 fun blurColors(): PhotoColors = PhotoColors(
@@ -91,4 +98,6 @@ fun blurColors(): PhotoColors = PhotoColors(
     glassHi = Color(0x4DFFFFFF),    // rgba(255,255,255,.30)
     glassLo = Color(0x0FFFFFFF),    // rgba(255,255,255,.06)
     glassGlow = Color(0x0FFFFFFF),
+    sheenA = Color(0x21FFFFFF),     // rgba(255,255,255,.13)
+    sheenB = Color(0x0AFFFFFF),     // rgba(255,255,255,.04)
 )
