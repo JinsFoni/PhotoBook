@@ -57,15 +57,22 @@ body {
 }
 
 /* ---------- TOKENS · LIGHT ---------- */
+/* ---------- 液态玻璃 token(主题无关:玻璃的颜色来自背后的内容) ---------- */
+:root {
+  --bar-bg:rgba(255,255,255,.14);
+  --glass-hi:rgba(255,255,255,.55);
+  --glass-lo:rgba(255,255,255,.12);
+  --glass-glow:rgba(255,255,255,.10);
+  --sheen-a:rgba(255,255,255,.30);
+  --sheen-b:rgba(255,255,255,.08);
+}
+
 .screen.light {
   --paper:#ffffff; --paper2:#f1f1ef; --paper3:#e8e8e6;
   --ink:#0c0d0f; --ink2:#565656; --ink3:#8e8e8e;
   --accent:#b01b2e; --line:#e3e3e1; --line2:#cfcfcd;
   --paper-solid:#ffffff;
-  --bar-bg:rgba(255,255,255,.46); --pill:rgba(12,13,15,.07);
-  --glass-hi:rgba(255,255,255,.95); --glass-lo:rgba(255,255,255,.28);
-  --glass-glow:rgba(255,255,255,.16);
-  --sheen-a:rgba(255,255,255,.55); --sheen-b:rgba(255,255,255,.14);
+  --pill:rgba(12,13,15,.07);
 }
 /* ---------- TOKENS · DARK ---------- */
 .screen.dark {
@@ -73,10 +80,7 @@ body {
   --ink:#f7f7f5; --ink2:#a0a3a8; --ink3:#6e7276;
   --accent:#e0455a; --line:#24262a; --line2:#33363b;
   --paper-solid:#0c0d0f;
-  --bar-bg:rgba(22,24,27,.48); --pill:rgba(255,255,255,.10);
-  --glass-hi:rgba(255,255,255,.24); --glass-lo:rgba(255,255,255,.05);
-  --glass-glow:rgba(255,255,255,.05);
-  --sheen-a:rgba(255,255,255,.11); --sheen-b:rgba(255,255,255,.03);
+  --pill:rgba(255,255,255,.10);
 }
 /* ---------- TOKENS · BLUR(虚化主题,同 Web data-theme=blur)----------
    垫底代表图 blur+saturate + 深色纱,面板半透明霜玻璃,
@@ -87,10 +91,7 @@ body {
   --accent:#e0455a;
   --line:rgba(255,255,255,.14); --line2:rgba(255,255,255,.22);
   --paper-solid:#0c0d0f;
-  --bar-bg:rgba(12,13,15,.42); --pill:rgba(255,255,255,.10);
-  --glass-hi:rgba(255,255,255,.30); --glass-lo:rgba(255,255,255,.06);
-  --glass-glow:rgba(255,255,255,.06);
-  --sheen-a:rgba(255,255,255,.13); --sheen-b:rgba(255,255,255,.04);
+  --pill:rgba(255,255,255,.10);
   background:#101114;
 }
 
