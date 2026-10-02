@@ -625,10 +625,9 @@ async def admin_harvest_delete(request: Request, job_id: int, s: Session = Depen
     - 带 archive_dir 的任务(import 失败,残包留在 library):删除时连带清理
       残留目录 — 它未入库,不删就是孤儿。路径必须是 library 子目录,防误删。
     """
-    # back 为操作前所在列表的查询串(?status=…&page=…),仅接受本方生成的白名单形态
-    if back and not re.fullmatch(r"\?status=(active|done|skipped|failed)&page=\d+", back):
-        back = ""
-    status, page = _back_params(back)
+    status, page = _back_params(back)  # 白名单校验在 _back_params 内, 不匹配则回第 1 页
+    if back and not (status or page > 1):
+        back = ""  # 非白名单形态: AJAX 重绘已安全, 303 重定向退回干净列表
     job = s.get(HarvestJob, job_id)
     if not job:
         return _action_response(request, s, status, page, back, "")

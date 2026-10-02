@@ -167,6 +167,38 @@ def test_delete_back_param_sanitized(admin_client, jobs45):
     assert r.headers["location"].startswith("/admin/harvest")
 
 
+@pytest.mark.parametrize("back,exp_status,exp_page", [
+    ("?page=3", "", 3),          # 无筛选、非首页 — 曾被旧正则误杀回第 1 页
+    ("?status=failed", "failed", 1),  # 有筛选、首页 — 同上
+])
+def test_delete_back_single_param_forms(admin_client, jobs45, back, exp_status, exp_page):
+    """back 的省略默认值形态(?page=3 / ?status=failed)必须保留页码/筛选。
+
+    _back_qs 生成的是「默认值省略」形态, 旧版 delete 里额外一段「双参数齐全」
+    的正则把这两种形态误杀成 back="", 点删除就跳回第 1 页。"""
+    target = jobs45["done_ids"][0]
+    r = admin_client.post(
+        f"/admin/harvest/{target}/delete",
+        data={"back": back},
+        follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert loc.startswith(f"/admin/harvest{back}"), loc
+
+
+def test_delete_ajax_back_single_param(admin_client, jobs45):
+    """AJAX 删除 + 单参数 back: 返回的 payload 必须停在原页。"""
+    target = jobs45["done_ids"][0]  # 第 1 页的 done
+    r = admin_client.post(
+        f"/admin/harvest/{target}/delete",
+        data={"back": "?page=2"},
+        headers={"X-Requested-With": "fetch"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["page"] == 2
+    assert all(j["id"] != target for j in d["jobs"])
+
+
 def test_empty_filter_shows_placeholder(admin_client, jobs45):
     """有筛选但该状态无任务:显示状态占位而非「队列为空」。"""
     page = admin_client.get("/admin/harvest?status=active").text
