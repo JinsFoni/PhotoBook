@@ -160,3 +160,17 @@ app/src/main/kotlin/dev/jinsfoni/photobook/
 - ViewModel:Turbine 断言 UiState 流(加载/空态/错误/乐观回滚)
 - Repository:假 Api 手写 Fake(不引 mockk 全家桶,接口少)
 - Compose:每屏 `createComposeRule` 冒烟(渲染不崩 + 关键节点存在);像素级验证靠设计稿阶段已完成的 Playwright 流程,不在端上重复
+
+## 11. M1 实施偏差记录(android 分支,2026-10-03)
+
+M0+M1 已实施;以下为与原架构文档的偏差(设计意图不变,实现取舍记录):
+
+| 原设计 | 实际实现 | 原因 |
+|---|---|---|
+| 登录态路由:详情/灯箱也走 NavHost 但保留底部导航 | 详情(S3)/灯箱(S4)为全屏覆盖路由(无底栏),只有 shell 层有玻璃底栏 | 符合设计稿:详情/灯箱是沉浸式阅读态,底栏玻璃只属主壳 |
+| 灯箱用 `/t/1800` 做 fit 档 | 直接用详情 photos 的 `/t/600` 缩略 + `/media/` 原图(telephoto 子采样) | mobile_api photos 未带 1800 档;telephoto 直接吃原图即可,少一档 |
+| DownloadManager 在 M3 | 已随 S4 实现(PhotoDownloader → PICTURES/PhotoBook/) | 灯箱下载按钮设计稿即有,M1 顺手完成 |
+| Retrofit baseUrl 动态切换(S9) | NetworkModule 固定 DEFAULT_BASE_URL,SessionStore.baseUrl 已留接口 | S9(多服务器)属 M3;真机调试用 DEFAULT_BASE_URL 指向局域网 |
+| 主题持久化 DataStore(S9) | ThemeState 内存单例,S9 换 DataStore | 同上;登录态(token)已走 DataStore Preferences |
+| chrome 自动隐藏 600ms | 灯箱 chrome 6s 自动隐 | 原型 600ms 为鼠标悬停假设;触屏阅读 6s 更合理 |
+| Compose 屏冒烟测试 | M1 未写 createComposeRule 测试,只做 VM/仓库单测(19 项) | 屏渲染靠真机走查(M1 验收),Compose 测试推迟到 M4 CI 阶段 |
