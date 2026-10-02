@@ -103,7 +103,7 @@
 ```
 
 - 「发现」「写真」页顶栏：透明 → 滚动后 paper + hairline 底线；词标 "Photo Collection" 衬线 17sp
-- 状态栏沉浸式分两种：媒体型页面(S1 发现/S4 灯箱/S6 模特)图区顶到屏幕顶，状态栏透明叠加、白字；普通页面保留 38dp 状态栏占位(内容从栏下开始)，透明无底色、墨色图标。Compose 对应 `enableEdgeToEdge()`：媒体页图片延伸进状态栏后面，普通页顶部内容用 `WindowInsets.statusBars` padding 避让
+- 状态栏沉浸采用**背景延伸式**：照片本体永远从状态栏下方开始，状态栏区只延伸页面背景色/纯黑底（S4 灯箱）——栏内墨色内容，无白字压图；媒体头部顶部留 56dp 轻纱护住悬浮按钮。Compose 对应 `enableEdgeToEdge()` + 根容器 `backgroundContaneir` 延伸，内容区 `WindowInsets.statusBars` padding
 - 模特/写真详情、灯箱为全屏推入(无导航栏)；详情页滚动到底部收起顶栏
 - 列表内容底部预留 112dp(栏 64 + 底距 20 + 呼吸),滚动到底不被遮挡
 - Compose 落地:API 33+ 用 `RuntimeShader`(AGSL)写折射+磨砂+边缘光;API 31+ 退化为 `RenderEffect` blur + 静态渐变 sheen;更低版本退化为半透明胶囊 + 投影

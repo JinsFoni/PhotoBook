@@ -226,18 +226,18 @@ body {
 .section-head a { font-size:12.5px; color:var(--accent); text-decoration:none; }
 
 /* ---------- S1 发现 ---------- */
-/* S1 发现:appbar 悬浮于 hero 图上(沉浸式头部) */
+/* S1 发现:appbar 悬浮于 hero 图上(背景延伸式沉浸:状态栏区墨字,图从栏下开始) */
 .appbar-float {
   position:absolute; top:38px; left:0; right:0; z-index:5;
 }
 .appbar-float .wordmark, .appbar-float .actions { color:#fff; }
 
-.hero { position:relative; height:474px; overflow:hidden; }
+.hero { position:relative; height:436px; overflow:hidden; }
 .hero img { width:100%; height:100%; object-fit:cover; display:block; filter:brightness(.92); }
-/* 顶部渐晕:给沉浸式白字状态栏/appbar 垫出可读区 */
+/* 顶部轻纱(56px):只护 appbar 白字,状态栏区不留图 */
 .hero::before {
-  content:""; position:absolute; top:0; left:0; right:0; height:110px; z-index:1; pointer-events:none;
-  background:linear-gradient(to bottom, rgba(5,5,6,.52), rgba(5,5,6,0));
+  content:""; position:absolute; top:0; left:0; right:0; height:56px; z-index:1; pointer-events:none;
+  background:linear-gradient(to bottom, rgba(5,5,6,.42), rgba(5,5,6,0));
 }
 .hero .veil {
   position:absolute; inset:0;
@@ -284,8 +284,9 @@ body {
 
 /* ---------- S4 灯箱 ---------- */
 .lightbox-screen { background:#000; }
-.lb-full { position:absolute; inset:0 0 128px; display:flex; align-items:center; justify-content:center; }
+.lb-full { position:absolute; inset:38px 0 128px; display:flex; align-items:center; justify-content:center; }
 .lb-full img { max-width:100%; max-height:100%; object-fit:contain; }
+/* 灯箱沉浸:纯黑背景延伸进状态栏/导航栏后面,照片本体不顶入状态栏 */
 .lb-top {
   position:absolute; top:38px; left:0; right:0; height:56px; z-index:5;
   display:flex; align-items:center; justify-content:space-between; padding:0 18px;
@@ -308,12 +309,12 @@ body {
 .lb-actions .act.dim { opacity:.4; }
 
 /* ---------- S5 模特列表 / S6 模特详情 ---------- */
-.model-hero { position:relative; height:436px; }
+.model-hero { position:relative; height:398px; }
 .model-hero img { width:100%; height:100%; object-fit:cover; filter:brightness(.9); }
-/* 顶部渐晕:给沉浸式白字状态栏垫出可读区 */
+/* 顶部轻纱:只护返回/收藏悬浮钮,状态栏区不留图 */
 .model-hero::before {
-  content:""; position:absolute; top:0; left:0; right:0; height:110px; z-index:1; pointer-events:none;
-  background:linear-gradient(to bottom, rgba(5,5,6,.52), rgba(5,5,6,0));
+  content:""; position:absolute; top:0; left:0; right:0; height:56px; z-index:1; pointer-events:none;
+  background:linear-gradient(to bottom, rgba(5,5,6,.42), rgba(5,5,6,0));
 }
 .model-hero .veil {
   position:absolute; inset:0;
