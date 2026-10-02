@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
@@ -15,7 +16,7 @@ from .auth import COOKIE_NAME, current_user
 from .config import settings
 from .database import SessionLocal, init_db
 from .db import Session as DbSession, User
-from .routers import admin, auth, ext_api, favorites_api, search_api, web
+from .routers import admin, auth, ext_api, favorites_api, mobile_api, search_api, web
 from .services.media import serve_media, serve_thumb
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -85,7 +86,8 @@ async def auth_wall(request: Request, call_next):
     if (path.startswith("/static") or path.startswith("/assets")
             or path.startswith("/media") or path.startswith("/t/")
             or path.startswith("/admin/api/")
-            or path.startswith("/api/ext/")):  # 浏览器联动: 走 X-PhotoBook-Key 自鉴权
+            or path.startswith("/api/ext/")  # 浏览器联动: 走 X-PhotoBook-Key 自鉴权
+            or path.startswith("/api/mobile/")):  # 移动端: 走 Bearer 自鉴权
         return await call_next(request)
 
     # 解析用户与语言(同一连接)
@@ -326,6 +328,11 @@ app.include_router(favorites_api.router)
 app.include_router(search_api.router)
 app.include_router(admin.router)
 app.include_router(ext_api.router)
+app.include_router(mobile_api.router)
+
+# 移动端统一错误体(注意:须在 include_router 前注册才对路由生效,这里同模块内完成)
+app.add_exception_handler(mobile_api.ApiError, mobile_api.api_error_handler)
+app.add_exception_handler(RequestValidationError, mobile_api.mobile_validation_error_handler)
 
 
 @app.get("/healthz")
