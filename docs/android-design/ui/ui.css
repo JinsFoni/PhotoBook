@@ -124,14 +124,18 @@ body {
 .serif { font-family:Georgia,"Songti SC","Noto Serif SC",serif; }
 .num { font-variant-numeric:tabular-nums; }
 
-/* ---------- 状态栏(沉浸式:透明悬浮于内容之上) ---------- */
+/* ---------- 状态栏 ----------
+   默认:流内占位 38px(普通页面,墨色,内容从栏下开始)
+   .overlay-on-media:绝对叠加,白字,图区顶到屏幕顶(沉浸式媒体页) */
 .statusbar {
-  position:absolute; top:0; left:0; right:0; z-index:7;
   height:38px; display:flex; justify-content:space-between; align-items:center;
   padding:0 26px 0 30px; font-size:11.5px; font-weight:600;
-  color:var(--ink); pointer-events:none;
+  color:var(--ink); position:relative; z-index:5;
 }
-.statusbar.overlay-on-media { color:#fff; }
+.statusbar.overlay-on-media {
+  position:absolute; top:0; left:0; right:0; z-index:7;
+  color:#fff; pointer-events:none;
+}
 .statusbar svg { display:block; }
 .sb-icons { display:flex; gap:6px; align-items:center; }
 
