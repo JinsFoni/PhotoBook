@@ -191,11 +191,28 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
         stats["skipped"] = True
         return stats
 
-    # 幂等:已导入过 → 原样跳过(文件留在 library,不动)
+    # 幂等:已导入过 → 原样跳过(文件留在 library,不动);
+    # 必须在健康检查之前 —— 定时扫描会反复遇到已入库目录,不能白全量解码
     if collection_exists(s, model_name, title, unsorted_dir):
         stats["skipped"] = True
         log.info("skip (already imported): %s / %s", model_name or unsorted_dir, title)
         return stats
+
+    # 健康检查: 宽容重试后仍解不开的图当场拉出来, 不让烂图混进库
+    # (与 /t 缩略图同一判定口径; 全坏则整包跳过, 不建空写真集)
+    from . import media as _media
+    broken: list[str] = []
+    ok_set = set(_media.check_integrity(images))
+    for src in images:
+        if str(src) not in ok_set:
+            broken.append(src.name)
+            log.warning("import %s: 跳过损坏图片 %s", title, src.name)
+    if broken and not ok_set:
+        log.error("import %s: 全部 %d 张图均损坏, 整包跳过", title, len(broken))
+        stats["skipped"] = True
+        stats["broken"] = broken
+        return stats
+    stats["broken"] = broken
 
     model = _get_or_create_model(s, model_name)
     owner_slug = model.slug if model else slugify(unsorted_dir, maxlen=120)
@@ -208,6 +225,8 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
     moved: list[tuple[Path, Path]] = []
     try:
         for src in images:
+            if str(src) not in ok_set:
+                continue  # 损坏图不移动不入库(已在上面记录/警告)
             target = dest_dir / src.name
             n = 2
             while target.exists():
@@ -251,7 +270,9 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
         raise
 
     _prune_empty(album_dir, Path(library_root) if library_root else None)
-    log.info("imported %s: %d photos (%s)", title, len(moved), slug)
+    log.info("imported %s: %d photos (%s)%s", title, len(moved), slug,
+             f",损坏跳过 {len(broken)} 张" if broken else "")
+    stats["broken"] = broken
     if thumbs and not stats["skipped"] and stats["slug"]:
         from . import media
         media.queue_import_thumbs(stats["slug"])

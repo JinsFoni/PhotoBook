@@ -13,7 +13,7 @@ import threading
 
 from fastapi import HTTPException, Request
 from fastapi.responses import FileResponse, Response
-from PIL import Image
+from PIL import Image, ImageFile
 from sqlalchemy import select
 
 from ..config import settings
@@ -24,6 +24,37 @@ CACHE_DIR = "_cache"
 THUMB_RE = re.compile(r"^(\d+)(?:x(\d+))?/(.+)\.(jpg|jpeg|png|webp)$", re.I)
 
 Image.MAX_IMAGE_PIXELS = 400 * 1024 * 1024  # 原图可达 40MP+
+# 宽容模式仅在严格解码失败后按图启用, 见 _open_tolerant()
+
+
+def _open_tolerant(src, *, draft=None):
+    """打开图片: 严格解码失败(截断/尾段损坏)时改用宽容模式重试。
+
+    典型案例: 采集包里偶见的截断 JPEG(缺尾部 EOI 十几个字节), PIL 严格
+    模式报 'image file is truncated', 但图像数据其实完整可解码 —— 这类图
+    不用宽容模式的话 /t 缩略图永远 500, 预热每次巡检都刷警告。
+    真「烂到解不开」的图宽容模式也救不了, 异常照旧抛出。
+
+    draft: JPEG 降采样档, 与调用方的 draft() 参数同义(仅宽容重试时需要
+    重新传: 重试是新开图, 原 draft 不会保留)。
+    """
+    try:
+        im = Image.open(src)
+        if draft:
+            im.draft(*draft)
+        im.load()
+        return im
+    except Exception:
+        pass
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
+    try:
+        im = Image.open(src)
+        if draft:
+            im.draft(*draft)
+        im.load()
+        return im
+    finally:
+        ImageFile.LOAD_TRUNCATED_IMAGES = False
 
 # 档位策略(两档, 都预热):
 #   900  网格 + 照片墙
@@ -79,11 +110,10 @@ def _make_webp(src, w: int, h: int | None, q: int) -> bytes:
     解码内存/时间降 4~16 倍,缩放结果肉眼无差(目标宽 ≥ 源宽/2 时取最近档)。
     """
     with _gen_sem:
-        with Image.open(src) as im:
-            is_jpeg = (im.format == "JPEG")  # draft() 仅对 JPEG 生效
-            if is_jpeg:
-                im.draft("RGB", (w, h or w))
-            im = im.convert("RGB")
+        # 严格解码失败自动转宽容模式重试(截断 JPEG 可正常出图);
+        # draft 对非 JPEG 是无操作, 不需要判格式
+        im = _open_tolerant(src, draft=("RGB", (w, h or w)))
+        try:
             sw, sh = im.size
             tw = min(w, sw)
             if h:
@@ -103,6 +133,8 @@ def _make_webp(src, w: int, h: int | None, q: int) -> bytes:
             buf = io.BytesIO()
             im.save(buf, "WEBP", quality=q, method=4)
             return buf.getvalue()
+        finally:
+            im.close()
 
 
 def purge_collection_files(slug: str, filenames: list[str]) -> None:
@@ -251,6 +283,26 @@ def thumb_url(rel: str | None, w: int, h: int | None = None) -> str:
     if h:
         return f"/t/{w}x{h}/{rel}.webp"
     return f"/t/{w}/{rel}.webp"
+
+
+# ---- 入库健康检查 ---------------------------------------------------------------
+
+def check_integrity(paths) -> list[str]:
+    """逐张试解码,返回完整可解码的相对路径列表(调用方自己比对差集)。
+
+    用途: 入库时把采集包里损坏的图(截断/非图)当场报出来, 而不是入库后
+    缩略图阶段才冒警告。宽容重试后仍解不开的才算坏 —— 与 /t 生成同一
+    判定口径, 这里放行的图缩略图必能生成。
+    """
+    ok: list[str] = []
+    for p in paths:
+        try:
+            im = _open_tolerant(p)
+            im.close()
+            ok.append(str(p))
+        except Exception:
+            pass
+    return ok
 
 
 # ---- 缩略图预热 -----------------------------------------------------------------

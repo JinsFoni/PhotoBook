@@ -135,3 +135,62 @@ def test_preheat_stops_on_shutdown_event(monkeypatch, clean_preheat_event):
         assert (done, generated) == (0, 0)  # 第一张之前就退出
     finally:
         media._preheat_done.clear()
+
+
+# ---- 截断图宽容解码 ----
+
+def _make_jpeg(tmp_path, w=60, h=80, quality=90):
+    """生成一张真 JPEG, 供截断实验用。"""
+    import io
+    from PIL import Image
+    im = Image.new("RGB", (w, h), (180, 60, 60))
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=quality)
+    p = tmp_path / "trunc.jpg"
+    p.write_bytes(buf.getvalue())
+    return p
+
+
+def test_truncated_jpeg_thumbnail_served(admin_client, tmp_path, monkeypatch):
+    """截断(缺尾部 EOI)的 JPEG: 宽容重试后仍能出图, 不再 500。
+
+    图像数据本体完整、仅尾部缺十几个字节的坏图, 是采集包里的真实案例。"""
+    from app.services import media
+
+    src = _make_jpeg(tmp_path)
+    data = src.read_bytes()
+    truncated = tmp_path / "broken.jpg"
+    truncated.write_bytes(data[:-64])  # 掐掉尾部 64 字节(小图要掐进扫描数据才触发截断错误)
+
+    # 确认严格解码确实失败(否则本测试没测到目标场景)
+    with pytest.raises(Exception):
+        im = media.Image.open(truncated)
+        im.load()  # open 是惰性的, 不 load 不解码
+
+    rel = "demo/x/broken.jpg"
+    dest = media.settings.media_dir / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(truncated.read_bytes())
+    try:
+        r = admin_client.get(media.thumb_url(rel, 32))
+        assert r.status_code == 200 and r.headers["content-type"] == "image/webp"
+        assert media._cache_path(32, None, 78, rel).is_file()  # 缓存已写出
+    finally:
+        dest.unlink(missing_ok=True)
+        media._cache_path(32, None, 78, rel).unlink(missing_ok=True)
+
+
+def test_garbage_file_still_500(admin_client, tmp_path):
+    """彻底的垃圾文件(宽容模式也解不开)依旧报错, 不静默。"""
+    from app.services import media
+
+    rel = "demo/x/garbage.jpg"
+    dest = media.settings.media_dir / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"this is not an image at all")
+    try:
+        r = admin_client.get(media.thumb_url(rel, 32))
+        assert r.status_code == 500
+        assert not media._cache_path(32, None, 78, rel).is_file()
+    finally:
+        dest.unlink(missing_ok=True)

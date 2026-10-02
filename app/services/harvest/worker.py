@@ -279,6 +279,8 @@ def _run_job(job_id: int) -> None:
                 s.commit()  # 先落库释放写锁: queue_import_thumbs 用独立连接写状态
                 nq = media.queue_import_thumbs(r["slug"])
                 job = s.get(HarvestJob, job_id)
+                broken = r.get("broken") or []
+                extra += f",损坏跳过 {len(broken)} 张" if broken else ""
                 job.error = f"→ {r['photos']} 张已入库{extra},缩略图生成中#{nq}"
             s.commit()
         except Exception as e:
