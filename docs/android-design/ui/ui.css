@@ -184,7 +184,7 @@ body {
 }
 .tab {
   flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
-  font-size:10px; color:var(--ink2); letter-spacing:0.3px; border-radius:999px;
+  font-size:11px; color:var(--ink2); letter-spacing:0.2px; border-radius:999px;
   transition:background .18s ease, color .18s ease, transform .28s cubic-bezier(.34,1.56,.64,1);
 }
 .tab svg { display:block; }
@@ -194,7 +194,7 @@ body {
   background:var(--pill); color:var(--ink);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(0,0,0,.05);
 }
-.tab.active span { display:block; }
+.tab.active span { display:block; font-weight:600; color:var(--ink); }
 .tab.active svg { color:var(--accent); }
 
 /* ---------- 通用组件 ---------- */
