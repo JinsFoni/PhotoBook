@@ -309,7 +309,6 @@ body {
 .lb-actions { display:flex; gap:44px; align-items:center; }
 .lb-actions .act { display:flex; align-items:center; }
 .lb-actions .act.faved { color:#e0455a; }
-.lb-actions .act.dim { opacity:.4; }
 
 /* ---------- S5 模特列表 / S6 模特详情 ---------- */
 .model-hero { position:relative; height:398px; }
