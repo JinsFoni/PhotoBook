@@ -184,7 +184,7 @@ body {
 }
 .tab {
   flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
-  font-size:10px; color:var(--ink3); letter-spacing:0.3px; border-radius:999px;
+  font-size:10px; color:var(--ink2); letter-spacing:0.3px; border-radius:999px;
   transition:background .18s ease, color .18s ease, transform .28s cubic-bezier(.34,1.56,.64,1);
 }
 .tab svg { display:block; }
