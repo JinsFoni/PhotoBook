@@ -8,11 +8,14 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass, field
 
 from curl_cffi import requests as cr
+
+log = logging.getLogger("harvest")
 
 UA_IMPERSONATE = "chrome"
 
@@ -205,6 +208,10 @@ def _ouo_step(s, link: str, *, wait: float = 3.0) -> str | None:
     final = str(r3.url)
     if "mediafire.com/file/" in final:
         return final
+    # 落地到其他网盘(terabox 等): 短链本身活着, 只是托管不在 MediaFire。
+    # 记录日志便于诊断(任务报「短链解析失败」时能看出真实原因)。
+    if "ouo.io/" not in final and "ouo.press/" not in final:
+        log.warning("ouo %s landed on non-mediafire host: %s", code, final[:120])
     # 落地 URL 可能缺尾部路径(如 .../file/<key>),完整链接在响应体里
     m = re.search(r'(https?://www\.mediafire\.com/file/[^"\'\s]+)', r3.text)
     return m.group(1) if m else final
