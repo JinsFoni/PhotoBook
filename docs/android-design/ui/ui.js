@@ -106,7 +106,15 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof PAGE_ID !== 'undefined' && PAGE_META[PAGE_ID]) renderPagebar(PAGE_ID);
   applyThemeFromURL();
   const sb = document.getElementById('statusbar-slot');
-  if (sb) sb.outerHTML = renderStatusbar();
+  if (sb) {
+    const html = renderStatusbar();
+    // 沉浸式:内容顶到屏幕顶的页面,状态栏白字叠加;否则透明悬浮于 paper 之上
+    if (sb.classList.contains('overlay-on-media')) {
+      sb.outerHTML = html.replace('class="statusbar"', 'class="statusbar overlay-on-media"');
+    } else {
+      sb.outerHTML = html;
+    }
+  }
   const tb = document.getElementById('tabbar-slot');
   if (tb) tb.outerHTML = renderTabbar(tb.dataset.tab);
   if (typeof NOTES !== 'undefined' && typeof SPEC !== 'undefined' && PAGE_META[PAGE_ID]) {
