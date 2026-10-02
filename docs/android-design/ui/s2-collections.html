@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S2 · 写真列表 — Photo Collection Android</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<div id="pagebar" class="pagebar"></div>
+
+<div class="stage">
+  <div class="phone"><div class="notch"></div>
+    <div class="screen dark">
+      <div id="statusbar-slot"></div>
+
+      <div class="appbar">
+        <span class="wordmark serif">写真</span>
+        <span class="actions"><span data-icon="search"></span></span>
+      </div>
+
+      <div class="filterrow">
+        <span class="chip on">全部标签</span>
+        <span class="chip">模特</span>
+        <span class="spacer"></span>
+        <span class="count num">1,284 部作品</span>
+      </div>
+
+      <div class="masonry" style="padding-bottom:96px;">
+        <div class="card">
+          <img class="ph" src="../mock/cover-6.jpg" style="aspect-ratio:2/3;">
+          <div class="t serif">Attractive</div><div class="m">斉藤里奈 · 128 张</div>
+        </div>
+        <div class="card">
+          <img class="ph" src="../mock/cover-2.jpg" style="aspect-ratio:3/4;">
+          <div class="t serif">ちょっと待ってて</div><div class="m">瀬戸環奈 · 104 张</div>
+        </div>
+        <div class="card">
+          <img class="ph" src="../mock/cover-3.jpg" style="aspect-ratio:2/3;">
+          <div class="t serif">Summer Remains</div><div class="m">森雏子 · 86 张</div>
+        </div>
+        <div class="card">
+          <img class="ph" src="../mock/cover-7.jpg" style="aspect-ratio:3/4;">
+          <div class="t serif">Pure &amp; Simple</div><div class="m">大橋未来 · 74 张</div>
+        </div>
+        <div class="card">
+          <img class="ph" src="../mock/cover-4.jpg" style="aspect-ratio:2/3;">
+          <div class="t serif">First Light</div><div class="m">美澄寧々 · 92 张</div>
+        </div>
+        <div class="card">
+          <img class="ph" src="../mock/cover-8.jpg" style="aspect-ratio:3/4;">
+          <div class="t serif">Afterglow</div><div class="m">伊织 · 66 张</div>
+        </div>
+      </div>
+
+      <div id="tabbar-slot" data-tab="collections"></div>
+    </div>
+  </div>
+
+  <aside id="notes" class="notes"></aside>
+</div>
+
+<script src="pages.js"></script>
+<script>const PAGE_ID = 's2-collections';</script>
+<script src="ui.js"></script>
+<script>
+  document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = ICONS[el.dataset.icon]; });
+</script>
+</body>
+</html>

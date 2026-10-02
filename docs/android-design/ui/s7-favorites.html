@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S7 · 收藏 — Photo Collection Android</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<div id="pagebar" class="pagebar"></div>
+
+<div class="stage">
+  <div class="phone"><div class="notch"></div>
+    <div class="screen dark">
+      <div id="statusbar-slot"></div>
+
+      <div class="appbar">
+        <span class="wordmark serif">收藏</span>
+        <span class="actions"><span data-icon="copy"></span></span>
+      </div>
+
+      <div class="seg">
+        <div class="s on">照片<span class="n">284</span></div>
+        <div class="s">写真<span class="n">12</span></div>
+        <div class="s">模特<span class="n">5</span></div>
+      </div>
+
+      <div class="grid3">
+        <img class="ph sel" src="../mock/hero.jpg">
+        <img class="ph" src="../mock/cover-2.jpg">
+        <img class="ph" src="../mock/cover-3.jpg">
+        <img class="ph" src="../mock/cover-4.jpg">
+        <img class="ph" src="../mock/cover-5.jpg">
+        <img class="ph" src="../mock/cover-6.jpg">
+        <img class="ph" src="../mock/cover-7.jpg">
+        <img class="ph" src="../mock/cover-8.jpg">
+        <img class="ph" src="../mock/cover-9.jpg">
+      </div>
+
+      <div id="tabbar-slot" data-tab="favorites"></div>
+    </div>
+  </div>
+
+  <aside id="notes" class="notes"></aside>
+</div>
+
+<script src="pages.js"></script>
+<script>const PAGE_ID = 's7-favorites';</script>
+<script src="ui.js"></script>
+<script>
+  document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = ICONS[el.dataset.icon]; });
+</script>
+</body>
+</html>

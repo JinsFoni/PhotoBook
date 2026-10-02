@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S3 · 写真详情 — Photo Collection Android</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<div id="pagebar" class="pagebar"></div>
+
+<div class="stage">
+  <div class="phone"><div class="notch"></div>
+    <div class="screen light">
+      <div id="statusbar-slot"></div>
+
+      <div class="appbar">
+        <span class="actions" style="color:var(--ink)"><span data-icon="back"></span></span>
+        <span class="actions">
+          <span data-icon="heart"></span>
+          <span data-icon="download"></span>
+        </span>
+      </div>
+
+      <div class="detail-head">
+        <div class="crumbs"><span>COLLECTION</span><i class="dot"></i><span class="num">No.059</span></div>
+        <h1 class="serif">Attractive</h1>
+        <div class="byline">
+          <span class="model serif">斉藤 里奈</span>
+          <span class="date num">2025.09.17</span>
+        </div>
+        <div class="tagrow">
+          <span class="chip on">#Fashion</span>
+          <span class="chip">#Portrait</span>
+          <span class="chip">#Studio</span>
+        </div>
+      </div>
+
+      <div class="photowall">
+        <img class="p" src="../mock/hero.jpg" style="aspect-ratio:2/3;">
+        <img class="p" src="../mock/cover-9.jpg" style="aspect-ratio:3/4;">
+        <img class="p" src="../mock/cover-2.jpg" style="aspect-ratio:2/3;">
+        <img class="p" src="../mock/cover-5.jpg" style="aspect-ratio:3/4;">
+        <img class="p" src="../mock/cover-3.jpg" style="aspect-ratio:2/3;">
+        <img class="p" src="../mock/cover-7.jpg" style="aspect-ratio:3/4;">
+      </div>
+
+      <div id="tabbar-slot" style="display:none" data-tab="collections"></div>
+    </div>
+  </div>
+
+  <aside id="notes" class="notes"></aside>
+</div>
+
+<script src="pages.js"></script>
+<script>const PAGE_ID = 's3-detail';</script>
+<script src="ui.js"></script>
+<script>
+  document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = ICONS[el.dataset.icon]; });
+</script>
+</body>
+</html>

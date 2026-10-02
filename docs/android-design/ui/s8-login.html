@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S8 · 添加服务器 / 登录 — Photo Collection Android</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<div id="pagebar" class="pagebar"></div>
+
+<div class="stage">
+  <div class="phone"><div class="notch"></div>
+    <div class="screen light">
+      <div id="statusbar-slot"></div>
+
+      <div class="login-wrap">
+        <div class="login-mark">
+          <div class="wm serif">Photo Collection</div>
+          <div class="wm-sub">DIGITAL ARCHIVE</div>
+        </div>
+
+        <div class="field">
+          <label>服务器地址</label>
+          <div class="input focus">https://photos.example.com</div>
+        </div>
+        <div class="field">
+          <label>用户名</label>
+          <div class="input">admin</div>
+        </div>
+        <div class="field">
+          <label>密码</label>
+          <div class="input err">••••••••</div>
+          <div class="hint">用户名或密码不正确</div>
+        </div>
+
+        <div class="btn-primary">连接并登录</div>
+
+        <div class="login-foot">
+          数据仅保存在你的 NAS 服务器<br>
+          支持自签名证书 · 可在设置中开启信任
+        </div>
+      </div>
+
+      <div id="tabbar-slot" style="display:none" data-tab="explore"></div>
+    </div>
+  </div>
+
+  <aside id="notes" class="notes"></aside>
+</div>
+
+<script src="pages.js"></script>
+<script>const PAGE_ID = 's8-login';</script>
+<script src="ui.js"></script>
+<script>
+  document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = ICONS[el.dataset.icon]; });
+</script>
+</body>
+</html>

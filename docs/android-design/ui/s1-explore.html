@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S1 · 发现 — Photo Collection Android</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<div id="pagebar" class="pagebar"></div>
+
+<div class="stage">
+  <div class="phone"><div class="notch"></div>
+    <div class="screen light">
+      <div id="statusbar-slot"></div>
+
+      <div class="appbar">
+        <span class="wordmark serif">Photo Collection</span>
+        <span class="actions">
+          <span data-icon="search"></span>
+          <span data-icon="sort"></span>
+        </span>
+      </div>
+
+      <div class="hero">
+        <img src="../mock/cover-1.jpg" alt="">
+        <div class="veil"></div>
+        <div class="hero-fav"><span data-icon="heart"></span></div>
+        <div class="hero-txt">
+          <div class="kick">FEATURED · 精选</div>
+          <h1 class="serif">Attractive</h1>
+          <div class="hero-meta"><span>斉藤里奈</span><i class="dot"></i><span class="num">128 Photos</span><i class="dot"></i><span class="num">2025.09</span></div>
+        </div>
+      </div>
+      <div class="pager"><i class="on"></i><i></i><i></i><i></i></div>
+
+      <div class="section-head">
+        <h2 class="serif">最新入库</h2><a href="#">查看全部</a>
+      </div>
+      <div class="grid2" style="padding-bottom:96px;">
+        <div class="card"><img class="ph" src="../mock/cover-2.jpg"><div class="t serif">ちょっと待ってて</div><div class="m">瀬戸環奈 · 104 张</div></div>
+        <div class="card"><img class="ph" src="../mock/cover-3.jpg"><div class="t serif">Summer Remains</div><div class="m">森雏子 · 86 张</div></div>
+        <div class="card"><img class="ph" src="../mock/cover-4.jpg"><div class="t serif">First Light</div><div class="m">美澄寧々 · 92 张</div></div>
+        <div class="card"><img class="ph" src="../mock/cover-5.jpg"><div class="t serif">Solitude</div><div class="m">瑠川優里 · 118 张</div></div>
+      </div>
+
+      <div id="tabbar-slot" data-tab="explore"></div>
+    </div>
+  </div>
+
+  <aside id="notes" class="notes"></aside>
+</div>
+
+<script src="pages.js"></script>
+<script>
+  const PAGE_ID = 's1-explore';
+</script>
+<script src="ui.js"></script>
+<script>
+  document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = ICONS[el.dataset.icon]; });
+</script>
+</body>
+</html>

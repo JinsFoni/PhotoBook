@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S4 · 灯箱 — Photo Collection Android</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<div id="pagebar" class="pagebar"></div>
+
+<div class="stage">
+  <div class="phone"><div class="notch"></div>
+    <div class="screen light lightbox-screen">
+      <div class="lb-full">
+        <img src="../mock/hero.jpg" alt="">
+      </div>
+
+      <div class="lb-top">
+        <span data-icon="close"></span>
+        <span class="idx num">12 / 128</span>
+        <span data-icon="settings"></span>
+      </div>
+
+      <div class="lb-bottom">
+        <div class="lb-title serif">Attractive</div>
+        <div class="lb-sub">斉藤里奈 · <span class="num">059.jpg</span></div>
+        <div class="lb-actions">
+          <div class="act faved">
+            <span data-icon="heartFill"></span>
+            已收藏
+          </div>
+          <div class="act">
+            <span data-icon="download"></span>
+            下载原图
+          </div>
+          <div class="act dim">
+            <span data-icon="copy"></span>
+            复制
+          </div>
+        </div>
+      </div>
+
+      <div id="tabbar-slot" style="display:none" data-tab="collections"></div>
+    </div>
+  </div>
+
+  <aside id="notes" class="notes"></aside>
+</div>
+
+<script src="pages.js"></script>
+<script>const PAGE_ID = 's4-lightbox';</script>
+<script src="ui.js"></script>
+<script>
+  document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = ICONS[el.dataset.icon]; });
+</script>
+</body>
+</html>

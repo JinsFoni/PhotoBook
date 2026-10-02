@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photo Collection — Android UI 设计总览</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#17181a;
+    font-family:-apple-system,"PingFang SC","Noto Sans SC",sans-serif;
+    color:#c9cbcf; min-height:100vh;
+  }
+  .wrap { max-width:1120px; margin:0 auto; padding:72px 28px 110px; }
+  h1 {
+    font-family:Georgia,"Songti SC",serif; font-size:42px; font-weight:400;
+    color:#f2f2f0; letter-spacing:-0.5px;
+  }
+  .sub { font-size:14.5px; color:#8a8d92; margin:14px 0 8px; line-height:1.75; max-width:640px; }
+  .legend { display:flex; gap:14px; margin:26px 0 44px; flex-wrap:wrap; }
+  .legend i {
+    font-style:normal; font-size:12.5px; padding:6px 14px; border-radius:999px;
+    border:1px solid #33353a; color:#9a9da3;
+  }
+  .legend i b { color:#e0455a; font-weight:600; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:20px; }
+  .card {
+    display:block; text-decoration:none; background:#1d1e22; border:1px solid #2a2b2f;
+    border-radius:12px; padding:26px 26px 22px; transition:border-color .15s, transform .15s;
+  }
+  .card:hover { border-color:#55575e; transform:translateY(-3px); }
+  .no { font-size:11px; letter-spacing:2.5px; color:#e0455a; margin-bottom:12px; }
+  .name { font-size:19px; color:#eceef0; font-weight:600; margin-bottom:9px; }
+  .name .serif { font-family:Georgia,serif; font-weight:400; }
+  .desc { font-size:13.5px; color:#8a8d92; line-height:1.7; }
+  .tags { margin-top:16px; display:flex; gap:8px; flex-wrap:wrap; }
+  .tags i {
+    font-style:normal; font-size:11px; padding:3px 11px; border-radius:999px;
+    border:1px solid #33353a; color:#9a9da3;
+  }
+  .foot { margin-top:60px; padding-top:26px; border-top:1px solid #26272b;
+    font-size:12.5px; color:#6e7276; line-height:1.9; }
+  .foot b { color:#a3a6ac; font-weight:600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Photo Collection</h1>
+  <p class="sub">Android 客户端 · UI 设计稿 V1。继承 Web 端设计语言 —— <b style="color:#d7d9dc">Editorial / Minimal / Digital Archive</b>:无阴影 hairline 分层、衬线刊头、绯红点缀、全站 2/3 竖幅。每屏为独立页面,右上角可切换深/浅主题。</p>
+
+  <div class="legend">
+    <i><b>●</b> Light = 白磁 Editorial</i>
+    <i><b>●</b> Dark = 黑 galerie</i>
+    <i><b>●</b> 灯箱 = 双主题一致纯黑</i>
+  </div>
+
+  <div class="grid">
+    <a class="card" href="ui/s1-explore.html">
+      <div class="no">S1 · LIGHT</div>
+      <div class="name serif">发现</div>
+      <div class="desc">全幅精选 hero + 渐变纱衬线刊头,进度线绯红;最新入库 2 列网格。</div>
+      <div class="tags"><i>精选轮播</i><i>2 列卡片</i><i>Hero 436dp</i></div>
+    </a>
+    <a class="card" href="ui/s2-collections.html">
+      <div class="no">S2 · DARK</div>
+      <div class="name serif">写真列表</div>
+      <div class="desc">2 列瀑布混排 2/3 与 3/4 比例;胶囊筛选行 + tabular 计数。</div>
+      <div class="tags"><i>瀑布流</i><i>筛选 Chip</i><i>画廊模式</i></div>
+    </a>
+    <a class="card" href="ui/s3-detail.html">
+      <div class="no">S3 · LIGHT</div>
+      <div class="name serif">写真详情</div>
+      <div class="desc">眉线序号 → 衬线大标题 → 模特/日期 → 标签胶囊 → 2 列照片墙。</div>
+      <div class="tags"><i>刊头排版</i><i>照片墙</i><i>收藏/下载</i></div>
+    </a>
+    <a class="card" href="ui/s4-lightbox.html">
+      <div class="no">S4 · 沉浸层</div>
+      <div class="name serif">灯箱</div>
+      <div class="desc">纯黑全屏,左右滑动 + 双指缩放;顶栏序号,底栏收藏/下载/复制。</div>
+      <div class="tags"><i>12 / 128</i><i>chrome 显隐</i><i>渐变纱</i></div>
+    </a>
+    <a class="card" href="ui/s5-models.html">
+      <div class="no">S5 · DARK</div>
+      <div class="name serif">模特列表</div>
+      <div class="desc">2/3 竖幅头像即信息:姓名衬线 + 作品数统计,全部/已收藏筛选。</div>
+      <div class="tags"><i>2 列头像</i><i>统计行</i></div>
+    </a>
+    <a class="card" href="ui/s6-model.html">
+      <div class="no">S6 · LIGHT</div>
+      <div class="name serif">模特详情</div>
+      <div class="desc">沉浸式头图上叠状态栏与毛玻璃浮钮;简介 + 横滑写真作品列。</div>
+      <div class="tags"><i>头图 436dp</i><i>毛玻璃浮钮</i><i>横滑卡列</i></div>
+    </a>
+    <a class="card" href="ui/s7-favorites.html">
+      <div class="no">S7 · DARK</div>
+      <div class="name serif">收藏</div>
+      <div class="desc">照片/写真/模特三段 Tab,绯红下划线;3 列方图 + 长按多选。</div>
+      <div class="tags"><i>三段 Tab</i><i>方图 3 列</i><i>批量下载</i></div>
+    </a>
+    <a class="card" href="ui/s8-login.html">
+      <div class="no">S8 · LIGHT</div>
+      <div class="name serif">添加服务器 / 登录</div>
+      <div class="desc">衬线品牌刊头 + DIGITAL ARCHIVE 眉线;内联错误提示,自签证书说明。</div>
+      <div class="tags"><i>服务器地址</i><i>错误态</i><i>NAS 说明</i></div>
+    </a>
+  </div>
+
+  <div class="foot">
+    <b>设计规格</b>:docs/android-design/design.md(token 级色彩/字体/间距定义,可直接映射 Compose)<br>
+    <b>实现栈</b>:Kotlin + Jetpack Compose + Coil + Retrofit · 底部 4 Tab · Material3 无动态取色<br>
+    <b>图片资源</b>:mock/ 下 10 张图来自本地 media 库,仅作设计稿展示
+  </div>
+</div>
+</body>
+</html>
