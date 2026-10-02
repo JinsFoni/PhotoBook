@@ -14,6 +14,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from pathlib import Path
 
 from .. import media, settings_store
 from ...db import Collection, HarvestHistory, HarvestJob
@@ -152,10 +153,14 @@ def _run_job(job_id: int) -> None:
     s = SessionLocal()
     library_root = None
     archive_tmp = None
+    serial: int | None = None
+    archive_file: Path | None = None   # 压缩包落点(下载开始前赋值)
+    archive_done = False               # 只有下载完整结束才允许删包
     try:
         job = s.get(HarvestJob, job_id)
         if not job or job.status not in ("queued", "failed"):
             return
+        serial = job.serial
         job.status = "parsing"
         job.started_at = _now()
         job.updated_at = job.started_at
@@ -240,6 +245,7 @@ def _run_job(job_id: int) -> None:
                                  max_bytes=4 * 1024**3,
                                  on_progress=progress,
                                  stream_key=job_id)
+        archive_done = True  # SHA256 已过, 此后失败可删包(失败重试会重新下载)
 
         # 6. 解压 + 归档
         work_dir = archive_tmp / f"work-{job.serial}"
@@ -309,27 +315,74 @@ def _run_job(job_id: int) -> None:
             log.warning("job #%s: stale thread exception ignored (token revoked): %s",
                         job_id, str(e)[:120])
     finally:
-        # 清理:压缩包与临时工作目录一律删除(不保留)。
+        # 清理本次运行产物: work 目录一律删; 压缩包只在下载完整后才删
+        # (中断的包删了就白下, 重试还能续传)。*.part 一律保留 — 失败重试的
+        # 断点续传基础, 孤儿由 _prune_tmp 按期兑底。旧版在这里无差别 glob
+        # 删除, 把续传功能静默废掉了(#127 391MB 白下)。
         # 僵尸防护: token 已被看门狗撤销 → 新运行可能正在跑同一任务,
-        # 旧线程不得清理(*.part 是新运行的续传基础)。
-        import shutil
+        # 旧线程不得清理(*.part / 半截包是新运行的续传基础)。
         if _run_tokens.get(job_id) == token:
             try:
-                if archive_tmp and archive_tmp.exists():
-                    for p in archive_tmp.glob("*.part"):
-                        p.unlink(missing_ok=True)
-                    for p in archive_tmp.glob("*.rar"):
-                        p.unlink(missing_ok=True)
-                    for p in archive_tmp.glob("*.zip"):
-                        p.unlink(missing_ok=True)
-                    for d in archive_tmp.glob("work-*"):
-                        shutil.rmtree(d, ignore_errors=True)
+                _cleanup_run(archive_tmp, serial,
+                             archive_file if archive_done else None)
+                _prune_tmp(archive_tmp or (library_root / "_tmp" if library_root else None))
             except Exception:
                 pass
             _run_tokens.pop(job_id, None)
         else:
             log.warning("job #%s: stale thread exited, cleanup skipped", job_id)
         s.close()
+
+
+def _cleanup_run(archive_tmp, serial: int | None,
+                 archive_file: Path | None) -> None:
+    """清理一次任务运行的产物(仅本任务的, 不碰其他任务的续传文件)。
+
+    - work-{serial} 目录: 一律删(解压产物, 归档后已无价值)
+    - 本任务下载完的压缩包: 删(已入库, 留着只占空间)
+    - *.part / 未完成包: 保留 — 重试的断点续传基础
+    """
+    import shutil
+    if not archive_tmp:
+        return
+    if serial is not None:
+        shutil.rmtree(archive_tmp / f"work-{serial}", ignore_errors=True)
+    if archive_file:
+        archive_file.unlink(missing_ok=True)
+
+
+def _prune_tmp(archive_tmp) -> None:
+    """_tmp 孤儿兑底: 只清无主的工作目录(>7 天)与零字节 .part。
+
+    目录名里的运行标记(work-<serial>)不带时间, 用目录 mtime 判岁数;
+    有主(存在对应任务记录且运行中)的绝不碰。保留一切可续传的 .part。
+    """
+    import shutil
+    if not archive_tmp:
+        return
+    s = SessionLocal()
+    try:
+        active_serials = set(s.scalars(select(HarvestJob.serial).where(
+            HarvestJob.status.in_(ACTIVE_JOB_STATES))).all())
+    finally:
+        s.close()
+    now = datetime.now(timezone.utc).timestamp()
+    try:
+        for d in archive_tmp.glob("work-*"):
+            try:
+                mtime = d.stat().st_mtime
+            except OSError:
+                continue
+            if d.name not in {f"work-{x}" for x in active_serials} and now - mtime > 7 * 86400:
+                shutil.rmtree(d, ignore_errors=True)
+        for p in archive_tmp.glob("*.part"):
+            try:
+                if p.stat().st_size == 0:
+                    p.unlink(missing_ok=True)
+            except OSError:
+                continue
+    except Exception:
+        log.exception("prune _tmp failed")
 
 
 def _recover_and_watchdog() -> None:
