@@ -32,6 +32,8 @@ import dev.jinsfoni.photobook.ui.components.photoClickable
 import dev.jinsfoni.photobook.ui.icons.IconWidths
 import dev.jinsfoni.photobook.ui.icons.SettingsIcon
 import dev.jinsfoni.photobook.ui.icons.StrokeIcon
+import dev.jinsfoni.photobook.ui.screens.collections.CollectionsScreen
+import dev.jinsfoni.photobook.ui.screens.explore.ExploreScreen
 import dev.jinsfoni.photobook.ui.nav.GlassTabBar
 import dev.jinsfoni.photobook.ui.nav.PhotoTab
 import kotlinx.coroutines.launch
@@ -44,6 +46,7 @@ import kotlinx.coroutines.launch
 fun MainShell(
     hazeState: HazeState,
     onThemeCycle: () -> Unit,
+    onOpenCollection: (String) -> Unit = {},
 ) {
     val colors = LocalPhotoColors.current
     val pagerState = rememberPagerState(pageCount = { PhotoTab.entries.size })
@@ -57,7 +60,14 @@ fun MainShell(
                 // 收雪:页面内容进入 haze,玻璃底栏取它做磨砂
                 .hazeSource(hazeState),
         ) { page ->
-            PlaceholderScreen(PhotoTab.entries[page])
+            when (PhotoTab.entries[page]) {
+                PhotoTab.EXPLORE -> ExploreScreen(onOpenCollection = onOpenCollection)
+                PhotoTab.COLLECTIONS -> CollectionsScreen(
+                    initialTag = null,
+                    onOpenCollection = onOpenCollection,
+                )
+                else -> PlaceholderScreen(PhotoTab.entries[page])
+            }
         }
 
         // 右上角临时主题切换按钮(悬浮,白描边图标,适配沉浸图区)
