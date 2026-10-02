@@ -142,20 +142,18 @@ body {
 .appbar .actions { display:flex; gap:20px; color:var(--ink2); align-items:center; }
 .appbar .actions svg { display:block; }
 
-/* ---------- 悬浮导航栏 · 液态玻璃(iOS 同款光学模型) ----------
-   与磨砂的区别:中心几乎透明清晰(blur 3px),折射集中在边缘一圈
-   (7px 透镜环:feDisplacementMap + mask 环带),外围套镜面高光环 */
+/* ---------- 悬浮导航栏 · 液态玻璃(整栏均匀薄玻璃) ----------
+   折射 + 薄磨砂整栏均匀作用,无任何内外环带分区 */
 .tabbar {
   position:absolute; left:14px; right:14px; bottom:20px; height:64px; z-index:6;
   background:var(--bar-bg);
-  /* 中心:薄玻璃,保透 */
-  backdrop-filter:blur(3px) saturate(165%) brightness(1.08);
-  -webkit-backdrop-filter:blur(3px) saturate(165%) brightness(1.08);
+  backdrop-filter:url(#liquid-glass) blur(3px) saturate(165%) brightness(1.08);
+  -webkit-backdrop-filter:url(#liquid-glass) blur(3px) saturate(165%) brightness(1.08);
 }
-@supports (backdrop-filter: url(#liquid-glass)) {
+@supports not (backdrop-filter: url(#liquid-glass)) {
   .tabbar {
-    backdrop-filter:url(#liquid-glass) blur(3px) saturate(165%) brightness(1.08);
-    -webkit-backdrop-filter:url(#liquid-glass) blur(3px) saturate(165%) brightness(1.08);
+    backdrop-filter:blur(3px) saturate(165%) brightness(1.08);
+    -webkit-backdrop-filter:blur(3px) saturate(165%) brightness(1.08);
   }
 }
 .tabbar {
@@ -168,17 +166,6 @@ body {
     inset 0 0 14px var(--glass-glow);
   display:flex; padding:6px;
   overflow:hidden;
-}
-/* 透镜边缘环:只叠折射扭曲,磨砂/提亮与中心同参数(视觉统一) */
-.tabbar::before {
-  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
-  padding:7px; box-sizing:border-box;
-  backdrop-filter:url(#liquid-glass);
-  -webkit-backdrop-filter:url(#liquid-glass);
-  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite:xor;
-  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite:exclude;
 }
 /* 镜面高光环 + 斜向流光 */
 .tabbar::after {
