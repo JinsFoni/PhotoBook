@@ -878,8 +878,8 @@ window.PC = (function () {
         under.dataset.ready = "true";
         /* 旧帧冻结问题: 主图还压着上一张旧图而 2400 迟迟不到时,
            画面是"卡住的旧图"。给热路径 120ms 宽限(缓存命中时硬切
-           已完成, 不折腾); 超时仍未上屏 → 淡出旧帧露出模糊垫底,
-           "由虚到实"替代冻结帧(Immich 多层渐显思路) */
+           已完成, 不折腾); 超时仍未上屏 → 淡出旧帧露出垫底,
+           替代冻结帧(Immich 多层渐显思路) */
         setTimeout(function () {
           if (seq !== lbSeq || lbShownUrl === url) return;
           if (el.dataset.zoom === "true") return;
@@ -902,10 +902,10 @@ window.PC = (function () {
       img.dataset.ready = "true";
       img.dataset.full = "true"; /* LB_W 即终档, 免升级 */
       lbShownUrl = url;
-      /* 主图完全不透明后再撤垫底层: 它比主图大 1.2% 且带 blur,
-         一直压在底下会露出模糊光晕。350ms > 主图 300ms 淡入,
-         撤的过程主图已完整覆盖, 无缝。若 2400 加载失败, 垫底层
-         留在原地 → 优雅降级为模糊 900 图而非旧图/空屏 */
+      /* 主图完全不透明后再撤垫底层: 垫底与主图 contain 矩形严格重合
+         (同 URL 同比例), 压在底下不会露边; 但持续叠着会让已就绪的
+         主图被缩略图重采样多合成一层, 350ms 后撤掉最干净。
+         若 2400 加载失败, 垫底层留在原地 → 优雅降级为 900 图而非旧图/空屏 */
       setTimeout(function () {
         if (under.dataset.src === uSrc) under.dataset.ready = "false";
       }, 350);

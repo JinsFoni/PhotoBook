@@ -1204,31 +1204,46 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .hero__stage { position: absolute; inset: 0; }
 
 /* 竖图全宽横幅的完整呈现方案:前景 contain 整张显示(不裁切);
-   背景同图放大模糊压暗,填补两侧空白(影楼画册常用) */
+   背景同图放大模糊压暗,填补两侧空白(影楼画册常用)。
+   前景拆两层: .hero__fg 定框(半透明底色铺满, 永不缩放 —— 缩层框会
+   露出深色边框/呼吸感), .hero__img 只在框内做照片缓落缩放;
+   照片缩放必须 ≤1(从里长到满), >1 会把亮边扫出旧图矩形外成白晕 */
 .hero__bg,
-.hero__img {
+.hero__fg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   opacity: 0;
-  transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
+  transition: opacity 620ms var(--ease);
 }
 
 .hero__bg {
   object-fit: cover;
   transform: scale(1.15);
   filter: blur(46px) brightness(0.55) saturate(1.12);
+  transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
 }
 
-.hero__img {
-  object-fit: contain;
+.hero__fg {
   background: rgba(8, 9, 10, 0.42); /* 图比横幅窄时透出的底色与背景自然融合 */
-  transform: scale(1.015);
+}
+
+.hero__fg .hero__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: scale(0.985);
+  transition: transform 1400ms var(--ease);
 }
 
 .hero__bg[data-active="true"],
-.hero__img[data-active="true"] { opacity: 1; transform: none; }
+.hero__fg[data-active="true"] { opacity: 1; transform: none; }
+.hero__fg[data-active="true"] .hero__img { transform: none; }
+/* 离场层随淡化从 1 缩回 0.985(基础规则): 与入场层 0.985→1 互为镜像,
+   双向 settle 即旧版手感; 缩小方向不外溢, 露出的缝隙是同色底+
+   模糊背景, 不会出现黑框或亮晕 */
 
 .hero__scrim {
   position: absolute;
@@ -1841,7 +1856,10 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lightbox__under {
   /* 垫底层(Immich thumbnail 层思路): 900 档网格图同 URL 必命中缓存,
      开灯箱/切图瞬间先上屏撑住画面, 主图 2400 就绪后淡入盖住它。
-     blur(2px) + 轻放大: 掩盖 900→视口的插值柔边, 呈现"由虚到实"的过渡 */
+     不加 blur/轻放大: 任何超出主图 contain 矩形的绘制(1.012 放大的
+     实边或模糊外溢)都会在纯色底上亮出一圈白晕, 换图后 200~350ms
+     内最明显。垫底层与主图同 URL 同比例, stage 内 contain 结果
+     完全重合, 边缘零外溢; 代价仅是大屏上垫底可见的短暂瞬间略软 */
   position: absolute;
   inset: 0;
   margin: auto;
@@ -1850,8 +1868,6 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   width: auto;
   height: auto;
   object-fit: contain;
-  filter: blur(2px);
-  transform: scale(1.012);
   opacity: 0;
   transition: opacity 200ms var(--ease);
   pointer-events: none;
@@ -1859,12 +1875,6 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lightbox__under[data-ready="true"] { opacity: 1; }
 /* 放大模式: 主图内联尺寸可能超出 stage, 垫底层隐藏避免边缘穿帮 */
 .lightbox[data-zoom="true"] .lightbox__under { opacity: 0 !important; }
-
-/* blur 模式下氛围层(backdrop blur46+scale1.12)已把同图玻璃化铺满全屏;
-   垫底层若再保留自己的 blur+scale1.012, 同一源图两层各自重采样,
-   换图时边缘光晕会呈抖动感。此模式下关掉自身模糊与放大,
-   边缘与主图严格重合(仅作主图未就绪时的画面保底) */
-.lightbox[data-bg="blur"] .lightbox__under { filter: none; transform: none; }
 
 .lightbox__nav {
   position: absolute;

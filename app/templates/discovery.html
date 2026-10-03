@@ -8,8 +8,12 @@
   <div class="hero__stage{% if shell_immersive %} hero__stage--immersive{% endif %}" data-hero-stage>
     <img class="hero__bg" data-active="false" alt="" aria-hidden="true">
     <img class="hero__bg" data-active="false" alt="" aria-hidden="true">
-    <img class="hero__img" data-active="false" alt="">
-    <img class="hero__img" data-active="false" alt="">
+    <div class="hero__fg" data-active="false">
+      <img class="hero__img" alt="">
+    </div>
+    <div class="hero__fg" data-active="false">
+      <img class="hero__img" alt="">
+    </div>
   </div>
   <div class="hero__scrim"></div>
   <div class="hero__caption">
@@ -109,11 +113,15 @@
   if (!featured.length) return;
   var fi = 0, layer = 0, pending = 0;
   var bgs = document.querySelectorAll(".hero__bg");
-  var fgs = document.querySelectorAll(".hero__img");
+  var fgs = document.querySelectorAll(".hero__fg");
   var strip = document.querySelector("[data-sheet]");
   var BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
   bgs.forEach(function (l) { l.src = BLANK; });
-  fgs.forEach(function (l) { l.src = BLANK; l.setAttribute("aria-hidden", "true"); });
+  /* 双层前景: .hero__fg 定框层(底色+淡化), 内层 img 只做照片缓落缩放 */
+  fgs.forEach(function (fg) {
+    fg.setAttribute("aria-hidden", "true");
+    fg.querySelector(".hero__img").src = BLANK;
+  });
 
   /* 高清档(≤2400w)而非原图:完整显示且首屏快;
      前景 contain 完整呈现,背景同图模糊压暗填两侧 */
@@ -127,7 +135,7 @@
       if (token !== pending) return;
       var i = layer;
       bgs[i].src = img.src;
-      fgs[i].src = img.src;
+      fgs[i].querySelector(".hero__img").src = img.src;
       bgs.forEach(function (l) { l.dataset.active = "false"; });
       fgs.forEach(function (l) { l.dataset.active = "false"; });
       bgs[i].dataset.active = "true";
