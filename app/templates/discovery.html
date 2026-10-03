@@ -9,10 +9,10 @@
     <img class="hero__bg" data-active="false" alt="" aria-hidden="true">
     <img class="hero__bg" data-active="false" alt="" aria-hidden="true">
     <div class="hero__fg" data-active="false">
-      <img class="hero__img" alt="">
+      <div class="hero__clip"><img class="hero__img" alt=""></div>
     </div>
     <div class="hero__fg" data-active="false">
-      <img class="hero__img" alt="">
+      <div class="hero__clip"><img class="hero__img" alt=""></div>
     </div>
   </div>
   <div class="hero__scrim"></div>
@@ -117,7 +117,9 @@
   var strip = document.querySelector("[data-sheet]");
   var BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
   bgs.forEach(function (l) { l.src = BLANK; });
-  /* 双层前景: .hero__fg 定框层(底色+淡化), 内层 img 只做照片缓落缩放 */
+  /* 三层前景: .hero__fg 定框层(底色+淡化), .hero__clip 按照片宽高比
+     取 contain 矩形并裁切, 内层 img 在矩形内做 ≥1 的缓落缩放
+     (从微 zoom 落到满幅 —— 恒 ≥ 满幅故永不露上下缝, 溢出全被裁掉) */
   fgs.forEach(function (fg) {
     fg.setAttribute("aria-hidden", "true");
     fg.querySelector(".hero__img").src = BLANK;
@@ -134,12 +136,16 @@
     img.onload = function () {
       if (token !== pending) return;
       var i = layer;
+      var fg = fgs[i];
+      /* 裁切框按本图真实宽高比重定 contain 矩形(激活同帧生效, 无过渡) */
+      fg.querySelector(".hero__clip").style.setProperty(
+        "--ar", (img.naturalWidth / img.naturalHeight).toFixed(4));
+      fg.querySelector(".hero__img").src = img.src;
       bgs[i].src = img.src;
-      fgs[i].querySelector(".hero__img").src = img.src;
       bgs.forEach(function (l) { l.dataset.active = "false"; });
       fgs.forEach(function (l) { l.dataset.active = "false"; });
       bgs[i].dataset.active = "true";
-      fgs[i].dataset.active = "true";
+      fg.dataset.active = "true";
       layer = i === 0 ? 1 : 0;
     };
   }

@@ -1201,13 +1201,15 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   overflow: hidden;
   height: clamp(480px, 86vh, 960px);
 }
-.hero__stage { position: absolute; inset: 0; }
+.hero__stage { position: absolute; inset: 0; container-type: size; }
 
 /* 竖图全宽横幅的完整呈现方案:前景 contain 整张显示(不裁切);
    背景同图放大模糊压暗,填补两侧空白(影楼画册常用)。
-   前景拆两层: .hero__fg 定框(半透明底色铺满, 永不缩放 —— 缩层框会
-   露出深色边框/呼吸感), .hero__img 只在框内做照片缓落缩放;
-   照片缩放必须 ≤1(从里长到满), >1 会把亮边扫出旧图矩形外成白晕 */
+   前景拆三层: .hero__fg 定框(半透明底色铺满, 永不缩放 —— 缩层框会
+   露出深色边框/呼吸感), .hero__clip 按照片宽高比精确取 contain 矩形
+   并裁切, .hero__img 在矩形内做照片缓落缩放。缩放必须 ≥1(从微 zoom
+   缓落到满幅): <1 会让竖图的上下边离开横幅边缘, 切换时露出缝隙;
+   ≥1 的溢出全被 clip 吃掉, 亮边永远不会扫出 contain 矩形外成白晕 */
 .hero__bg,
 .hero__fg {
   position: absolute;
@@ -1229,21 +1231,34 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   background: rgba(8, 9, 10, 0.42); /* 图比横幅窄时透出的底色与背景自然融合 */
 }
 
-.hero__fg .hero__img {
+/* contain 矩形: 宽 = min(舞台宽, 舞台高×ar), 高按 ar 推导
+   (cqw/cqh 相对 .hero__stage 这个 size container)。竖图取全高、
+   横图取全宽, 一条公式同时覆盖; --ar 由 showHero 在图片载入时写入 */
+.hero__clip {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: min(100cqw, calc(100cqh * var(--ar, 2)));
+  aspect-ratio: var(--ar, 2);
+  overflow: hidden;
+}
+
+.hero__clip .hero__img {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  transform: scale(0.985);
+  object-fit: contain; /* 框随照片 ar 取, 实际不裁切; --ar 缺失时兜底不拉伸 */
+  transform: scale(1.015);
   transition: transform 1400ms var(--ease);
 }
 
 .hero__bg[data-active="true"],
 .hero__fg[data-active="true"] { opacity: 1; transform: none; }
 .hero__fg[data-active="true"] .hero__img { transform: none; }
-/* 离场层随淡化从 1 缩回 0.985(基础规则): 与入场层 0.985→1 互为镜像,
-   双向 settle 即旧版手感; 缩小方向不外溢, 露出的缝隙是同色底+
-   模糊背景, 不会出现黑框或亮晕 */
+/* 离场层随淡化从 1 涨回 1.015(基础规则): 与入场层 1.015→1 互为镜像,
+   双向 settle 即旧版手感; 两向都恒 ≥ 满幅, 上下永不露缝, 溢出全在
+   clip 之内, 不会出现黑框、缝隙或亮晕 */
 
 .hero__scrim {
   position: absolute;
