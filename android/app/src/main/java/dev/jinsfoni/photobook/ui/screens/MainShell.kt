@@ -93,17 +93,22 @@ fun MainShell(
             }
         }
 
-        // 右上角临时主题切换按钮(悬浮,白描边图标,适配沉浸图区)
-        Box(
-            Modifier
-                .align(Alignment.TopEnd)
-                .padding(
-                    top = WindowInsets.statusBars.asPaddingValues()
-                        .calculateTopPadding() + 10.dp,
-                    end = 18.dp,
-                )
+        // 右上角临时主题切换按钮(悬浮,白描边图标,适配沉浸图区)。
+        // 仅 EXPLORE/FAVORITES 页显示:COLLECTIONS 强制 dark,且放大镜在其 TopEnd 正下方,胶囊会盖住入口。
+        if (pagerState.currentPage == PhotoTab.EXPLORE.ordinal ||
+            pagerState.currentPage == PhotoTab.FAVORITES.ordinal
         ) {
-            ThemeCycleButton(onThemeCycle)
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(
+                        top = WindowInsets.statusBars.asPaddingValues()
+                            .calculateTopPadding() + 10.dp,
+                        end = 18.dp,
+                    )
+            ) {
+                ThemeCycleButton(onThemeCycle)
+            }
         }
 
         GlassTabBar(
