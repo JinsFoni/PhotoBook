@@ -60,13 +60,18 @@ fun MainShell(
                 // 收雪:页面内容进入 haze,玻璃底栏取它做磨砂
                 .hazeSource(hazeState),
         ) { page ->
-            when (PhotoTab.entries[page]) {
-                PhotoTab.EXPLORE -> ExploreScreen(onOpenCollection = onOpenCollection)
-                PhotoTab.COLLECTIONS -> CollectionsScreen(
-                    initialTag = null,
-                    onOpenCollection = onOpenCollection,
-                )
-                else -> PlaceholderScreen(PhotoTab.entries[page])
+            // haze capture 不含 modifier 链上 hazeSource 之前的绘制(如 background),
+            // 所以不透明底必须画在 source 内容**内部**:各屏不含 paper 底,
+            // 透明区域 blur 后仍透明,玻璃会透出自身阴影(灰色磨砂板观感)
+            Box(Modifier.fillMaxSize().background(colors.paper)) {
+                when (PhotoTab.entries[page]) {
+                    PhotoTab.EXPLORE -> ExploreScreen(onOpenCollection = onOpenCollection)
+                    PhotoTab.COLLECTIONS -> CollectionsScreen(
+                        initialTag = null,
+                        onOpenCollection = onOpenCollection,
+                    )
+                    else -> PlaceholderScreen(PhotoTab.entries[page])
+                }
             }
         }
 

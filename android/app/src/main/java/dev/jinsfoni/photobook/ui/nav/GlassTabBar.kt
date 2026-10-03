@@ -76,9 +76,10 @@ fun GlassTabBar(
                 HazeInput.Sources(hazeState),
                 HazeBlurStyle {
                     blurRadius(3.dp)
+                    noiseFactor(0f)
                     // 语义注意:backgroundColor 是"模糊层背后垫色",非叠加 tint;
                     // 垫半透明白会在深色内容上形成灰白过曝 —— 纱色改在下方 background() 叠加。
-                    backgroundColor(Color.Transparent)
+                    backgroundColor(colors.paper)
                     colorEffects(
                         listOf(
                             HazeColorEffect.colorFilter(
@@ -87,10 +88,12 @@ fun GlassTabBar(
                                         // CSS backdrop-filter: saturate(1.65) 标准矩阵
                                     // (亮度增益不做 —— 标量乘会削顶过曝,亮内容直接死白;
                                     //  提亮观感由上方 barBg 纱色承担)
+                                    // 各行和 = 1(白不变);B 行此前误写 1.192(≈saturate 1.2),
+                                    // 行和 0.564 → 白纸被染成缺蓝的 (251,255,144)「灰磨砂」
                                     floatArrayOf(
-                                            1.512f, -0.479f, -0.047f, 0f, 0f,
-                                            -0.149f, 1.184f, -0.036f, 0f, 0f,
-                                            -0.149f, -0.479f, 1.192f, 0f, 0f,
+                                            1.512f, -0.465f, -0.047f, 0f, 0f,
+                                            -0.138f, 1.185f, -0.047f, 0f, 0f,
+                                            -0.138f, -0.465f, 1.603f, 0f, 0f,
                                             0f, 0f, 0f, 1f, 0f,
                                         )
                                     )
