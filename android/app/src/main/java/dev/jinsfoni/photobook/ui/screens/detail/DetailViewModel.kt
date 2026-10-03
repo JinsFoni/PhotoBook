@@ -36,6 +36,12 @@ class DetailViewModel @Inject constructor(
     private var loadedSlug: String? = null
 
     fun load(slug: String) {
+        if (slug.isBlank()) {
+            // 空 slug 是路由误入:请求 GET collections/ 会被 307 重定向到列表接口,
+            // 详情 DTO 解码列表 JSON 抛 MissingFieldException 直接崩 — 拦在入口
+            _state.value = _state.value.copy(loading = false, error = "链接无效,请从列表重新进入")
+            return
+        }
         if (slug == loadedSlug && _state.value.detail != null) return
         viewModelScope.launch {
             try {

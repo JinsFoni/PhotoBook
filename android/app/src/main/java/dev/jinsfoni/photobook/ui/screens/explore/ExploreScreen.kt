@@ -48,6 +48,7 @@ import dev.jinsfoni.photobook.ui.models.DiscoverFeed
 @Composable
 fun ExploreScreen(
     onOpenCollection: (slug: String) -> Unit,
+    onOpenAllCollections: () -> Unit = {},
     vm: ExploreViewModel = hiltViewModel(),
 ) {
     val colors = LocalPhotoColors.current
@@ -61,6 +62,7 @@ fun ExploreScreen(
                 feed = feed,
                 refreshing = state.refreshing,
                 onOpenCollection = onOpenCollection,
+                onOpenAllCollections = onOpenAllCollections,
                 onRetry = vm::retry,
             )
             state.error != null -> Box(
@@ -115,6 +117,7 @@ private fun ExploreContent(
     feed: DiscoverFeed,
     refreshing: Boolean,
     onOpenCollection: (String) -> Unit,
+    onOpenAllCollections: () -> Unit,
     onRetry: () -> Unit,
 ) {
     val colors = LocalPhotoColors.current
@@ -140,7 +143,10 @@ private fun ExploreContent(
             dev.jinsfoni.photobook.ui.components.SectionHeader(
                 title = "最新入库",
                 actionText = "查看全部",
-                onAction = { onOpenCollection("") }, // 占位:M1 无全部列表入口,先开全部
+                // 全部列表 = 写真 tab(S2);不能传空 slug 开详情 ——
+                // 空 slug 会请求 GET collections/ 被 307 重定向到列表接口,
+                // 详情 DTO 解码列表 JSON 即崩(MissingFieldException)
+                onAction = onOpenAllCollections,
             )
         }
         if (feed.latest.isEmpty() && !refreshing) {

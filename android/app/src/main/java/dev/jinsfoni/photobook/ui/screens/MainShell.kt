@@ -51,6 +51,10 @@ fun MainShell(
     val colors = LocalPhotoColors.current
     val pagerState = rememberPagerState(pageCount = { PhotoTab.entries.size })
     val scope = rememberCoroutineScope()
+    // 「查看全部」跨页动作:发现页跳到写真 tab(S2 即全部列表)
+    val openAllCollections: () -> Unit = {
+        scope.launch { pagerState.animateScrollToPage(PhotoTab.COLLECTIONS.ordinal) }
+    }
 
     Box(Modifier.fillMaxSize().background(colors.paper)) {
         HorizontalPager(
@@ -65,7 +69,10 @@ fun MainShell(
             // 透明区域 blur 后仍透明,玻璃会透出自身阴影(灰色磨砂板观感)
             Box(Modifier.fillMaxSize().background(colors.paper)) {
                 when (PhotoTab.entries[page]) {
-                    PhotoTab.EXPLORE -> ExploreScreen(onOpenCollection = onOpenCollection)
+                    PhotoTab.EXPLORE -> ExploreScreen(
+                        onOpenCollection = onOpenCollection,
+                        onOpenAllCollections = openAllCollections,
+                    )
                     PhotoTab.COLLECTIONS -> CollectionsScreen(
                         initialTag = null,
                         onOpenCollection = onOpenCollection,
