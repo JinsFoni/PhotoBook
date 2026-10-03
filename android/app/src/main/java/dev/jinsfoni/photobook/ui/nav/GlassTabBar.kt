@@ -76,16 +76,21 @@ fun GlassTabBar(
                 HazeInput.Sources(hazeState),
                 HazeBlurStyle {
                     blurRadius(3.dp)
-                    backgroundColor(colors.barBg)
+                    // 语义注意:backgroundColor 是"模糊层背后垫色",非叠加 tint;
+                    // 垫半透明白会在深色内容上形成灰白过曝 —— 纱色改在下方 background() 叠加。
+                    backgroundColor(Color.Transparent)
                     colorEffects(
                         listOf(
                             HazeColorEffect.colorFilter(
                                 ColorFilter.colorMatrix(
                                     ColorMatrix(
-                                        floatArrayOf(
-                                            1.782f, 0f, 0f, 0f, 0f,
-                                            0f, 1.782f, 0f, 0f, 0f,
-                                            0f, 0f, 1.782f, 0f, 0f,
+                                        // CSS backdrop-filter: saturate(1.65) 标准矩阵
+                                    // (亮度增益不做 —— 标量乘会削顶过曝,亮内容直接死白;
+                                    //  提亮观感由上方 barBg 纱色承担)
+                                    floatArrayOf(
+                                            1.512f, -0.479f, -0.047f, 0f, 0f,
+                                            -0.149f, 1.184f, -0.036f, 0f, 0f,
+                                            -0.149f, -0.479f, 1.192f, 0f, 0f,
                                             0f, 0f, 0f, 1f, 0f,
                                         )
                                     )
@@ -94,7 +99,9 @@ fun GlassTabBar(
                         )
                     )
                 },
-            ),
+            )
+            // 玻璃纱色叠在模糊层之上(等同 CSS:backdrop-filter 之后元素 background)
+            .background(colors.barBg),
     ) {
         // 斜向流光(::after,115deg sheen)
         Box(
