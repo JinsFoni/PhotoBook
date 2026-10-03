@@ -186,3 +186,68 @@ def test_favorites_bad_type(client, token):
                     json={"type": "album", "key": "x", "added": True})
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "validation"
+
+
+# ---- models(列表/详情)----
+
+def test_models_list(client):
+    r = client.get("/api/mobile/models")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == len(data["items"])
+    if data["items"]:
+        m = data["items"][0]
+        for key in ("slug", "name", "avatar", "count", "photoCount", "featured"):
+            assert key in m, f"missing {key}"
+
+
+def test_models_featured_filter(client):
+    data = client.get("/api/mobile/models", params={"featured": "1"}).json()
+    assert all(m["featured"] for m in data["items"])
+
+
+def test_model_detail(client):
+    models = client.get("/api/mobile/models").json()["items"]
+    if not models:
+        pytest.skip("no seeded models")
+    slug = models[0]["slug"]
+    r = client.get(f"/api/mobile/models/{slug}")
+    assert r.status_code == 200
+    m = r.json()
+    assert m["slug"] == slug
+    assert {"slug", "name", "collections"} <= set(m)
+    for c in m["collections"]:
+        assert c["model_slug"] == slug
+
+
+def test_model_detail_not_found(client):
+    r = client.get("/api/mobile/models/does-not-exist")
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "not_found"
+
+
+# ---- search ----
+
+def test_search_empty_q(client):
+    data = client.get("/api/mobile/search", params={"q": "  "}).json()
+    assert data == {"q": "", "models": [], "collections": [], "tags": []}
+
+
+def test_search_by_collection_title(client):
+    cols = client.get("/api/mobile/collections").json()["items"]
+    if not cols:
+        pytest.skip("no seeded collections")
+    title = cols[0]["title"]
+    probe = title[:4] if len(title) >= 4 else title
+    data = client.get("/api/mobile/search", params={"q": probe}).json()
+    assert data["q"] == probe
+    assert any(c["slug"] == cols[0]["slug"] for c in data["collections"])
+    if data["collections"]:
+        for key in ("slug", "title", "coverThumb", "count"):
+            assert key in data["collections"][0]
+
+
+def test_search_tags_no_login_required(client):
+    data = client.get("/api/mobile/search", params={"q": "a"}).json()
+    assert isinstance(data["tags"], list)
+    assert len(data["tags"]) <= 8

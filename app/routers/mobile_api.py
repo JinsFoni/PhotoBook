@@ -248,6 +248,76 @@ async def mobile_collection_detail(slug: str, s: Session = Depends(get_db)):
     return payload
 
 
+# ---- models(列表/详情)-----------------------------------------------------
+
+@router.get("/models")
+async def mobile_models(s: Session = Depends(get_db),
+                        featured: str = Query("", pattern="^(|1)$")):
+    models = s.scalars(select(Model).where(Model.status == "published")
+                       .order_by(desc(Model.featured), Model.name)).all()
+    if featured:
+        models = [m for m in models if m.featured]
+    cols = _published_collections(s)
+    return {"items": [_model_payload(s, m, [c for c in cols if c.model_id == m.id])
+                      for m in models], "total": len(models)}
+
+
+@router.get("/models/{slug}")
+async def mobile_model_detail(slug: str, s: Session = Depends(get_db)):
+    m = s.scalar(select(Model).where(Model.slug == slug,
+                                     Model.status == "published"))
+    if not m:
+        raise ApiError("not_found", "Model not found", 404)
+    works = [c for c in _published_collections(s) if c.model_id == m.id]
+    payload = _model_payload(s, m, works)
+    payload["collections"] = [_collection_card(s, c) for c in works]
+    return payload
+
+
+# ---- search(复用 search_api 的匹配逻辑;返回 rel,客户端自拼 URL)----------
+
+@router.get("/search")
+async def mobile_search(q: str = Query(""), s: Session = Depends(get_db)):
+    q = q.strip()
+    if not q:
+        return {"q": "", "models": [], "collections": [], "tags": []}
+    like = q.lower()
+
+    models = s.scalars(select(Model).where(Model.status == "published")
+                       .order_by(Model.name)).all()
+    hit_models = [m for m in models
+                  if like in (m.name + " " + (m.stage_name or "") + " " +
+                              " ".join(t.name for t in m.tags) + " " +
+                              (m.agency or "")).lower()][:8]
+
+    cols = _published_collections(s)
+    hit_cols = [c for c in cols
+                if like in (c.title + " " +
+                            (c.model.name if c.model else "") + " " +
+                            " ".join(t.name for t in c.tags)).lower()][:10]
+
+    tags = s.scalars(select(Tag).order_by(Tag.name)).all()
+    hit_tags = [t.name for t in tags if like in t.name.lower()][:8]
+
+    def _model_card(m: Model) -> dict:
+        avatar = m.avatar_path
+        if not avatar:
+            for c in m.collections:
+                if c.photos:
+                    avatar = c.photos[0].filename
+                    break
+        return {"slug": m.slug, "name": m.name, "stage": m.stage_name or "",
+                "avatar": avatar, "thumb": (f"t/160/{avatar}.webp" if avatar else None),
+                "count": len(m.collections), "tags": [t.name for t in m.tags]}
+
+    return {
+        "q": q,
+        "models": [_model_card(m) for m in hit_models],
+        "collections": [_collection_card(s, c) for c in hit_cols],
+        "tags": hit_tags,
+    }
+
+
 # ---- favorites(读允许匿名,写需登录;复用 favorites 表)-------------------
 
 @router.get("/favorites")
