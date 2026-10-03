@@ -157,7 +157,7 @@ fun LightboxScreen(
                         .padding(bottom = 20.dp),
                 ) {
                     if (cur != null) {
-                        val key = "${detail.slug}#${cur.idx}"
+                        val key = "${detail.slug}:${cur.idx}"
                         val faved = vm.isPhotoFaved(key)
                         StrokeIcon(
                             HeartIcon,

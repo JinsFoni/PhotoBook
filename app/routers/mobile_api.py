@@ -25,7 +25,7 @@ from ..database import get_db
 
 router = APIRouter(prefix="/api/mobile")
 
-THUMB_W_CARD = 600    # 列表卡片 /t/600x/
+THUMB_W_CARD = 600    # 列表卡片 /t/600/
 THUMB_W_HERO = 900    # 详情头图 /t/900x/
 
 
@@ -352,7 +352,7 @@ async def mobile_favorites_resolve(s: Session = Depends(get_db),
                     photos.append({
                         "key": f"{c.slug}:{i}", "slug": c.slug, "idx": i,
                         "file": p.filename, "title": c.title,
-                        "thumb": f"t/{THUMB_W_CARD}x/{p.filename}.webp",
+                        "thumb": f"t/{THUMB_W_CARD}/{p.filename}.webp",
                     })
         out["photos"] = photos
     return out

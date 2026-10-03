@@ -88,7 +88,7 @@ class CollectionsRepository @Inject constructor(
         slug = slug,
         title = title,
         modelName = model_name,
-        // coverThumb 服务端已是 "t/600x/x.webp" 前缀 rel,直拼即可
+        // coverThumb 服务端已是 "t/600/x.webp" 前缀 rel,直拼即可
         imageUrl = coverThumb?.let { MediaUrls.fromPrefixed(base, it) },
         count = count,
         tags = tags,

@@ -37,6 +37,7 @@ import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.core.design.ThemeState
 import dev.jinsfoni.photobook.core.design.ThemeMode
+import dev.jinsfoni.photobook.ui.components.FavoriteButton
 import dev.jinsfoni.photobook.ui.components.CollectionCard
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
@@ -72,6 +73,7 @@ fun ModelDetailScreen(
         state.detail != null -> ModelDetailContent(
             state = state,
             onBack = onBack,
+            onToggleFavorite = vm::toggleFavorite,
             onOpenCollection = onOpenCollection,
         )
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -93,6 +95,7 @@ fun ModelDetailScreen(
 private fun ModelDetailContent(
     state: ModelDetailUiState,
     onBack: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onOpenCollection: (String) -> Unit,
 ) {
     val d = state.detail!!
@@ -129,15 +132,31 @@ private fun ModelDetailContent(
                             )
                         ),
                 )
-                // 返回钮(白字,沉浸区)
-                Box(
+                // 返回钮(白字,沉浸区)+ 右上收藏心(模特段 S7 唯一入口)
+                Row(
                     Modifier
+                        .fillMaxWidth()
                         .statusBarsPadding()
-                        .padding(start = 12.dp, top = 6.dp)
-                        .photoClickable(onBack)
-                        .padding(8.dp),
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    StrokeIcon(BackIcon, size = 22.dp, tint = Color.White, strokeWidth = IconWidths.THIN)
+                    Box(
+                        Modifier
+                            .photoClickable(onBack)
+                            .padding(8.dp),
+                    ) {
+                        StrokeIcon(BackIcon, size = 22.dp, tint = Color.White, strokeWidth = IconWidths.THIN)
+                    }
+                    Box(
+                        Modifier
+                            .background(Color.Black.copy(alpha = 0.28f), RoundedCornerShape(999.dp))
+                            .padding(6.dp),
+                    ) {
+                        FavoriteButton(
+                            isFavorite = state.faved,
+                            onToggle = onToggleFavorite,
+                        )
+                    }
                 }
                 // 名字压图
                 Column(

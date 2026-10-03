@@ -71,6 +71,7 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     onThemeCycle = { /* S9 前临时按钮由 MainShell 内部处理 */ },
                     onOpenCollection = { slug -> nav.navigate("detail/$slug") },
                     onOpenModel = { slug -> nav.navigate("model/$slug") },
+                    onOpenPhoto = { slug, idx -> nav.navigate("lightbox/$slug/$idx") },
                     onOpenSearch = { nav.navigate("search") },
                 )
             }

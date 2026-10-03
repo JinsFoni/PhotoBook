@@ -69,9 +69,9 @@ class FavoritesViewModelTest {
                    "tags":["studio"],"count":2,"photo_count":30,"featured":true,
                    "avatar":"media/models/m/avatar.jpg"}],
                    "collections":[{"id":2,"slug":"c","title":"C","model_slug":"m","model_name":"Aki",
-                   "cover":"/m/c/cover.jpg","coverThumb":"t/600x/c/cover.webp","tags":["x"],"count":9}],
+                   "cover":"/m/c/cover.jpg","coverThumb":"t/600/c/cover.webp","tags":["x"],"count":9}],
                    "photos":[{"key":"c:1","slug":"c","idx":1,"file":"p1.jpg",
-                   "title":"C","thumb":"t/600x/p1.jpg.webp"}]}""".replace("\n", "")
+                   "title":"C","thumb":"t/600/p1.jpg.webp"}]}""".replace("\n", "")
             )
         )
     }
@@ -84,8 +84,8 @@ class FavoritesViewModelTest {
         val s = vm.state.value
         assertEquals(1, s.models.size)
         assertEquals("Aki", s.models[0].name)
-        assertEquals("http://localhost:8000/t/600x/p1.jpg.webp", s.photos[0].thumbUrl)
-        assertEquals("http://localhost:8000/t/600x/c/cover.webp", s.collections[0].imageUrl)
+        assertEquals("http://localhost:8000/t/600/p1.jpg.webp", s.photos[0].thumbUrl)
+        assertEquals("http://localhost:8000/t/600/c/cover.webp", s.collections[0].imageUrl)
         assertEquals(1, server.requestCount)
         assertNull(s.error)
     }

@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -80,19 +82,24 @@ fun FavoritesScreen(
         ) {
             FavTab.entries.forEach { tab ->
                 val selected = tab == state.tab
-                Column(Modifier.photoClickable { vm.selectTab(tab) }) {
+                // IntrinsicSize.Min: Column 宽度 = 文字宽,底条才不会拓到整行把其他 Tab 挤出屏
+                Column(
+                    Modifier
+                        .width(IntrinsicSize.Min)
+                        .photoClickable { vm.selectTab(tab) },
+                ) {
                     Text(
                         tab.label,
                         style = if (selected) PhotoType.cardTitle else PhotoType.caption,
                         color = if (selected) colors.ink else colors.ink3,
-                        modifier = Modifier.padding(bottom = 5.dp),
                     )
                     Box(
                         Modifier
-                            .fillMaxWidth(if (selected) 1f else 0f)
+                            .padding(top = 5.dp)
+                            .fillMaxWidth()
                             .height(2.dp)
                             .clip(RoundedCornerShape(1.dp))
-                            .background(colors.accent)
+                            .background(if (selected) colors.accent else androidx.compose.ui.graphics.Color.Transparent)
                     )
                 }
             }

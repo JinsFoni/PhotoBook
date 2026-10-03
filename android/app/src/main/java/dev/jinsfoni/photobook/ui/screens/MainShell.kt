@@ -50,6 +50,7 @@ fun MainShell(
     onThemeCycle: () -> Unit,
     onOpenCollection: (String) -> Unit = {},
     onOpenModel: (String) -> Unit = {},
+    onOpenPhoto: (String, Int) -> Unit = { _, _ -> },
     onOpenSearch: () -> Unit = {},
 ) {
     val colors = LocalPhotoColors.current
@@ -86,7 +87,7 @@ fun MainShell(
                     PhotoTab.FAVORITES -> FavoritesScreen(
                         onOpenModel = onOpenModel,
                         onOpenCollection = onOpenCollection,
-                        onOpenPhoto = { slug: String, idx: Int -> onOpenCollection("$slug#$idx") },
+                        onOpenPhoto = { slug: String, idx: Int -> onOpenPhoto(slug, idx) },
                     )
                 }
             }
