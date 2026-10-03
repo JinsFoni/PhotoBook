@@ -1777,8 +1777,12 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
    solid 模式整层隐藏, 恢复纯色背景 */
 /* 氛围层双缓冲容器: 必须自建层叠上下文(z-index:0), 否则内层 backdrop
    的 zIndex 交替会泄漏到灯箱根层, 盖住 stage 主图与顶/底栏;
-   建立后两块 backdrop 的交替只在容器内部生效, 容器整体仍在 stage 之下 */
-.lightbox__bdwrap { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+   建立后两块 backdrop 的交替只在容器内部生效, 容器整体仍在 stage 之下。
+   外扩 80px(overscan): blur(46px) 在元素边缘向内采样透明像素形成暗边,
+   backdrop 缓落到 scale(1) 时暗边正好落进视口成"四周黑圈"(轮播的暗边
+   被顶栏/scrim 遮住故不可见); 外扩后元素边缘恒在视口外, 暗边永不出现,
+   Ken Burns 1.12→1 照常(相对视口的运动幅度略增, 体感一致) */
+.lightbox__bdwrap { position: absolute; inset: -80px; z-index: 0; pointer-events: none; }
 .lightbox__backdrop {
   position: absolute;
   inset: 0;
@@ -1788,10 +1792,12 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   filter: blur(46px) brightness(0.55) saturate(1.12);
   transform: scale(1.12);
   opacity: 0;
-  transition: opacity 620ms var(--ease);
+  transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
   pointer-events: none;
 }
-.lightbox__backdrop[data-ready="true"] { opacity: 1; }
+/* 就绪层: 淡入 + Ken Burns 缓落(1.12→1, 与首页轮播 hero__bg 同款);
+   离场层回涨 1.12 互为镜像(压在新层之下, 淡出中不可见) */
+.lightbox__backdrop[data-ready="true"] { opacity: 1; transform: none; }
 .lightbox[data-bg="solid"] .lightbox__backdrop { opacity: 0; }
 .lightbox[data-bg="blur"] { background: rgba(8, 9, 10, 0.82); }
 /* blur 模式: 顶/底栏无实体底, 完全透明, 与虚化垫底融为一体 */
@@ -1837,6 +1843,10 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   min-height: 0;
   overflow: hidden;
 }
+/* 主图双缓冲(首页轮播同款): 两张 img 交替, 新图层淡入 + settle 缓落
+   (1.015→1, 1400ms), 旧图层保持可见、镜像回涨(1→1.015)并淡化,
+   交叉过渡全程无空帧 —— 取代旧"垫底撑场 + 主图硬切"方案。
+   亮边外溢约束同轮播: 缩放恒 ≥1, contain 矩形不溢出纯色底 → 无白晕 */
 .lightbox__img {
   /* absolute + inset:0 + margin:auto:百分比 max 尺寸相对 stage 的 padding box 解析,
      竖图不再溢出被裁(grid 行高由内容决定时 max-height:100% 无基准,会被当作 none) */
@@ -1849,15 +1859,22 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   height: auto;
   object-fit: contain;
   opacity: 0;
-  transform: scale(0.985);
-  transition: opacity 300ms var(--ease), transform 300ms var(--ease);
+  transform: scale(1.015);
+  transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
   cursor: zoom-in;
   box-shadow: var(--shadow-lb, none);
 }
 .lightbox__img[data-ready="true"] { opacity: 1; transform: none; }
+/* 离场层: 新层揭示时 JS 置 data-ready="false", 从 1 回涨 1.015 并淡化
+   (基础规则), 与新层 1.015→1 互为镜像 = 双向 settle; 全程压在旧矩形
+   内外皆无空帧。zIndex 交替只在本图层对之间, 不与顶/底栏跨层 */
+.lightbox__img[data-departing="true"] { z-index: 1; }
 .lightbox__img[data-zoomed="true"] { max-width: none; max-height: none; cursor: grab; }
 .lightbox[data-zoom="true"] .lightbox__stage { cursor: grab; user-select: none; }
+/* 放大模式: 前层转 static 进文档流占满 grid, idle 层必须仍在绝对定位
+   (脱离网格布局)且隐藏, 否则成第二个网格项把前层挤偏 */
 .lightbox[data-zoom="true"] .lightbox__img { position: static; transition: opacity 300ms var(--ease); } /* 拖拽平移不能带过渡, 否则图黏滞滞后于鼠标 */
+.lightbox[data-zoom="true"] .lightbox__img:not([data-ready="true"]) { position: absolute; opacity: 0 !important; }
 /* 拖拽中: 整个灯箱握住光标, 不随移出 stage 变回箭头 */
 .lightbox[data-dragging="true"],
 .lightbox[data-dragging="true"] * { cursor: grabbing !important; user-select: none; }
@@ -1870,7 +1887,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 
 .lightbox__under {
   /* 垫底层(Immich thumbnail 层思路): 900 档网格图同 URL 必命中缓存,
-     开灯箱/切图瞬间先上屏撑住画面, 主图 2400 就绪后淡入盖住它。
+     开灯箱/切图瞬间先上屏撑住画面, 主图就绪后淡入盖住它。
      不加 blur/轻放大: 任何超出主图 contain 矩形的绘制(1.012 放大的
      实边或模糊外溢)都会在纯色底上亮出一圈白晕, 换图后 200~350ms
      内最明显。垫底层与主图同 URL 同比例, stage 内 contain 结果
