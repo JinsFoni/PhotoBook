@@ -9,6 +9,9 @@ import dev.jinsfoni.photobook.data.remote.dto.LoginRequestDto
 import dev.jinsfoni.photobook.data.remote.dto.LoginResponseDto
 import dev.jinsfoni.photobook.data.remote.dto.MeDto
 import dev.jinsfoni.photobook.data.remote.dto.CollectionDto
+import dev.jinsfoni.photobook.data.remote.dto.ModelDetailDto
+import dev.jinsfoni.photobook.data.remote.dto.ModelsPageDto
+import dev.jinsfoni.photobook.data.remote.dto.SearchResultDto
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -37,6 +40,15 @@ interface MobileApi {
 
     @GET("collections/{slug}")
     suspend fun collection(@Path("slug") slug: String): CollectionDto
+
+    @GET("models")
+    suspend fun models(@Query("featured") featured: String? = null): ModelsPageDto
+
+    @GET("models/{slug}")
+    suspend fun model(@Path("slug") slug: String): ModelDetailDto
+
+    @GET("search")
+    suspend fun search(@Query("q") q: String): SearchResultDto
 
     @GET("favorites")
     suspend fun favorites(): FavoritesDto

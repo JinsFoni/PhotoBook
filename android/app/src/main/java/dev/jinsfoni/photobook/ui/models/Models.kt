@@ -67,3 +67,38 @@ data class Favorites(
         }
     }
 }
+
+/** S5/S6 模特卡/详情(URL 已拼全)。 */
+data class ModelCard(
+    val slug: String,
+    val name: String,
+    val stage: String,
+    val imageUrl: String?,
+    val count: Int,
+    val photoCount: Int,
+    val featured: Boolean,
+    val tags: List<String>,
+)
+
+data class ModelDetail(
+    val slug: String,
+    val name: String,
+    val stage: String,
+    val heroUrl: String?,
+    val bio: String,
+    val agency: String,
+    val height: String,
+    val measurements: String,
+    val count: Int,
+    val photoCount: Int,
+    val tags: List<String>,
+    val collections: List<CollectionCard>,
+)
+
+/** S10 搜索三段结果(URL 已拼全)。 */
+data class SearchResults(
+    val q: String,
+    val models: List<ModelCard>,
+    val collections: List<CollectionCard>,
+    val tags: List<String>,
+)

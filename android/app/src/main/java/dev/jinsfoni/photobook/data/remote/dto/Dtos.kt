@@ -86,6 +86,57 @@ data class CollectionsPageDto(
     val pageSize: Int,
 )
 
+// ---- model(列表/详情)-----------------------------------------------------
+
+/** /models 响应(items 与 discover.models 同形)。 */
+@Serializable
+data class ModelsPageDto(val items: List<ModelDto>, val total: Int)
+
+/** /models/{slug}:payload + 该模特写真卡列。 */
+@Serializable
+data class ModelDetailDto(
+    val id: Int,
+    val slug: String,
+    val name: String,
+    val stage: String = "",
+    val avatar: String? = null,
+    val gender: String = "",
+    val age: Int? = null,
+    val height: String? = null,
+    val measurements: String? = null,
+    val agency: String? = null,
+    val bio: String? = null,
+    val since: String = "",
+    val featured: Boolean = false,
+    val latest: String = "",
+    val tags: List<String> = emptyList(),
+    val count: Int = 0,
+    val photoCount: Int = 0,
+    val hero: String? = null,
+    val collections: List<CollectionCardDto> = emptyList(),
+)
+
+// ---- search -----------------------------------------------------------------
+
+@Serializable
+data class SearchModelDto(
+    val slug: String,
+    val name: String,
+    val stage: String = "",
+    val avatar: String? = null,
+    val thumb: String? = null,
+    val count: Int = 0,
+    val tags: List<String> = emptyList(),
+)
+
+@Serializable
+data class SearchResultDto(
+    val q: String,
+    val models: List<SearchModelDto> = emptyList(),
+    val collections: List<CollectionCardDto> = emptyList(),
+    val tags: List<String> = emptyList(),
+)
+
 // ---- model ----------------------------------------------------------------
 
 @Serializable
