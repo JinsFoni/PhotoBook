@@ -174,3 +174,21 @@ data class FavoriteRequestDto(val type: String, val key: String, val added: Bool
 
 @Serializable
 data class FavoriteResultDto(val ok: Boolean, val type: String, val key: String, val added: Boolean)
+
+/** GET /favorites/resolve:三段实体(S7 直接渲染)。 */
+@Serializable
+data class FavoritesResolveDto(
+    val models: List<ModelDto> = emptyList(),
+    val collections: List<CollectionCardDto> = emptyList(),
+    val photos: List<FavPhotoDto> = emptyList(),
+)
+
+@Serializable
+data class FavPhotoDto(
+    val key: String,
+    val slug: String,
+    val idx: Int,
+    val file: String,
+    val title: String = "",
+    val thumb: String? = null,
+)

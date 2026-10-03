@@ -40,7 +40,7 @@ class ModelsRepository @Inject constructor(
             slug = dto.slug,
             name = dto.name,
             stage = dto.stage,
-            heroUrl = (dto.hero ?: dto.avatar)?.let { MediaUrls.thumb(base, it, 900) },
+            heroUrl = (dto.hero ?: dto.avatar)?.let { MediaUrls.thumb(baseUrl = base, rel = it, width = 900) },
             bio = dto.bio.orEmpty(),
             agency = dto.agency.orEmpty(),
             height = dto.height.orEmpty(),
@@ -61,7 +61,7 @@ internal fun ModelDto.toCard(base: String) = ModelCard(
     slug = slug,
     name = name,
     stage = stage,
-    imageUrl = avatar?.let { MediaUrls.thumb(base, it, 600) },
+    imageUrl = avatar?.let { MediaUrls.thumb(baseUrl = base, rel = it, width = 600, height = 900) }, // 2:3 裁切
     count = count,
     photoCount = photoCount,
     featured = featured,

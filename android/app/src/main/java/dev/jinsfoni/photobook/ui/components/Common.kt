@@ -128,3 +128,36 @@ fun SkeletonBox(modifier: Modifier = Modifier, cornerRadius: Int = 2) {
             .background(colors.paper2)
     )
 }
+
+/** 模特卡(原型 .model-card):2:3 头像 + 名(Serif 15sp)+ 「N 个写真」。 */
+@Composable
+fun ModelCard(
+    name: String,
+    subtitle: String,
+    imageUrl: Any?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalPhotoColors.current
+    Column(
+        modifier
+            .widthIn(max = 220.dp)
+            .photoClickable(onClick)
+    ) {
+        PhotoThumb(model = imageUrl, contentDescription = name)
+        Text(
+            name,
+            style = PhotoType.cardTitle,
+            color = colors.ink,
+            maxLines = 1,
+            modifier = Modifier.padding(top = 9.dp),
+        )
+        Text(
+            subtitle,
+            style = PhotoType.micro,
+            color = colors.ink3,
+            maxLines = 1,
+            modifier = Modifier.padding(top = 3.dp),
+        )
+    }
+}

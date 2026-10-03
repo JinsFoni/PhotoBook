@@ -34,6 +34,8 @@ import dev.jinsfoni.photobook.ui.icons.SettingsIcon
 import dev.jinsfoni.photobook.ui.icons.StrokeIcon
 import dev.jinsfoni.photobook.ui.screens.collections.CollectionsScreen
 import dev.jinsfoni.photobook.ui.screens.explore.ExploreScreen
+import dev.jinsfoni.photobook.ui.screens.favorites.FavoritesScreen
+import dev.jinsfoni.photobook.ui.screens.models.ModelsScreen
 import dev.jinsfoni.photobook.ui.nav.GlassTabBar
 import dev.jinsfoni.photobook.ui.nav.PhotoTab
 import kotlinx.coroutines.launch
@@ -47,6 +49,8 @@ fun MainShell(
     hazeState: HazeState,
     onThemeCycle: () -> Unit,
     onOpenCollection: (String) -> Unit = {},
+    onOpenModel: (String) -> Unit = {},
+    onOpenSearch: () -> Unit = {},
 ) {
     val colors = LocalPhotoColors.current
     val pagerState = rememberPagerState(pageCount = { PhotoTab.entries.size })
@@ -76,8 +80,14 @@ fun MainShell(
                     PhotoTab.COLLECTIONS -> CollectionsScreen(
                         initialTag = null,
                         onOpenCollection = onOpenCollection,
+                        onOpenSearch = onOpenSearch,
                     )
-                    else -> PlaceholderScreen(PhotoTab.entries[page])
+                    PhotoTab.MODELS -> ModelsScreen(onOpenModel = onOpenModel)
+                    PhotoTab.FAVORITES -> FavoritesScreen(
+                        onOpenModel = onOpenModel,
+                        onOpenCollection = onOpenCollection,
+                        onOpenPhoto = { slug: String, idx: Int -> onOpenCollection("$slug#$idx") },
+                    )
                 }
             }
         }
@@ -105,24 +115,6 @@ fun MainShell(
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 14.dp)
                 .padding(bottom = 20.dp),
-        )
-    }
-}
-
-@Composable
-private fun PlaceholderScreen(tab: PhotoTab) {
-    val colors = LocalPhotoColors.current
-    Column(
-        Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(tab.label, style = PhotoType.heroTitle, color = colors.ink)
-        Text(
-            "即将到来 — M1 只做主链路",
-            style = PhotoType.caption,
-            color = colors.ink3,
-            modifier = Modifier.padding(top = 8.dp),
         )
     }
 }

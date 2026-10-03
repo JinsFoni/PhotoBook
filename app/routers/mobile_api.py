@@ -320,6 +320,44 @@ async def mobile_search(q: str = Query(""), s: Session = Depends(get_db)):
 
 # ---- favorites(读允许匿名,写需登录;复用 favorites 表)-------------------
 
+@router.get("/favorites/resolve")
+async def mobile_favorites_resolve(s: Session = Depends(get_db),
+                                   user: User = Depends(require_mobile_user)):
+    """收藏三段解析为实体(S7 直接渲染,免客户端逐段反查):
+    model 段 = _model_payload;collection 段 = _collection_card;
+    photo 段 = key slug:idx 反查文件名 + 缩略 rel + 所在合集标题。"""
+    out = {"models": [], "collections": [], "photos": []}
+    rows = s.scalars(select(Favorite).where(Favorite.user_id == user.id)).all()
+    favs = {"model": set(), "collection": set(), "photo": set()}
+    for r in rows:
+        if r.target_type in favs:
+            favs[r.target_type].add(r.target_key)
+    if not any(favs.values()):
+        return out
+
+    cols = _published_collections(s)
+    if favs["model"]:
+        models = s.scalars(select(Model).where(Model.status == "published")
+                           .order_by(desc(Model.featured), Model.name)).all()
+        out["models"] = [_model_payload(s, m, [c for c in cols if c.model_id == m.id])
+                         for m in models if m.slug in favs["model"]]
+    if favs["collection"]:
+        out["collections"] = [_collection_card(s, c) for c in cols
+                              if c.slug in favs["collection"]]
+    if (favs["photo"]):
+        photos = []
+        for c in cols:
+            for i, p in enumerate(c.photos):
+                if f"{c.slug}:{i}" in favs["photo"]:
+                    photos.append({
+                        "key": f"{c.slug}:{i}", "slug": c.slug, "idx": i,
+                        "file": p.filename, "title": c.title,
+                        "thumb": f"t/{THUMB_W_CARD}x/{p.filename}.webp",
+                    })
+        out["photos"] = photos
+    return out
+
+
 @router.get("/favorites")
 async def mobile_favorites(s: Session = Depends(get_db),
                            user: User | None = Depends(mobile_user)):

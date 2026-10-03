@@ -18,6 +18,10 @@ import dev.jinsfoni.photobook.ui.screens.detail.DetailScreen
 import dev.jinsfoni.photobook.ui.screens.lightbox.LightboxScreen
 import dev.jinsfoni.photobook.ui.screens.lightbox.PhotoDownloader
 import dev.jinsfoni.photobook.ui.screens.login.LoginScreen
+import dev.jinsfoni.photobook.ui.screens.modeldetail.ModelDetailScreen
+import dev.jinsfoni.photobook.ui.screens.search.SearchScreen
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -66,6 +70,29 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     hazeState = hazeState,
                     onThemeCycle = { /* S9 前临时按钮由 MainShell 内部处理 */ },
                     onOpenCollection = { slug -> nav.navigate("detail/$slug") },
+                    onOpenModel = { slug -> nav.navigate("model/$slug") },
+                    onOpenSearch = { nav.navigate("search") },
+                )
+            }
+            composable(
+                "model/{slug}",
+                arguments = listOf(navArgument("slug") { }),
+            ) { entry ->
+                val slug = entry.arguments?.getString("slug").orEmpty()
+                ModelDetailScreen(
+                    slug = slug,
+                    onBack = { nav.popBackStack() },
+                    onOpenCollection = { s -> nav.navigate("detail/$s") },
+                )            }
+            composable("search") {
+                SearchScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenModel = { slug -> nav.navigate("model/$slug") },
+                    onOpenCollection = { slug -> nav.navigate("detail/$slug") },
+                    onOpenTag = { tag ->
+                        // 标签点回 S2 列表:清搜索栈到 shell(简化:直接返回上一层)
+                        nav.popBackStack()
+                    },
                 )
             }
             composable(

@@ -251,3 +251,33 @@ def test_search_tags_no_login_required(client):
     data = client.get("/api/mobile/search", params={"q": "a"}).json()
     assert isinstance(data["tags"], list)
     assert len(data["tags"]) <= 8
+
+
+# ---- favorites resolve(S7 实体解析)----
+
+def test_favorites_resolve_anonymous(client):
+    r = client.get("/api/mobile/favorites/resolve")
+    assert r.status_code == 401
+
+
+def test_favorites_resolve_roundtrip(client, token):
+    h = _auth(token)
+    slug = client.get("/api/mobile/collections").json()["items"][0]["slug"]
+    # collection + photo(用详情第一张)
+    detail = client.get(f"/api/mobile/collections/{slug}").json()
+    idx = detail["photos"][0]["idx"]
+    client.post("/api/mobile/favorites", headers=h,
+                json={"type": "collection", "key": slug, "added": True})
+    client.post("/api/mobile/favorites", headers=h,
+                json={"type": "photo", "key": f"{slug}:{idx}", "added": True})
+    data = client.get("/api/mobile/favorites/resolve", headers=h).json()
+    assert [c["slug"] for c in data["collections"]] == [slug]
+    assert data["photos"][0]["key"] == f"{slug}:{idx}"
+    assert data["photos"][0]["file"] == detail["photos"][0]["file"]
+    assert data["photos"][0]["thumb"].startswith("t/600x/")
+    client.post("/api/mobile/favorites", headers=h,
+                json={"type": "collection", "key": slug, "added": False})
+    client.post("/api/mobile/favorites", headers=h,
+                json={"type": "photo", "key": f"{slug}:{idx}", "added": False})
+    data = client.get("/api/mobile/favorites/resolve", headers=h).json()
+    assert data["collections"] == [] and data["photos"] == []

@@ -5,6 +5,7 @@ import dev.jinsfoni.photobook.data.remote.dto.DiscoverDto
 import dev.jinsfoni.photobook.data.remote.dto.FavoriteRequestDto
 import dev.jinsfoni.photobook.data.remote.dto.FavoriteResultDto
 import dev.jinsfoni.photobook.data.remote.dto.FavoritesDto
+import dev.jinsfoni.photobook.data.remote.dto.FavoritesResolveDto
 import dev.jinsfoni.photobook.data.remote.dto.LoginRequestDto
 import dev.jinsfoni.photobook.data.remote.dto.LoginResponseDto
 import dev.jinsfoni.photobook.data.remote.dto.MeDto
@@ -52,6 +53,9 @@ interface MobileApi {
 
     @GET("favorites")
     suspend fun favorites(): FavoritesDto
+
+    @GET("favorites/resolve")
+    suspend fun favoritesResolve(): FavoritesResolveDto
 
     @POST("favorites")
     suspend fun toggleFavorite(@Body body: FavoriteRequestDto): FavoriteResultDto
