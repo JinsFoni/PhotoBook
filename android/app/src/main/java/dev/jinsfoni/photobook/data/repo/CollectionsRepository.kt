@@ -98,7 +98,8 @@ class CollectionsRepository @Inject constructor(
         slug = slug,
         title = title,
         modelName = model_name,
-        imageUrl = coverThumb?.let { MediaUrls.thumb(base, it, 600) },
+        // S2 列表卡的 coverThumb 同为 "t/600/…webp" 前缀 rel,直拼(origin 根)
+        imageUrl = coverThumb?.let { MediaUrls.fromPrefixed(base, it) },
         count = count,
         tags = tags,
     )
