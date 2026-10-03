@@ -79,8 +79,9 @@ class PathScope(val path: Path) {
 
     fun close() = path.close()
 
+    /** 圆心 (cx,cy) 半径 r —— SVG circle(cx,cy,r) 语义(Offset 是左上角,故减 r)。 */
     fun circle(cx: Float, cy: Float, r: Float) =
-        path.addOval(Rect(Offset(cx, cy), Size(r * 2, r * 2)))
+        path.addOval(Rect(Offset(cx - r, cy - r), Size(r * 2, r * 2)))
 
     fun roundedRect(x: Float, y: Float, w: Float, h: Float, r: Float) =
         path.addRoundRect(RoundRect(x, y, x + w, y + h, CornerRadius(r, r)))

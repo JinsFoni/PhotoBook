@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 
@@ -55,10 +56,22 @@ fun InsetHighlight(modifier: Modifier = Modifier) {
     }
 }
 
-/** 双层外阴影(0 14dp 36dp rgba(0,0,0,.26) + 0 2dp 8dp rgba(0,0,0,.12))。 */
-fun Modifier.tabBarShadow(): Modifier = this
-    .drawShadowLayer(Color.Black.copy(alpha = 0.26f), 36f, 14f)
-    .drawShadowLayer(Color.Black.copy(alpha = 0.12f), 8f, 2f)
+/**
+ * 单层外阴影,对齐 BiliPai dropShadow:radius = Small+Micro(≈14px),
+ * α 浅色 0.10 / 深色 0.20,dy ≈ 6px。
+ * (不再用 CSS 双层重影:0.26α+36px blur 会在胶囊上下糊出两条灰带)
+ */
+@Composable
+fun Modifier.tabBarShadow(): Modifier {
+    val colors = LocalPhotoColors.current
+    val isDark = colors.ink.luminance() > 0.5f
+    val alpha = if (isDark) 0.20f else 0.10f
+    return this.drawShadowLayer(
+        Color.Black.copy(alpha = alpha),
+        blurPx = 14f * 2f, // CSS blur 14px ≈ 双层高斯 sigma 总量
+        dyPx = 6f,
+    )
+}
 
 private fun Modifier.drawShadowLayer(
     color: Color,

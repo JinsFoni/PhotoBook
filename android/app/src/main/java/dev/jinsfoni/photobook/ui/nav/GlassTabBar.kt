@@ -86,8 +86,9 @@ fun GlassTabBar(
                     colorEffects(
                         listOf(HazeColorEffect.tint(colors.barBg))
                     )
-                    // 边缘按胶囊形状渐隐,玻璃边不再硬/发灰
-                    blurredEdgeTreatment(BlurredEdgeTreatment(TabShape))
+                    // 边缘保持硬裁切(BiliPai/HazeMaterials 默认 Rectangle):
+                    // 形状羽化会让玻璃上下边界发虚、拖出灰带
+                    blurredEdgeTreatment(BlurredEdgeTreatment.Rectangle)
                 },
             ),
     ) {
