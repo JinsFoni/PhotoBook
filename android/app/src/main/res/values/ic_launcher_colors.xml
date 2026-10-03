@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动图标自适应背景:取自 App 图源四角均色(#16171D 近黑) -->
+    <color name="ic_launcher_background">#16171D</color>
+</resources>
