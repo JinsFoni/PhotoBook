@@ -135,7 +135,7 @@ def _collection_payload(s: Session, c: Collection) -> dict:
         "model_slug": c.model.slug if c.model else "",
         "model_name": c.model.name if c.model else "未分类",
         "cover": cover,
-        "coverThumb": f"t/{THUMB_W_CARD}x/{cover}.webp" if cover else None,
+        "coverThumb": f"t/{THUMB_W_CARD}/{cover}.webp" if cover else None,
         "photos": [{"idx": i, "file": p.filename, "w": p.width, "h": p.height}
                    for i, p in enumerate(c.photos)],
         "tags": [t.name for t in c.tags],
@@ -152,7 +152,7 @@ def _collection_card(s: Session, c: Collection) -> dict:
         "model_slug": c.model.slug if c.model else "",
         "model_name": c.model.name if c.model else "未分类",
         "cover": cover,
-        "coverThumb": f"t/{THUMB_W_CARD}x/{cover}.webp" if cover else None,
+        "coverThumb": f"t/{THUMB_W_CARD}/{cover}.webp" if cover else None,
         "count": len(c.photos),
         "tags": [t.name for t in c.tags],
     }
@@ -241,7 +241,7 @@ async def mobile_collection_detail(slug: str, s: Session = Depends(get_db)):
     if not c:
         raise ApiError("not_found", "Collection not found", 404)
     payload = _collection_payload(s, c)
-    payload["coverThumb"] = (f"t/{THUMB_W_HERO}x/{payload['cover']}.webp"
+    payload["coverThumb"] = (f"t/{THUMB_W_HERO}/{payload['cover']}.webp"
                              if payload["cover"] else None)
     payload["model"] = ({"slug": c.model.slug, "name": c.model.name}
                         if c.model else None)
