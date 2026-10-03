@@ -26,6 +26,11 @@ cd android
 
 默认 `DEFAULT_BASE_URL`(data/remote/MobileApi.kt)。真机调试:改为局域网地址(如 `http://192.168.x.x:8000/api/mobile/`),或等 M3 S9 多服务器设置页。服务端启动:`uvicorn app.main:app`(见仓库根 README)。
 
+## 发版
+
+GitHub Release **published** 时自动构建(见 `.github/workflows/android-release.yml`):
+跑单测 → assembleRelease → debug.keystore 签名 → APK(`PhotoBook-<tag>.apk`)上传到该 Release 资产。
+
 ## 测试账号
 
 `demo / demo123`(服务端种子数据)。
