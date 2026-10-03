@@ -23,13 +23,12 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
@@ -54,8 +53,9 @@ private val TabHeight = 64.dp
 private val TabShape = RoundedCornerShape(999.dp)
 
 /**
- * 玻璃底栏(原型 .tabbar):64dp 高、999dp 全圆角、blur 3dp + saturate 165% +
- * brightness 1.08(色彩矩阵 1.782≈1.65×1.08)、barBg 纱色、斜向流光、inset 高光/暗边。
+ * 玻璃底栏:64dp 高、999dp 全圆角。材质对齐 BiliPai 的 haze 路径(HazeMaterials.ultraThin):
+ * 重模糊 24dp + 不透明 surface 垫底 + surface 色 tint + 按胶囊形状边缘渐隐。
+ * (不用 CSS saturate 矩阵 —— BiliPai/HazeMaterials 均不做饱和度,矩阵易致白平衡漂移)
  * 选中 tab = pill 胶囊 + accent 图标 + 600 字重;按压 scale .94 spring 弹性。
  */
 @Composable
@@ -75,36 +75,21 @@ fun GlassTabBar(
             .hazeBlur(
                 HazeInput.Sources(hazeState),
                 HazeBlurStyle {
-                    blurRadius(3.dp)
+                    // BiliPai/HazeMaterials 统一用 24dp 重模糊:内容糊成色斑,观感稳定,
+                    // 轻模糊(3dp)会保留内容轮廓,遇浅底反差时像“脏灰色板”
+                    blurRadius(24.dp)
                     noiseFactor(0f)
-                    // 语义注意:backgroundColor 是"模糊层背后垫色",非叠加 tint;
-                    // 垫半透明白会在深色内容上形成灰白过曝 —— 纱色改在下方 background() 叠加。
+                    // 不透明 surface 垫底(HazeMaterials 同款):透明区域不再拉低效果层 alpha
                     backgroundColor(colors.paper)
+                    // tint 用 surface 色代替 saturate 矩阵:light 40% 白 / dark 48% 黑,
+                    // 与原 barBg 纱色一致;画进效果层(等同 CSS backdrop-filter 后的 background)
                     colorEffects(
-                        listOf(
-                            HazeColorEffect.colorFilter(
-                                ColorFilter.colorMatrix(
-                                    ColorMatrix(
-                                        // CSS backdrop-filter: saturate(1.65) 标准矩阵
-                                    // (亮度增益不做 —— 标量乘会削顶过曝,亮内容直接死白;
-                                    //  提亮观感由上方 barBg 纱色承担)
-                                    // 各行和 = 1(白不变);B 行此前误写 1.192(≈saturate 1.2),
-                                    // 行和 0.564 → 白纸被染成缺蓝的 (251,255,144)「灰磨砂」
-                                    floatArrayOf(
-                                            1.512f, -0.465f, -0.047f, 0f, 0f,
-                                            -0.138f, 1.185f, -0.047f, 0f, 0f,
-                                            -0.138f, -0.465f, 1.603f, 0f, 0f,
-                                            0f, 0f, 0f, 1f, 0f,
-                                        )
-                                    )
-                                )
-                            )
-                        )
+                        listOf(HazeColorEffect.tint(colors.barBg))
                     )
+                    // 边缘按胶囊形状渐隐,玻璃边不再硬/发灰
+                    blurredEdgeTreatment(BlurredEdgeTreatment(TabShape))
                 },
-            )
-            // 玻璃纱色叠在模糊层之上(等同 CSS:backdrop-filter 之后元素 background)
-            .background(colors.barBg),
+            ),
     ) {
         // 斜向流光(::after,115deg sheen)
         Box(
