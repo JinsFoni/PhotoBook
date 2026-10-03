@@ -80,11 +80,11 @@ fun LightboxScreen(
             initialPage = initialIdx.coerceIn(0, (photos.size - 1).coerceAtLeast(0)),
         ) { photos.size }
 
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-            PhotoPage(photos[page])
-        }
-
         var chromeVisible by remember { mutableStateOf(true) }
+
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            PhotoPage(photos[page], onToggleChrome = { chromeVisible = !chromeVisible })
+        }
         LaunchedEffect(pagerState.currentPage, chromeVisible) {
             if (chromeVisible) {
                 delay(6000)   // 原型 600ms → 实机 6s 更合理(记录偏差)
@@ -97,13 +97,6 @@ fun LightboxScreen(
             label = "chrome",
         )
 
-        Box(
-            Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { chromeVisible = !chromeVisible })
-                },
-        )
 
         AnimatedVisibility(
             visible = chromeVisible,
@@ -189,7 +182,7 @@ fun LightboxScreen(
 }
 
 @Composable
-private fun PhotoPage(photo: PhotoItem) {
+private fun PhotoPage(photo: PhotoItem, onToggleChrome: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val zoomState = rememberZoomableImageState()
         ZoomableAsyncImage(
@@ -197,6 +190,7 @@ private fun PhotoPage(photo: PhotoItem) {
             contentDescription = "Photo ${photo.idx + 1}",
             state = zoomState,
             contentScale = ContentScale.Fit,
+            onClick = { onToggleChrome() },
             modifier = Modifier.fillMaxSize(),
         )
     }
