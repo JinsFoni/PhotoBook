@@ -1803,12 +1803,12 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   height: 100%;
   object-fit: cover;
   filter: blur(46px) brightness(0.55) saturate(1.12);
-  transform: scale(1.3);
+  transform: scale(1.2);
   opacity: 0;
   transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
   pointer-events: none;
 }
-/* 就绪层: 淡入 + Ken Burns 缓落(1.3→1)。滤镜/遮罩配色实测不可动:
+/* 就绪层: 淡入 + Ken Burns 缓落(1.2→1)。滤镜/遮罩配色实测不可动:
    亮度与纹理强度是乘法联动(brightness 调暗会连纹理一起压没, A/B 实测
    旧配方反而最亮最清晰), 可见的"动"只能靠幅度 —— 灯箱水平半位移
    1.15=108px 偏小, 1.3=216px 约翻倍, 观感接近轮播。
