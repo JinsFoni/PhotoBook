@@ -858,9 +858,8 @@ window.PC = (function () {
      刷新(含 Esc/F11 原生退出)。与灯箱全屏互不冲突: 谁在前台谁持有全屏。
      Chrome 在整页导航时会自动退出全屏(全屏状态绑定当前文档), 且新文档
      没有用户手势, 自动续请求会被拒绝或秒撤(实测 change true→false)——
-     手势策略不可绕。跨页改为软保持: 全屏中导航记标记, 新页 boot 检测到
-     标记不在全屏就 toast 提示一键恢复(点按钮 = 带手势的请求, 必成功);
-     用户在新页恢复或主动退出都清标记, 不再提示 */
+     手势策略不可绕。因此全屏期间的站内导航走 pjax: fetch 新页 HTML,
+     原地替换 body 内容(文档不换, 全屏不退); 全屏外仍走整页导航 */
   var FS_KEEP_KEY = "pc.fs.page";
   function fsRequest() {
     var request = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
@@ -884,8 +883,103 @@ window.PC = (function () {
     fsRequest();
   }
   document.addEventListener("fullscreenchange", paintPageFullscreenBtn);
-  /* boot 时软续: 上一页全屏中导航过来(标记在)但本页不在全屏 ——
-     自动请求被手势策略挡住, 提示用户点一下(数秒不点自动清标记) */
+
+  /* ---------- 全屏内 pjax 导航 ----------------------------------------------
+     只在 fullscreenEl() 时激活。换内容步骤(顺序敏感):
+     1. 解析新 HTML, 取 <body> 与 <title>;
+     2. 摘下 page-blur 垫底层(文档级单例, 不能被新 body 覆盖删掉);
+     3. 整体替换 body 子节点(旧 overlay/搜索/抽屉一并消失, 状态天然复位);
+     4. 回填 page-blur; 同步 window.PB_DATA/PB_BOOT 与 <title>;
+     5. 重放新 body 里的 inline <script>(每页数据脚本都靠它们初始化;
+        script 节点重新创建才会执行, 直接挪节点无效);
+     6. rebind(): 重跑 chrome 渲染与全局绑定 —— renderChrome 重建 header
+        (innerHTML 幂等), MutationObserver 兜底覆盖其余绑定。
+     失败回退: 任何一步异常直接整页导航(退出全屏可接受) */
+  var pjaxXhr = 0;
+  function pjaxRebind() {
+    applyTheme();
+    renderChrome();
+    applyTheme();
+    renderBlurLayer();
+    bindChrome();
+    fav.bind();
+    syncAll();
+    bindPhotoTiles();
+    layoutPhotoWall();
+    revealImages();
+  }
+  function pjaxGo(url, push) {
+    var seq = ++pjaxXhr;
+    fetch(url, { credentials: "same-origin", headers: { "X-Pjax": "1" } })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.status);
+        return r.text();
+      })
+      .then(function (html) {
+        if (seq !== pjaxXhr) return;
+        var doc = new DOMParser().parseFromString(html, "text/html");
+        var newBody = doc.body;
+        if (!newBody) throw new Error("no body");
+        var blur = document.querySelector("[data-page-blur]");
+        var toastNode = document.querySelector(".toast");
+        if (blur) blur.remove();
+        if (toastNode) toastNode.remove();
+        /* 关灯箱: 全屏中若灯箱开着, 换页必须收掉(数据已不属于本页)。
+           close() 里的 exitFullscreen 是给"用户主动关灯箱"的; pjax 换页
+           全屏必须保住, 只收数据层状态 */
+        if (lb.el && lb.el.dataset.open === "true") {
+          lb.el.dataset.open = "false";
+          document.body.classList.remove("is-locked");
+          lbShownUrl = "";
+        }
+        var frag = document.createDocumentFragment();
+        /* 整棵 importNode 再搬空: 逐个 adoptNode 挪 childNodes 在部分
+           文本节点场景会出诡异丢节点(importNode 复制树最稳) */
+        var imported = document.importNode(newBody, true);
+        while (imported.firstChild) frag.appendChild(imported.firstChild);
+        /* live NodeList 会在 remove 时收缩, 必须先拷贝再删 */
+        Array.prototype.slice.call(document.body.childNodes).forEach(function (n) { n.remove(); });
+        document.body.appendChild(frag);
+        if (blur) document.body.insertBefore(blur, document.body.firstChild);
+        document.title = doc.title || document.title;
+        /* 每页数据脚本在替换后的 body 里, 重放使 PB_DATA 与页面逻辑就位。
+           PB_DATA/PB_BOOT 是 window 变量, 重放 window.X = ... 赋值即更新 */
+        var scripts = document.body.querySelectorAll("script");
+        scripts.forEach(function (old) {
+          var s = document.createElement("script");
+          if (old.src) s.src = old.src;
+          if (old.type) s.type = old.type;
+          s.text = old.textContent;
+          old.parentNode.replaceChild(s, old);
+        });
+        pjaxRebind();
+        if (push) history.pushState({ pjax: true }, "", url);
+        window.scrollTo(0, 0);
+        document.dispatchEvent(new CustomEvent("pc:pjax"));
+      })
+      .catch(function () {
+        location.href = url; /* 整页导航兜底(会退全屏, 可接受) */
+      });
+  }
+  /* 拦截: 仅全屏中 + 左键 + 无修饰键 + 同源站内链接 + 非下载/锚点/新窗 */
+  document.addEventListener("click", function (e) {
+    if (!fullscreenEl() || e.defaultPrevented || e.button !== 0 ||
+        e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var a = e.target.closest("a");
+    if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+    var href = a.getAttribute("href");
+    if (!href || href.charAt(0) === "#" || a.pathname === location.pathname && a.search === location.search && a.hash) return;
+    if (a.origin !== location.origin) return;
+    e.preventDefault();
+    pjaxGo(a.href, true);
+  }, true);
+  window.addEventListener("popstate", function (e) {
+    if (!fullscreenEl()) return;
+    pjaxGo(location.href, false);
+  });
+
+  /* 跨页软提示兜底: 若经由非拦截路径(如 JS location 跳转)到达新页且
+     上一页全屏中, 提示一键恢复; 恢复或退出后清标记不再提示 */
   function resumePageFullscreen() {
     var kept = false;
     try { kept = sessionStorage.getItem(FS_KEEP_KEY) === "1"; } catch (e) {}
