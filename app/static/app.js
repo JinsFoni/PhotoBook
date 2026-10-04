@@ -789,19 +789,31 @@ window.PC = (function () {
     var reveal = function () {
       if (back.dataset.src !== src) return;                    /* 已被更新的加载覆盖 */
       if (lbBg !== "blur" || lb.photos[lb.index] !== p) return; /* stale */
-      /* 就绪层淡入 + Ken Burns 缓落(1.15→1, hero__bg 同幅度)。注意
-         back 必须在置 ready 前一帧内先处于 scale(1.15)(基础规则),
-         且此前未被复用层残留的 transform:none 过渡污染 —— 复用层在
-         离场 650ms 后已回涨到位, 此处正常从 1.15 起步 */
-      back.style.zIndex = "2";
-      if (front) front.style.zIndex = "1";
-      back.dataset.ready = "true";
-      lb.bdFront = back;
-      if (front) setTimeout(function () {
-        /* 期间未被新一轮换前 → 撤旧层(在新层之下淡出, 不可见);
-           ready=false 让它回涨 1.15, 与新层缓落互为镜像 */
-        if (lb.bdFront === back) { front.dataset.ready = "false"; front.style.zIndex = ""; }
-      }, 650);
+      /* 复用层归零: 层被复用时 transform 可能停在回涨半路(回涨 1400ms
+         > 撤层宽限 650ms)甚至已是 none, 直接置 ready 的过渡会从近 1 处
+         起步 = 回弹消失(首层必现动效、后续切换全无的根因)。
+         无过渡重置到 scale(1.3) 后, 必须隔一个 rAF(而非仅 reflow)再
+         恢复过渡置 ready —— 同帧"重置→置 ready"会让浏览器把过渡起点
+         算在重置前的计算样式上, 起步值随机(实测 1.03~1.25 抖动) */
+      back.style.transition = "none";
+      back.style.transform = "scale(1.3)";
+      back.style.opacity = "0";
+      requestAnimationFrame(function () {
+        if (back.dataset.src !== src) return;                    /* 已被更新的加载覆盖 */
+        if (lbBg !== "blur" || lb.photos[lb.index] !== p) return; /* stale */
+        back.style.transition = "";
+        back.style.transform = "";
+        back.style.opacity = "";
+        back.style.zIndex = "2";
+        if (front) front.style.zIndex = "1";
+        back.dataset.ready = "true";
+        lb.bdFront = back;
+        if (front) setTimeout(function () {
+          /* 期间未被新一轮换前 → 撤旧层(在新层之下淡出, 不可见);
+             ready=false 让它回涨 1.3, 与新层缓落互为镜像 */
+          if (lb.bdFront === back) { front.dataset.ready = "false"; front.style.zIndex = ""; }
+        }, 650);
+      });
     };
     back.dataset.src = src;
     if (back.getAttribute("src") === src && back.complete && back.naturalWidth > 0) {
