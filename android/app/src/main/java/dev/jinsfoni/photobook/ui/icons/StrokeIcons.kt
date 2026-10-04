@@ -184,15 +184,21 @@ val CopyIcon = part {
 }
 
 val SettingsIcon = part {
-    // 舵轮风格:外圈 + 内圈 + 三根辐条(从内圈缘伸到外圈缘,120° 均布,一根朝上)
-    circle(12f, 12f, 8.5f)
-    circle(12f, 12f, 3.4f)
-    // 辐条 90°(上):(12, 8.6) → (12, 3.5)
-    moveTo(12f, 8.6f); verticalLineTo(3.5f)
-    // 辐条 210°(左下):内圈缘 (9.06, 13.7) → 外圈缘 (4.64, 16.25)
-    moveTo(9.06f, 13.7f); lineTo(4.64f, 16.25f)
-    // 辐条 330°(右下):(14.94, 13.7) → (19.36, 16.25)
-    moveTo(14.94f, 13.7f); lineTo(19.36f, 16.25f)
+    // 参照 icons8 #59996:齿轮环 + 16 齿 + 三辐条(120° 均布,一根朝右)+ 轮毂
+    circle(12f, 12f, 8.0f)
+    // 16 齿:径向短棒 r 9.1 → 10.6,每 22.5°
+    for (i in 0 until 16) {
+        val a = Math.toRadians(i * 22.5)
+        val c = Math.cos(a).toFloat(); val s = Math.sin(a).toFloat()
+        moveTo(12f + 9.1f * c, 12f + 9.1f * s)
+        lineTo(12f + 10.6f * c, 12f + 10.6f * s)
+    }
+    // 三辐条:0°/120°/240°(屏幕系顺时针),从轮毂伸到齿轮环
+    moveTo(14.6f, 12f); horizontalLineTo(19.8f)
+    moveTo(10.7f, 14.3f); lineTo(8.1f, 18.8f)
+    moveTo(10.7f, 9.7f); lineTo(8.1f, 5.2f)
+    // 轮毂
+    circle(12f, 12f, 2.0f)
 }
 
 val TabExploreIcon = part {
