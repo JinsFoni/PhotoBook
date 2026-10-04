@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,6 +48,7 @@ import dev.jinsfoni.photobook.ui.components.CollectionCard
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.ModelCard
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
+import dev.jinsfoni.photobook.ui.components.arrangeTwoColumnWall
 import dev.jinsfoni.photobook.ui.components.photoClickable
 import dev.jinsfoni.photobook.ui.nav.LocalGlassBarBottomInset
 
@@ -210,63 +213,38 @@ fun FavoritesScreen(
 }
 
 /**
- * 照片段行式拼贴(用户约定):
- * - 竖版照片两两并排一行(每张 2:3,整行即 4:3 横向块)
- * - 横版照片独占一行(3:2 ≈ 两张竖图占位),方图独占一行(1:1)
- * - 行内剩余奇数空位不再补图,保持阅读节奏;点击进灯箱。
+ * 照片段(用户约定,与写真详情页同款布局):
+ * 竖图统一 2:3 两两成对填满两列,横图独占整行;奇数竖图段由共享重排
+ * arrangeTwoColumnWall 前后借位补洞,不再右侧留空。点击进灯箱。
  */
-/** 照片行模型:竖图对(可落单) / 横图行 / 方图行。 */
-private sealed interface PhotoRow
-private data class PPair(val a: FavPhotoItem, val b: FavPhotoItem?) : PhotoRow
-private data class LRow(val item: FavPhotoItem) : PhotoRow
-private data class SRow(val item: FavPhotoItem) : PhotoRow
-
 @Composable
 private fun PhotosMasonry(
     photos: List<FavPhotoItem>,
     onOpenPhoto: (String, Int) -> Unit,
 ) {
     val colors = LocalPhotoColors.current
-    val rows: List<PhotoRow> = remember(photos) {
-        val out = mutableListOf<PhotoRow>()
-        var i = 0
-        while (i < photos.size) {
-            val p = photos[i]
-            when {
-                p.aspect < 0.98f -> {                      // 竖版:凑两张成行
-                    if (i + 1 < photos.size && photos[i + 1].aspect < 0.98f) {
-                        out += PPair(p, photos[i + 1]); i += 2
-                    } else {
-                        out += PPair(p, null); i += 1      // 落单竖图:左位,右侧留空
-                    }
-                }
-                p.aspect > 1.02f -> { out += LRow(p); i += 1 }  // 横版:独占一行
-                else -> { out += SRow(p); i += 1 }              // 方图:独占一行
-            }
-        }
-        out
+    val wall = remember(photos) {
+        val order = arrangeTwoColumnWall(photos.map { it.aspect })
+        order.map { photos[it] }
     }
-
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
-        verticalArrangement = Arrangement.spacedBy(11.dp),
+    LazyVerticalStaggeredGrid(
+        columns = StaggeredGridCells.Fixed(2),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
+        verticalItemSpacing = 11.dp,
     ) {
-        rows.forEach { row ->
-            when (row) {
-                is PPair -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-                    PhotoCell(row.a, 2f / 3f, Modifier.weight(1f), colors, onOpenPhoto)
-                    if (row.b != null) {
-                        PhotoCell(row.b, 2f / 3f, Modifier.weight(1f), colors, onOpenPhoto)
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
-                }
-                is LRow -> PhotoCell(row.item, 3f / 2f, Modifier.fillMaxWidth(), colors, onOpenPhoto)
-                is SRow -> PhotoCell(row.item, 1f, Modifier.fillMaxWidth(), colors, onOpenPhoto)
-            }
+        items(
+            count = wall.size,
+            span = { i ->
+                if (wall[i].aspect > 1.02f) StaggeredGridItemSpan.FullLine
+                else StaggeredGridItemSpan.SingleLane
+            },
+        ) { i ->
+            val p = wall[i]
+            // 竖图(含未知)统一 2:3 裁切保证两列等高;横图按原比例跨整行
+            val ratio = if (p.aspect > 1.02f) p.aspect else 2f / 3f
+            PhotoCell(p, ratio, Modifier.fillMaxWidth(), colors, onOpenPhoto)
         }
     }
 }
