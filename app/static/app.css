@@ -1843,10 +1843,15 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   min-height: 0;
   overflow: hidden;
 }
-/* 主图双缓冲(首页轮播同款): 两张 img 交替, 新图层淡入 + settle 缓落
-   (1.015→1, 1400ms), 旧图层保持可见、镜像回涨(1→1.015)并淡化,
+/* 主图双缓冲(首页轮播同款): 两张 img 交替, 新图层淡入 + settle
+   (0.985→1, 1400ms), 旧图层保持可见、镜像缩回(1→0.985)并淡化,
    交叉过渡全程无空帧 —— 取代旧"垫底撑场 + 主图硬切"方案。
-   亮边外溢约束同轮播: 缩放恒 ≥1, contain 矩形不溢出纯色底 → 无白晕 */
+   缩放恒 ≤1(与轮播 ≥1 相反, 刻意的): 轮播有 .hero__clip 固定框裁切,
+   ≥1 的外溢被剪掉; 灯箱图片边缘直接暴露在深色/虚化背景上, >1 会把
+   照片边缘的亮像素扫出最终矩形, 缩回时留下一圈白色残影(杂志扫描件
+   边缘常为白边; 竖图上下被 stage overflow 裁住, 只剩左右两侧露出)。
+   ≤1 则边缘永不超出最终矩形, 残影无从产生; 入场层初期的边缘差由
+   垫底层(scale 1, 同图)恰好补齐, 过渡无缝 */
 .lightbox__img {
   /* absolute + inset:0 + margin:auto:百分比 max 尺寸相对 stage 的 padding box 解析,
      竖图不再溢出被裁(grid 行高由内容决定时 max-height:100% 无基准,会被当作 none) */
@@ -1859,15 +1864,15 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   height: auto;
   object-fit: contain;
   opacity: 0;
-  transform: scale(1.015);
+  transform: scale(0.985);
   transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
   cursor: zoom-in;
   box-shadow: var(--shadow-lb, none);
 }
 .lightbox__img[data-ready="true"] { opacity: 1; transform: none; }
-/* 离场层: 新层揭示时 JS 置 data-ready="false", 从 1 回涨 1.015 并淡化
-   (基础规则), 与新层 1.015→1 互为镜像 = 双向 settle; 全程压在旧矩形
-   内外皆无空帧。zIndex 交替只在本图层对之间, 不与顶/底栏跨层 */
+/* 离场层: 新层揭示时 JS 置 data-ready="false", 从 1 缩回 0.985 并淡化
+   (基础规则), 与新层 0.985→1 互为镜像 = 双向 settle; 缩小方向不外溢,
+   露出的边缘是垫底/新层同图画面, 不会出现白色残影 */
 .lightbox__img[data-departing="true"] { z-index: 1; }
 .lightbox__img[data-zoomed="true"] { max-width: none; max-height: none; cursor: grab; }
 .lightbox[data-zoom="true"] .lightbox__stage { cursor: grab; user-select: none; }
