@@ -1790,13 +1790,14 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   height: 100%;
   object-fit: cover;
   filter: blur(46px) brightness(0.55) saturate(1.12);
-  transform: scale(1.12);
+  transform: scale(1.15);
   opacity: 0;
   transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
   pointer-events: none;
 }
-/* 就绪层: 淡入 + Ken Burns 缓落(1.12→1, 与首页轮播 hero__bg 同款);
-   离场层回涨 1.12 互为镜像(压在新层之下, 淡出中不可见) */
+/* 就绪层: 淡入 + Ken Burns 缓落(1.15→1, 与首页轮播 hero__bg 同幅度);
+   离场层回涨 1.15 互为镜像(压在新层之下, 淡出中不可见)。曾用 1.12,
+   blur(46px)+压暗下肉眼看不出动效, 提到与轮播相同的 1.15 */
 .lightbox__backdrop[data-ready="true"] { opacity: 1; transform: none; }
 .lightbox[data-bg="solid"] .lightbox__backdrop { opacity: 0; }
 .lightbox[data-bg="blur"] { background: rgba(8, 9, 10, 0.82); }

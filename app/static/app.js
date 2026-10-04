@@ -789,17 +789,17 @@ window.PC = (function () {
     var reveal = function () {
       if (back.dataset.src !== src) return;                    /* 已被更新的加载覆盖 */
       if (lbBg !== "blur" || lb.photos[lb.index] !== p) return; /* stale */
-      /* 就绪层淡入 + Ken Burns 缓落(1.12→1, hero__bg 同款)。注意
-         back 必须在置 ready 前一帧内先处于 scale(1.12)(基础规则),
+      /* 就绪层淡入 + Ken Burns 缓落(1.15→1, hero__bg 同幅度)。注意
+         back 必须在置 ready 前一帧内先处于 scale(1.15)(基础规则),
          且此前未被复用层残留的 transform:none 过渡污染 —— 复用层在
-         离场 650ms 后已回涨到位, 此处正常从 1.12 起步 */
+         离场 650ms 后已回涨到位, 此处正常从 1.15 起步 */
       back.style.zIndex = "2";
       if (front) front.style.zIndex = "1";
       back.dataset.ready = "true";
       lb.bdFront = back;
       if (front) setTimeout(function () {
         /* 期间未被新一轮换前 → 撤旧层(在新层之下淡出, 不可见);
-           ready=false 让它回涨 1.12, 与新层缓落互为镜像 */
+           ready=false 让它回涨 1.15, 与新层缓落互为镜像 */
         if (lb.bdFront === back) { front.dataset.ready = "false"; front.style.zIndex = ""; }
       }, 650);
     };
