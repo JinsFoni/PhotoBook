@@ -45,21 +45,8 @@ fun InsetHighlight(modifier: Modifier = Modifier) {
             end = Offset(w * 0.92f, h - 0.5f),
             strokeWidth = 1.dp.toPx(),
         )
-        // 内侧泛光:大圆角描边模拟 inset 0 0 14px。
-        // 描边环必须沿整个 bar 轮廓贴边走:若只罩上半段,描边的下边缘会
-        // 横穿 bar 中部,形成一条不随内容变化的横向亮带(已踩坑)
-        val sw = 10.dp.toPx()
-        drawRoundRect(
-            brush = Brush.verticalGradient(
-                listOf(colors.glassGlow, Color.Transparent),
-                startY = 0f,
-                endY = h,
-            ),
-            topLeft = Offset(sw / 2f, sw / 2f),
-            size = androidx.compose.ui.geometry.Size(w - sw, h - sw),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(999f, 999f),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = sw),
-        )
+        // CSS 的 inset 0 0 14px 泛光不再画:Canvas 硬描边替代不了 14px 软泛光,
+        // 画出来是一圈横在玻璃内的灰色环(已去掉)
     }
 }
 
