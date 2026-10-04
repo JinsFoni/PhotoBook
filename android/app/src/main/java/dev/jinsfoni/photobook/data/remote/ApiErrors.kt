@@ -61,6 +61,9 @@ object ApiErrors {
 }
 
 /** 统一包一层:HttpException → ApiException;IO/未知 → NETWORK。 */
+/** 网络异常消息(纯 JVM 层,不能 stringResource;ViewModel 显示时映射 R.string.network_unreachable)。 */
+const val NETWORK_MSG = "网络不可达"
+
 suspend fun <T> safeCall(block: suspend () -> T): T = try {
     block()
 } catch (e: HttpException) {
@@ -68,5 +71,5 @@ suspend fun <T> safeCall(block: suspend () -> T): T = try {
     throw ApiErrors.parseErrorBody(body, e.code())
         ?: ApiException(ApiException.SERVER, "HTTP ${e.code()}", e.code(), e)
 } catch (e: java.io.IOException) {
-    throw ApiException(ApiException.NETWORK, "网络不可达", cause = e)
+    throw ApiException(ApiException.NETWORK, NETWORK_MSG, cause = e)
 }

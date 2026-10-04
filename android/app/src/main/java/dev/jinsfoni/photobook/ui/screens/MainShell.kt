@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 fun MainShell(
     hazeState: HazeState,
     onThemeCycle: () -> Unit,
+    onOpenSettings: () -> Unit = {},
     onOpenCollection: (String) -> Unit = {},
     onOpenModel: (String) -> Unit = {},
     onOpenPhoto: (String, Int) -> Unit = { _, _ -> },
@@ -77,6 +78,7 @@ fun MainShell(
                     PhotoTab.EXPLORE -> ExploreScreen(
                         onOpenCollection = onOpenCollection,
                         onOpenAllCollections = openAllCollections,
+                        onOpenSettings = onOpenSettings,
                     )
                     PhotoTab.COLLECTIONS -> CollectionsScreen(
                         initialTag = null,

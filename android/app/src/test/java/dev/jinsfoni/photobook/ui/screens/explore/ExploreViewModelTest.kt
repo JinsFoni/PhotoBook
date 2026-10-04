@@ -1,6 +1,7 @@
 package dev.jinsfoni.photobook.ui.screens.explore
 
 import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
+import dev.jinsfoni.photobook.data.prefs.FakeSessionStore
 import dev.jinsfoni.photobook.data.remote.MobileApi
 import dev.jinsfoni.photobook.data.repo.CollectionsRepository
 import kotlinx.coroutines.Dispatchers
@@ -113,12 +114,3 @@ class ExploreViewModelTest {
     }
 }
 
-private class FakeSessionStore : SessionStoreApi {
-    override val token = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
-    override val username = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
-    override val baseUrl = kotlinx.coroutines.flow.MutableStateFlow("http://localhost:8000")
-    override suspend fun currentBaseUrl(): String = "http://localhost:8000"
-    override suspend fun saveSession(token: String, username: String) {}
-    override suspend fun clearSession() {}
-    override suspend fun saveBaseUrl(url: String) {}
-}

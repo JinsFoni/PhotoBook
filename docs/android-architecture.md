@@ -174,3 +174,14 @@ M0+M1 已实施;以下为与原架构文档的偏差(设计意图不变,实现�
 | 主题持久化 DataStore(S9) | ThemeState 内存单例,S9 换 DataStore | 同上;登录态(token)已走 DataStore Preferences |
 | chrome 自动隐藏 600ms | 灯箱 chrome 6s 自动隐 | 原型 600ms 为鼠标悬停假设;触屏阅读 6s 更合理 |
 | Compose 屏冒烟测试 | M1 未写 createComposeRule 测试,只做 VM/仓库单测(19 项) | 屏渲染靠真机走查(M1 验收),Compose 测试推迟到 M4 CI 阶段 |
+
+## 12. M3 实施偏差记录(android 分支,2026-10-05)
+
+M3(S9 设置页 / 多服务器 / 主题持久化 / 语言)已实施;以下为与原架构文档的偏差:
+
+| 原设计 | 实际实现 | 原因 |
+|---|---|---|
+| ViewModel 错误文案走资源(i18n) | VM 层错误消息保留中文硬编码(UI 层 63 条已抽 `values/` + `values-zh-rTW/`) | `stringResource` 是 @Composable API,不能在 VM/纯 JVM 层调用;按错误码→文案映射需引入 UI 层映射器,推迟到 M4 i18n 收口时统一做 |
+| 端上语言跟随系统(API 33+ `LocaleManager`) | 同左;API 31/32 写 DataStore + 提示 recreate | per-app language API 33 起才有;31/32 无官方机制,DataStore 方案仅存值待 M4 接 AppCompatDelegate |
+| 单测覆盖 DataStore 多档案 | DataStore 实现不测(需 robolectric),测 Fake 语义 + 拦截器重写(7 个新用例,总 35) | 测试策略维持「Fake 替身 + VM/仓库优先」,DataStore 迁移逻辑属 Android 框架胶水 |
+| 网络层动态 baseUrl | HostSelectionInterceptor 在 AuthInterceptor 之前重写 scheme/host/port(runBlocking 读活动档案) | Retrofit baseUrl 保持占位值;媒体 URL 仍按 origin 根拼接,不受影响 |

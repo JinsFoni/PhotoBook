@@ -1,6 +1,8 @@
 package dev.jinsfoni.photobook.ui.screens.collections
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.res.stringResource
+import dev.jinsfoni.photobook.R
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -77,7 +79,7 @@ fun CollectionsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (state.tag != null) "#${state.tag}" else "写真",
+                if (state.tag != null) "#${state.tag}" else stringResource(R.string.collections_noun),
                 style = PhotoType.byline.copy(
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
                     fontSize = 17.sp,
@@ -104,7 +106,7 @@ fun CollectionsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TagChip(
-                label = if (state.sort == "latest") "最新" else "最早",
+                label = if (state.sort == "latest") stringResource(R.string.sort_latest) else stringResource(R.string.sort_earliest),
                 selected = true,
                 onClick = vm::toggleSort,
             )
@@ -126,7 +128,7 @@ fun CollectionsScreen(
                     EmptyState(message = state.error ?: "加载失败")
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "重试",
+                        stringResource(R.string.retry),
                         style = PhotoType.caption,
                         color = colors.accent,
                         modifier = Modifier.photoClickable(vm::retry).padding(8.dp),
@@ -136,7 +138,7 @@ fun CollectionsScreen(
             state.items.isEmpty() -> Box(
                 Modifier.fillMaxSize().padding(bottom = 112.dp),
                 contentAlignment = Alignment.Center,
-            ) { EmptyState(message = "这个标签下还没有写真") }
+            ) { EmptyState(message = stringResource(R.string.empty_tag)) }
             else -> LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 state = gridState,

@@ -1,6 +1,7 @@
 package dev.jinsfoni.photobook.ui.screens.models
 
 import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
+import dev.jinsfoni.photobook.data.prefs.FakeSessionStore
 import dev.jinsfoni.photobook.data.remote.MobileApi
 import dev.jinsfoni.photobook.data.repo.ModelsRepository
 import kotlinx.coroutines.Dispatchers
@@ -43,7 +44,7 @@ class ModelsViewModelTest {
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
             .create(MobileApi::class.java)
-        vm = ModelsViewModel(ModelsRepository(api, FakeSessionStore2()))
+        vm = ModelsViewModel(ModelsRepository(api, FakeSessionStore()))
     }
 
     private fun waitUntil(cond: () -> Boolean) {
@@ -103,12 +104,3 @@ class ModelsViewModelTest {
     }
 }
 
-class FakeSessionStore2 : SessionStoreApi {
-    override val token = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
-    override val username = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
-    override val baseUrl = kotlinx.coroutines.flow.MutableStateFlow("http://localhost:8000")
-    override suspend fun currentBaseUrl(): String = "http://localhost:8000"
-    override suspend fun saveSession(token: String, username: String) {}
-    override suspend fun clearSession() {}
-    override suspend fun saveBaseUrl(url: String) {}
-}

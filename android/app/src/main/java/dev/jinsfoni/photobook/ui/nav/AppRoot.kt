@@ -12,6 +12,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.jinsfoni.photobook.core.design.ThemeMode
+import dev.jinsfoni.photobook.core.design.ThemeState
 import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
 import dev.jinsfoni.photobook.ui.screens.MainShell
 import dev.jinsfoni.photobook.ui.screens.detail.DetailScreen
@@ -20,6 +22,7 @@ import dev.jinsfoni.photobook.ui.screens.lightbox.PhotoDownloader
 import dev.jinsfoni.photobook.ui.screens.login.LoginScreen
 import dev.jinsfoni.photobook.ui.screens.modeldetail.ModelDetailScreen
 import dev.jinsfoni.photobook.ui.screens.search.SearchScreen
+import dev.jinsfoni.photobook.ui.screens.settings.SettingsScreen
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.tween
@@ -33,8 +36,10 @@ import androidx.navigation.navArgument
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -43,17 +48,42 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class AppRootViewModel @Inject constructor(
-    session: SessionStoreApi,
+    private val session: SessionStoreApi,
 ) : ViewModel() {
     val loggedIn = session.token
         .map { !it.isNullOrBlank() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
+
+    /** 启动:把持久化主题灌入 ThemeState(内存单例),变更写回。 */
+    fun restoreTheme() {
+        viewModelScope.launch {
+            ThemeState.mode = session.theme.first()
+        }
+    }
+
+    /** 主题三态循环(light → dark → blur),持久化。 */
+    fun cycleTheme() {
+        val next = when (ThemeState.mode) {
+            ThemeMode.LIGHT -> ThemeMode.DARK
+            ThemeMode.DARK -> ThemeMode.BLUR
+            ThemeMode.BLUR -> ThemeMode.LIGHT
+        }
+        ThemeState.mode = next
+        viewModelScope.launch { session.saveTheme(next) }
+    }
+
+    fun setTheme(mode: ThemeMode) {
+        ThemeState.mode = mode
+        viewModelScope.launch { session.saveTheme(mode) }
+    }
 }
 
 @Composable
 fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel()) {
     val loggedIn by vm.loggedIn.collectAsState()
     val nav = rememberNavController()
+
+    LaunchedEffect(Unit) { vm.restoreTheme() }
 
     when (loggedIn) {
         null -> Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(8, 9, 10))) // 启动闪屏底色
@@ -68,7 +98,8 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                 val hazeState = rememberHazeState()
                 MainShell(
                     hazeState = hazeState,
-                    onThemeCycle = { /* S9 前临时按钮由 MainShell 内部处理 */ },
+                    onThemeCycle = vm::cycleTheme,
+                    onOpenSettings = { nav.navigate("settings") },
                     onOpenCollection = { slug -> nav.navigate("detail/$slug") },
                     onOpenModel = { slug -> nav.navigate("model/$slug") },
                     onOpenPhoto = { slug, idx -> nav.navigate("lightbox/$slug/$idx") },
@@ -85,6 +116,25 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     onBack = { nav.popBackStack() },
                     onOpenCollection = { s -> nav.navigate("detail/$s") },
                 )            }
+            composable("settings") {
+                SettingsScreen(
+                    onBack = { nav.popBackStack() },
+                    onAddServer = { nav.navigate("login?add=1") },
+                    onLoggedOut = {
+                        nav.navigate("login") { popUpTo("shell") { inclusive = true } }
+                    },
+                )
+            }
+            composable(
+                "login?add={add}",
+                arguments = listOf(navArgument("add") { defaultValue = "0" }),
+            ) { entry ->
+                LoginScreen(
+                    onLoggedIn = { /* token 落库 → loggedIn 翻 true 自动切壳 */ },
+                    onBack = { nav.popBackStack() },
+                    startInAddServerMode = entry.arguments?.getString("add") == "1",
+                )
+            }
             composable("search") {
                 SearchScreen(
                     onBack = { nav.popBackStack() },

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.jinsfoni.photobook.data.remote.ApiException
+import dev.jinsfoni.photobook.data.remote.safeCall
 import dev.jinsfoni.photobook.data.repo.AuthRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,11 +18,14 @@ import javax.inject.Inject
 data class LoginUiState(
     val username: String = "",
     val password: String = "",
+    /** S9 添加服务器模式:多一个服务器地址输入;登录成功不切壳,回设置页。 */
+    val addServerMode: Boolean = false,
+    val baseUrl: String = "",
     val loading: Boolean = false,
     val error: String? = null,
 )
 
-/** 登录成功一次性事件(触发导航回 S1)。 */
+/** 登录成功一次性事件(触发导航回 S1 / 回设置页)。 */
 sealed interface LoginEvent {
     data object Success : LoginEvent
 }
@@ -39,11 +43,20 @@ class LoginViewModel @Inject constructor(
 
     fun onUsername(v: String) { _state.value = _state.value.copy(username = v, error = null) }
     fun onPassword(v: String) { _state.value = _state.value.copy(password = v, error = null) }
+    fun onBaseUrl(v: String) { _state.value = _state.value.copy(baseUrl = v, error = null) }
+
+    /** 进入 S9「添加服务器」模式(带地址输入)。 */
+    fun startAddServer() {
+        _state.value = LoginUiState(addServerMode = true)
+    }
 
     fun submit() {
         val s = _state.value
         if (s.loading) return
-        // 输入校验(空值就地报错,不发请求)
+        if (s.addServerMode && s.baseUrl.isBlank()) {
+            _state.value = s.copy(error = "请输入服务器地址")
+            return
+        }
         if (s.username.isBlank() || s.password.isBlank()) {
             _state.value = s.copy(error = "请输入用户名和密码")
             return
@@ -51,7 +64,11 @@ class LoginViewModel @Inject constructor(
         _state.value = s.copy(loading = true, error = null)
         viewModelScope.launch {
             try {
-                auth.login(s.username.trim(), s.password)
+                if (s.addServerMode) {
+                    auth.addServer(normalizeBaseUrl(s.baseUrl), s.username.trim(), s.password)
+                } else {
+                    auth.login(s.username.trim(), s.password)
+                }
                 _state.value = _state.value.copy(loading = false)
                 _events.emit(LoginEvent.Success)
             } catch (e: ApiException) {
@@ -65,5 +82,12 @@ class LoginViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    /** 地址归一:补 scheme、去尾斜杠;API 前缀由 NetworkModule 拦截层处理(host 根约定)。 */
+    private fun normalizeBaseUrl(raw: String): String {
+        var v = raw.trim().trimEnd('/')
+        if (!v.startsWith("http://") && !v.startsWith("https://")) v = "http://$v"
+        return v
     }
 }

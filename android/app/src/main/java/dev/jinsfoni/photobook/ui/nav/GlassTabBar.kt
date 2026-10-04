@@ -1,6 +1,8 @@
 package dev.jinsfoni.photobook.ui.nav
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.res.stringResource
+import dev.jinsfoni.photobook.R
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -42,11 +44,20 @@ import dev.jinsfoni.photobook.ui.icons.IconWidths
 import dev.jinsfoni.photobook.ui.icons.StrokeIcon
 
 /** 底部 4 个 tab(顺序即导航顺序),图标取自 StrokeIcons(路径对照 ui.js)。 */
-enum class PhotoTab(val label: String, val iconParts: List<dev.jinsfoni.photobook.ui.icons.IconPart>) {
-    EXPLORE("发现", listOf(dev.jinsfoni.photobook.ui.icons.TabExploreIcon)),
-    COLLECTIONS("写真", listOf(dev.jinsfoni.photobook.ui.icons.TabCollectionsIcon)),
-    MODELS("模特", listOf(dev.jinsfoni.photobook.ui.icons.TabModelsIcon)),
-    FAVORITES("收藏", listOf(dev.jinsfoni.photobook.ui.icons.TabFavoritesIcon)),
+enum class PhotoTab(val iconParts: List<dev.jinsfoni.photobook.ui.icons.IconPart>) {
+    EXPLORE(listOf(dev.jinsfoni.photobook.ui.icons.TabExploreIcon)),
+    COLLECTIONS(listOf(dev.jinsfoni.photobook.ui.icons.TabCollectionsIcon)),
+    MODELS(listOf(dev.jinsfoni.photobook.ui.icons.TabModelsIcon)),
+    FAVORITES(listOf(dev.jinsfoni.photobook.ui.icons.TabFavoritesIcon)),
+}
+
+/** tab 显示名(资源解析,替代旧 enum 构造参数 label)。 */
+@Composable
+fun PhotoTab.label(): String = when (this) {
+    PhotoTab.EXPLORE -> stringResource(R.string.tab_explore)
+    PhotoTab.COLLECTIONS -> stringResource(R.string.collections_noun)
+    PhotoTab.MODELS -> stringResource(R.string.models_noun)
+    PhotoTab.FAVORITES -> stringResource(R.string.favorites_noun)
 }
 
 private val TabHeight = 64.dp
@@ -170,7 +181,7 @@ private fun TabItem(
                 strokeWidth = IconWidths.THIN,
             )
             Text(
-                tab.label,
+                tab.label(),
                 style = if (selected) PhotoType.tabLabelActive else PhotoType.tabLabel,
                 color = if (selected) colors.ink else colors.ink2,
             )

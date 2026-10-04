@@ -1,7 +1,7 @@
 package dev.jinsfoni.photobook.ui.screens.login
 
 import app.cash.turbine.test
-import dev.jinsfoni.photobook.data.prefs.SessionStore
+import dev.jinsfoni.photobook.data.prefs.FakeSessionStore
 import dev.jinsfoni.photobook.data.remote.MobileApi
 import dev.jinsfoni.photobook.data.repo.AuthRepository
 import kotlinx.coroutines.Dispatchers
@@ -123,17 +123,3 @@ class LoginViewModelTest {
     }
 }
 
-/** 内存桩:替代 SessionStore(它需要 Android Context)。 */
-private class FakeSessionStore : dev.jinsfoni.photobook.data.prefs.SessionStoreApi {
-    var saved: Pair<String, String>? = null
-    private val flow = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
-    override val token: kotlinx.coroutines.flow.Flow<String?> = flow
-    override val username: kotlinx.coroutines.flow.Flow<String?> =
-        kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
-    override val baseUrl: kotlinx.coroutines.flow.Flow<String> =
-        kotlinx.coroutines.flow.MutableStateFlow("http://localhost:8000")
-    override suspend fun saveSession(token: String, username: String) { saved = token to username }
-    override suspend fun clearSession() { saved = null }
-    override suspend fun currentBaseUrl(): String = "http://localhost:8000"
-    override suspend fun saveBaseUrl(url: String) {}
-}

@@ -1,6 +1,7 @@
 package dev.jinsfoni.photobook.ui.screens.search
 
 import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
+import dev.jinsfoni.photobook.data.prefs.FakeSessionStore
 import dev.jinsfoni.photobook.data.remote.MobileApi
 import dev.jinsfoni.photobook.data.repo.SearchRepository
 import kotlinx.coroutines.Dispatchers
@@ -45,7 +46,7 @@ class SearchViewModelTest {
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
             .create(MobileApi::class.java)
-        vm = SearchViewModel(SearchRepository(api, FakeSessionStore3()))
+        vm = SearchViewModel(SearchRepository(api, FakeSessionStore()))
     }
 
     private fun waitUntil(cond: () -> Boolean) {
@@ -112,12 +113,3 @@ class SearchViewModelTest {
     }
 }
 
-class FakeSessionStore3 : SessionStoreApi {
-    override val token = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
-    override val username = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
-    override val baseUrl = kotlinx.coroutines.flow.MutableStateFlow("http://localhost:8000")
-    override suspend fun currentBaseUrl(): String = "http://localhost:8000"
-    override suspend fun saveSession(token: String, username: String) {}
-    override suspend fun clearSession() {}
-    override suspend fun saveBaseUrl(url: String) {}
-}

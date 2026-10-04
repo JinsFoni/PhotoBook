@@ -1,6 +1,8 @@
 package dev.jinsfoni.photobook.ui.screens.search
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.res.stringResource
+import dev.jinsfoni.photobook.R
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -88,7 +90,7 @@ fun SearchScreen(
                 decorationBox = { inner ->
                     Box {
                         if (state.q.isEmpty()) {
-                            Text("搜索模特 / 写真 / 标签", style = PhotoType.caption, color = colors.ink3, fontSize = 16.sp)
+                            Text(stringResource(R.string.search_hint), style = PhotoType.caption, color = colors.ink3, fontSize = 16.sp)
                         }
                         inner()
                     }
@@ -112,7 +114,7 @@ fun SearchScreen(
         val r = state.results
         when {
             state.pristine -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("输入关键词开始搜索", style = PhotoType.caption, color = colors.ink3)
+                Text(stringResource(R.string.search_hint_input), style = PhotoType.caption, color = colors.ink3)
             }
             state.searching && r == null -> GridSkeleton()
             state.error != null -> Box(
@@ -120,10 +122,10 @@ fun SearchScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    EmptyState(message = state.error ?: "搜索失败")
+                    EmptyState(message = state.error ?: stringResource(R.string.search_failed))
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "重试", style = PhotoType.caption, color = colors.accent,
+                        stringResource(R.string.retry), style = PhotoType.caption, color = colors.accent,
                         modifier = Modifier.photoClickable(vm::retry).padding(8.dp),
                     )
                 }

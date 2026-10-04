@@ -1,6 +1,8 @@
 package dev.jinsfoni.photobook.ui.screens.favorites
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.stringResource
+import dev.jinsfoni.photobook.R
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -78,7 +80,7 @@ fun FavoritesScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "收藏",
+                stringResource(R.string.favorites_noun),
                 style = PhotoType.byline.copy(fontFamily = FontFamily.Serif, fontSize = 17.sp),
                 color = colors.ink,
             )
@@ -120,7 +122,7 @@ fun FavoritesScreen(
                         verticalAlignment = Alignment.Bottom,
                     ) {
                         Text(
-                            tab.label,
+                            tab.label(),
                             style = PhotoType.byline.copy(fontSize = 14.5.sp),
                             color = if (selected) colors.ink else colors.ink3,
                         )
@@ -144,7 +146,7 @@ fun FavoritesScreen(
                     EmptyState(message = state.error ?: "加载失败")
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "重试", style = PhotoType.caption, color = colors.accent,
+                        stringResource(R.string.retry), style = PhotoType.caption, color = colors.accent,
                         modifier = Modifier.photoClickable(vm::refresh).padding(8.dp),
                     )
                 }
@@ -287,8 +289,24 @@ private fun TabSkeleton(tab: FavTab) {
     }
 }
 
-internal fun emptyText(tab: FavTab) = when (tab) {
+/** 段落显示名(资源解析)。 */
+@Composable
+internal fun FavTab.label(): String = when (this) {
+    FavTab.PHOTOS -> stringResource(R.string.photos_noun)
+    FavTab.COLLECTIONS -> stringResource(R.string.collections_noun)
+    FavTab.MODELS -> stringResource(R.string.models_noun)
+}
+
+/** 纯 JVM 版空态文案(测试/VM 复用;UI 层请用 emptyText)。 */
+internal fun emptyTextFor(tab: FavTab): String = when (tab) {
     FavTab.MODELS -> "还没有收藏模特"
     FavTab.COLLECTIONS -> "还没有收藏写真"
     FavTab.PHOTOS -> "还没有收藏照片"
+}
+
+@Composable
+internal fun emptyText(tab: FavTab): String = when (tab) {
+    FavTab.MODELS -> stringResource(R.string.empty_fav_models)
+    FavTab.COLLECTIONS -> stringResource(R.string.empty_fav_collections)
+    FavTab.PHOTOS -> stringResource(R.string.empty_fav_photos)
 }

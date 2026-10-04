@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /** 三段 Tab(原型 s7:照片/写真/模特,照片段默认选中)。 */
-enum class FavTab(val label: String) { PHOTOS("照片"), COLLECTIONS("写真"), MODELS("模特") }
+enum class FavTab { PHOTOS, COLLECTIONS, MODELS }
 
 data class FavPhotoItem(
     val slug: String,

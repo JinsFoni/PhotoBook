@@ -1,6 +1,8 @@
 package dev.jinsfoni.photobook.ui.screens.login
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.stringResource
+import dev.jinsfoni.photobook.R
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
+import dev.jinsfoni.photobook.ui.components.photoClickable
 import dev.jinsfoni.photobook.core.design.PhotoType
 
 /**
@@ -39,14 +42,21 @@ import dev.jinsfoni.photobook.core.design.PhotoType
 @Composable
 fun LoginScreen(
     onLoggedIn: () -> Unit,
+    onBack: (() -> Unit)? = null,
+    startInAddServerMode: Boolean = false,
     vm: LoginViewModel = hiltViewModel(),
 ) {
     val colors = LocalPhotoColors.current
     val state by vm.state.collectAsState()
 
+    LaunchedEffect(startInAddServerMode) {
+        if (startInAddServerMode) vm.startAddServer()
+    }
     LaunchedEffect(Unit) {
         vm.events.collect { e ->
-            if (e is LoginEvent.Success) onLoggedIn()
+            if (e is LoginEvent.Success) {
+                if (state.addServerMode) onBack?.invoke() else onLoggedIn()
+            }
         }
     }
 
@@ -66,7 +76,7 @@ fun LoginScreen(
                 textAlign = TextAlign.Center,
             )
             Text(
-                "登录以收藏与管理",
+                if (state.addServerMode) stringResource(R.string.connect_subtitle) else stringResource(R.string.login_subtitle),
                 style = PhotoType.caption,
                 color = colors.ink3,
                 modifier = Modifier.padding(top = 10.dp),
@@ -74,15 +84,23 @@ fun LoginScreen(
 
             Spacer(Modifier.height(56.dp))
 
+            if (state.addServerMode) {
+                UnderlineField(
+                    value = state.baseUrl,
+                    onValue = vm::onBaseUrl,
+                    hint = stringResource(R.string.server_addr_hint),
+                    keyboardType = KeyboardType.Uri,
+                )
+            }
             UnderlineField(
                 value = state.username,
                 onValue = vm::onUsername,
-                hint = "用户名",
+                hint = stringResource(R.string.username),
             )
             UnderlineField(
                 value = state.password,
                 onValue = vm::onPassword,
-                hint = "密码",
+                hint = stringResource(R.string.password),
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardType = KeyboardType.Password,
             )
@@ -112,14 +130,27 @@ fun LoginScreen(
                     .padding(horizontal = 28.dp)
                     .height(46.dp),
             ) {
-                Text("登录", style = PhotoType.body)
+                Text(if (state.addServerMode) stringResource(R.string.connect) else stringResource(R.string.login), style = PhotoType.body)
             }
 
             Text(
-                "演示账号 demo / demo123",
+                stringResource(R.string.demo_account),
                 style = PhotoType.micro,
                 color = colors.ink3,
                 modifier = Modifier.padding(top = 22.dp),
+            )
+        }
+
+        // 返回(S9 添加服务器模式用)
+        if (onBack != null) {
+            Text(
+                stringResource(R.string.back),
+                style = PhotoType.caption,
+                color = colors.ink2,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 52.dp, start = 28.dp)
+                    .photoClickable { onBack() },
             )
         }
 

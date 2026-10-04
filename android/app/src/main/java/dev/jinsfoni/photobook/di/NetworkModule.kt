@@ -9,6 +9,7 @@ import dagger.hilt.components.SingletonComponent
 import dev.jinsfoni.photobook.data.prefs.SessionStore
 import dev.jinsfoni.photobook.data.remote.ApiErrors
 import dev.jinsfoni.photobook.data.remote.AuthInterceptor
+import dev.jinsfoni.photobook.data.remote.HostSelectionInterceptor
 import dev.jinsfoni.photobook.data.remote.MobileApi
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -33,8 +34,12 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttp(auth: AuthInterceptor): OkHttpClient =
+    fun provideOkHttp(
+        auth: AuthInterceptor,
+        hostSelection: HostSelectionInterceptor,
+    ): OkHttpClient =
         OkHttpClient.Builder()
+            .addInterceptor(hostSelection)
             .addInterceptor(auth)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)

@@ -1,6 +1,8 @@
 package dev.jinsfoni.photobook.ui.screens.explore
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.stringResource
+import dev.jinsfoni.photobook.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,6 +51,7 @@ import dev.jinsfoni.photobook.ui.models.DiscoverFeed
 fun ExploreScreen(
     onOpenCollection: (slug: String) -> Unit,
     onOpenAllCollections: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     vm: ExploreViewModel = hiltViewModel(),
 ) {
     val colors = LocalPhotoColors.current
@@ -63,6 +66,7 @@ fun ExploreScreen(
                 refreshing = state.refreshing,
                 onOpenCollection = onOpenCollection,
                 onOpenAllCollections = onOpenAllCollections,
+                onOpenSettings = onOpenSettings,
                 onRetry = vm::retry,
             )
             state.error != null -> Box(
@@ -73,7 +77,7 @@ fun ExploreScreen(
                     EmptyState(message = state.error ?: "加载失败")
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        "重试",
+                        stringResource(R.string.retry),
                         style = PhotoType.caption,
                         color = colors.accent,
                         modifier = Modifier.photoClickable(vm::retry).padding(8.dp),
@@ -118,6 +122,7 @@ private fun ExploreContent(
     refreshing: Boolean,
     onOpenCollection: (String) -> Unit,
     onOpenAllCollections: () -> Unit,
+    onOpenSettings: () -> Unit,
     onRetry: () -> Unit,
 ) {
     val colors = LocalPhotoColors.current
@@ -131,6 +136,30 @@ private fun ExploreContent(
         horizontalArrangement = Arrangement.spacedBy(13.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        // 顶栏:词标 + 设置入口(词标与 hero 重叠区由 hero 纱保证可读性)
+        item(span = { GridItemSpan(2) }) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(colors.paper)
+                    .statusBarsPadding()
+                    .padding(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Photo Collection",
+                    style = PhotoType.cardTitle,
+                    color = colors.ink,
+                )
+                Text(
+                    stringResource(R.string.settings),
+                    style = PhotoType.caption,
+                    color = colors.ink2,
+                    modifier = Modifier.photoClickable(onOpenSettings).padding(6.dp),
+                )
+            }
+        }
         // hero 轮播(featured,跨两列)
         item(span = { GridItemSpan(2) }) {
             HeroCarousel(
@@ -141,8 +170,8 @@ private fun ExploreContent(
         // 节标题「最新入库」
         item(span = { GridItemSpan(2) }) {
             dev.jinsfoni.photobook.ui.components.SectionHeader(
-                title = "最新入库",
-                actionText = "查看全部",
+                title = stringResource(R.string.latest_added),
+                actionText = stringResource(R.string.view_all),
                 // 全部列表 = 写真 tab(S2);不能传空 slug 开详情 ——
                 // 空 slug 会请求 GET collections/ 被 307 重定向到列表接口,
                 // 详情 DTO 解码列表 JSON 即崩(MissingFieldException)
@@ -152,7 +181,7 @@ private fun ExploreContent(
         if (feed.latest.isEmpty() && !refreshing) {
             item(span = { GridItemSpan(2) }) {
                 Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
-                    EmptyState(message = "还没有写真,下拉刷新试试")
+                    EmptyState(message = stringResource(R.string.empty_collections_pull))
                 }
             }
         }
@@ -206,7 +235,7 @@ private fun HeroCarousel(
                 )
                 Column(Modifier.align(Alignment.BottomStart).padding(22.dp)) {
                     Text(
-                        "FEATURED · 精选",
+                        stringResource(R.string.featured_kicker),
                         style = PhotoType.tag.copy(letterSpacing = 2.5.sp),
                         color = Color.White.copy(alpha = 0.69f),
                     )

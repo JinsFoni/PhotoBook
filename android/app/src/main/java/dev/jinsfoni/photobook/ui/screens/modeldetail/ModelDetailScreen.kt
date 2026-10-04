@@ -1,6 +1,8 @@
 package dev.jinsfoni.photobook.ui.screens.modeldetail
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.stringResource
+import dev.jinsfoni.photobook.R
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,7 +83,7 @@ fun ModelDetailScreen(
                 EmptyState(message = state.error ?: "加载失败")
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "重试",
+                    stringResource(R.string.retry),
                     style = PhotoType.caption,
                     color = colors.accent,
                     modifier = Modifier.photoClickable { vm.load(slug) }.padding(8.dp),
@@ -227,7 +229,7 @@ private fun ModelDetailContent(
         if (d.collections.isEmpty()) {
             item(span = { GridItemSpan(2) }) {
                 Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
-                    EmptyState(message = "还没有写真")
+                    EmptyState(message = stringResource(R.string.empty_collections))
                 }
             }
         }

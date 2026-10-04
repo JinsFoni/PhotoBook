@@ -1,6 +1,8 @@
 package dev.jinsfoni.photobook.ui.screens.models
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.res.stringResource
+import dev.jinsfoni.photobook.R
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,7 +57,7 @@ fun ModelsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "模特",
+                stringResource(R.string.models_noun),
                 style = PhotoType.byline.copy(fontFamily = FontFamily.Serif, fontSize = 17.sp),
                 color = colors.ink,
             )
@@ -79,7 +81,7 @@ fun ModelsScreen(
                     EmptyState(message = state.error ?: "加载失败")
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "重试",
+                        stringResource(R.string.retry),
                         style = PhotoType.caption,
                         color = colors.accent,
                         modifier = Modifier.photoClickable(vm::retry).padding(8.dp),
@@ -89,7 +91,7 @@ fun ModelsScreen(
             state.items.isEmpty() -> Box(
                 Modifier.fillMaxSize().padding(bottom = 112.dp),
                 contentAlignment = Alignment.Center,
-            ) { EmptyState(message = "还没有模特") }
+            ) { EmptyState(message = stringResource(R.string.empty_models)) }
             else -> LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),

@@ -18,7 +18,7 @@ val LocalPhotoColors = staticCompositionLocalOf<PhotoColors> {
 
 val LocalThemeMode = staticCompositionLocalOf { ThemeMode.LIGHT }
 
-/** M1 临时主题宿主:可变状态驱动重组(临时切换按钮用,S9 换成 DataStore 驱动)。 */
+/** 主题宿主:内存态驱动重组;启动从 DataStore 灌入,变更写回(见 AppRoot/MainShell)。 */
 object ThemeState {
     var mode by mutableStateOf(ThemeMode.LIGHT)
 }

@@ -34,6 +34,17 @@ class AuthRepository @Inject constructor(
 
     suspend fun logout() = session.clearSession()
 
+    /** S9 添加服务器:登录到新地址并落档激活;失败抛 ApiException。 */
+    suspend fun addServer(baseUrl: String, username: String, password: String): MeDto {
+        val token = safeCall { api.login(LoginRequestDto(username, password)) }.token
+        session.addProfile(baseUrl, token, username)
+        return try {
+            safeCall { api.me() }
+        } catch (e: ApiException) {
+            MeDto(username = username, role = "user")
+        }
+    }
+
     /** 本地是否有会话(启动时决定 S8/S1)。 */
     fun hasSession(): Flow<Boolean> =
         session.token.map { !it.isNullOrBlank() }
