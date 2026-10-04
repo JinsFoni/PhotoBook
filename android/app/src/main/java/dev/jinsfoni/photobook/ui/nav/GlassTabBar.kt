@@ -22,9 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -36,8 +34,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
@@ -90,7 +86,6 @@ fun GlassTabBar(
 ) {
     val colors = LocalPhotoColors.current
     val lensShader = rememberLensShader()
-    var barSize by remember { mutableStateOf(IntSize.Zero) }
 
     // 药丸追逐 pager 小数进度:spring 追赶 = 液体黏滞感
     val pillX by animateFloatAsState(
@@ -105,24 +100,9 @@ fun GlassTabBar(
         modifier
             .height(TabHeight)
             .tabBarShadow()
-            .onSizeChanged { barSize = it }
             .clip(TabShape)
-            // AGSL 液态透镜包在玻璃背板外(33+,31/32 无此层)
-            .then(
-                if (lensShader != null) {
-                    Modifier.graphicsLayer {
-                        lensShader.setFloatUniform(
-                            "uResolution",
-                            floatArrayOf(size.width, size.height),
-                        )
-                        lensShader.setFloatUniform("uStrength", floatArrayOf(2.dp.toPx()))
-                        lensShader.setFloatUniform("uSpecular", floatArrayOf(1f, 1f, 1f, 0.22f))
-                        renderEffect = lensShader.asLensEffect()
-                    }
-                } else {
-                    Modifier
-                }
-            )
+            // 背板 = 纯净重模糊玻璃,不套 AGSL:整条宽 bar 的边缘透镜会退化成
+            // 上下两条横贯全宽的带状伪影(镜面弧 + 内容拖拽);液态透镜放在药丸上
             .hazeBlur(
                 HazeInput.Sources(hazeState),
                 HazeBlurStyle {
@@ -174,6 +154,17 @@ fun GlassTabBar(
                             scaleX = stretch
                             scaleY = 1f - (stretch - 1f) * 0.55f
                             alpha = 0.99f // 独立组合层,保证 RenderEffect 生效
+                            // 液态透镜放在药丸上(33+):小胶囊尺寸下端帽折射/顶光弧带
+                            // 宽度正确,不会像整条 bar 那样退化成横贯全宽的带状伪影
+                            if (lensShader != null) {
+                                lensShader.setFloatUniform(
+                                    "uResolution",
+                                    floatArrayOf(size.width, size.height),
+                                )
+                                lensShader.setFloatUniform("uStrength", floatArrayOf(2.dp.toPx()))
+                                lensShader.setFloatUniform("uSpecular", floatArrayOf(1f, 1f, 1f, 0.22f))
+                                renderEffect = lensShader.asLensEffect()
+                            }
                         }
                         .clip(TabShape)
                         .hazeBlur(

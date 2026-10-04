@@ -26,17 +26,19 @@ internal const val LENS_SKSL: String = """
     uniform float4 uSpecular;
 
     half4 main(float2 fragCoord) {
-        // 胶囊几何:半径 = 高/2,端帽圆心在左右两端;
-        // 取距最近端帽的距离归一化 → 中段 r<1 平坦区(不折射),
-        // 只有两个圆头边缘才有透镜效果(整条宽 bar 不能用 min(cx,cy) 圆形公式)
+        // 胶囊 SDF(按「到管壁距离」归一化):
+        //   中段(|x-cx|<halfLen):r = |dy|/rad —— 只有上下边缘折射;
+        //   圆头区:             r = |q|/rad —— 圆头边缘折射。
+        // 错误写法(距端帽圆心距离)会让中段 r≈5 → edge=1 全程折射+采样错位,
+        // 在与端帽区交界处撕裂出横向暗带
         float rad = uResolution.y * 0.5;
-        float2 c1 = float2(rad, rad);
-        float2 c2 = float2(uResolution.x - rad, rad);
-        float2 d1 = fragCoord - c1;
-        float2 d2 = fragCoord - c2;
-        float2 d = length(d1) < length(d2) ? d1 : d2;
-        float r = length(d) / rad;
-        float2 n = length(d) > 0.0001 ? d / length(d) : float2(0.0);
+        float halfLen = uResolution.x * 0.5 - rad;
+        float2 q = float2(abs(fragCoord.x - uResolution.x * 0.5) - halfLen,
+                          fragCoord.y - rad);
+        float ql = length(q);
+        float r = q.x > 0.0 ? ql / rad : abs(q.y) / rad;
+        float2 n = q.x > 0.0 ? (ql > 0.0001 ? q / ql : float2(0.0))
+                             : float2(0.0, q.y > 0.0 ? 1.0 : -1.0);
         float edge = smoothstep(0.45, 1.0, r);
         float2 off = -n * edge * uStrength;
         float2 suv = clamp(fragCoord + off, float2(0.0), uResolution - float2(1.0));
