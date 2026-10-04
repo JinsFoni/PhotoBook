@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
+import dev.jinsfoni.photobook.core.design.PhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.ui.components.CollectionCard
 import dev.jinsfoni.photobook.ui.components.EmptyState
@@ -156,9 +157,9 @@ fun FavoritesScreen(
                 FavTab.MODELS -> LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 112.dp),
-                    horizontalArrangement = Arrangement.spacedBy(13.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp),
+                    horizontalArrangement = Arrangement.spacedBy(11.dp),
+                    verticalArrangement = Arrangement.spacedBy(11.dp),
                 ) {
                     items(state.models.size) { i ->
                         val m = state.models[i]
@@ -173,9 +174,9 @@ fun FavoritesScreen(
                 FavTab.COLLECTIONS -> LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 112.dp),
-                    horizontalArrangement = Arrangement.spacedBy(13.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp),
+                    horizontalArrangement = Arrangement.spacedBy(11.dp),
+                    verticalArrangement = Arrangement.spacedBy(11.dp),
                 ) {
                     items(state.collections.size) { i ->
                         val c = state.collections[i]
@@ -197,65 +198,85 @@ fun FavoritesScreen(
 }
 
 /**
- * 照片段瀑布拼排:3 列,每张按归一比例(竖→2:3、横→3:2,方图 1:1)定高,
- * 新图总是落入当前最矮列,消除统一列高造成的空白。
+ * 照片段行式拼贴(用户约定):
+ * - 竖版照片两两并排一行(每张 2:3,整行即 4:3 横向块)
+ * - 横版照片独占一行(3:2 ≈ 两张竖图占位),方图独占一行(1:1)
+ * - 行内剩余奇数空位不再补图,保持阅读节奏;点击进灯箱。
  */
-/**
- * 照片段瀑布拼排:3 列等宽,每张按归一比例(竖→2:3、横→3:2、方→1:1)定高,
- * 新图总是落入当前最矮列,消除等高网格造成的空白。
- * 收藏照片为个人收藏量级(几十至百级),全量组合即可,不引入分页复杂度。
- */
+/** 照片行模型:竖图对(可落单) / 横图行 / 方图行。 */
+private sealed interface PhotoRow
+private data class PPair(val a: FavPhotoItem, val b: FavPhotoItem?) : PhotoRow
+private data class LRow(val item: FavPhotoItem) : PhotoRow
+private data class SRow(val item: FavPhotoItem) : PhotoRow
+
 @Composable
 private fun PhotosMasonry(
     photos: List<FavPhotoItem>,
     onOpenPhoto: (String, Int) -> Unit,
 ) {
     val colors = LocalPhotoColors.current
-    val columns = 3
-    // 每列内容:最短列优先分配(按归一比例高度计距,含间隙近似)
-    val placed: List<List<FavPhotoItem>> = remember(photos) {
-        val heights = FloatArray(columns)
-        val out = List(columns) { mutableListOf<FavPhotoItem>() }
-        for (p in photos) {
-            val norm = when {
-                p.aspect < 0.98f -> 2f / 3f   // 竖版 → 2:3
-                p.aspect > 1.02f -> 3f / 2f   // 横版 → 3:2
-                else -> 1f                    // 方图
+    val rows: List<PhotoRow> = remember(photos) {
+        val out = mutableListOf<PhotoRow>()
+        var i = 0
+        while (i < photos.size) {
+            val p = photos[i]
+            when {
+                p.aspect < 0.98f -> {                      // 竖版:凑两张成行
+                    if (i + 1 < photos.size && photos[i + 1].aspect < 0.98f) {
+                        out += PPair(p, photos[i + 1]); i += 2
+                    } else {
+                        out += PPair(p, null); i += 1      // 落单竖图:左位,右侧留空
+                    }
+                }
+                p.aspect > 1.02f -> { out += LRow(p); i += 1 }  // 横版:独占一行
+                else -> { out += SRow(p); i += 1 }              // 方图:独占一行
             }
-            val col = heights.indices.minBy { heights[it] }
-            out[col] += p
-            heights[col] += norm + 0.03f
         }
         out
     }
-    Row(
+
+    Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(start = 18.dp, end = 18.dp, bottom = 112.dp),
-        horizontalArrangement = Arrangement.spacedBy(11.dp),
+            .padding(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp),
+        verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
-        placed.forEach { colItems ->
-            Column(
-                Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(11.dp),
-            ) {
-                colItems.forEach { p ->
-                    AsyncImage(
-                        model = p.thumbUrl,
-                        contentDescription = p.slug,
-                        contentScale = ContentScale.FillWidth,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(p.aspect)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(colors.paper2)
-                            .photoClickable { onOpenPhoto(p.slug, p.idx) },
-                    )
+        rows.forEach { row ->
+            when (row) {
+                is PPair -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+                    PhotoCell(row.a, 2f / 3f, Modifier.weight(1f), colors, onOpenPhoto)
+                    if (row.b != null) {
+                        PhotoCell(row.b, 2f / 3f, Modifier.weight(1f), colors, onOpenPhoto)
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
                 }
+                is LRow -> PhotoCell(row.item, 3f / 2f, Modifier.fillMaxWidth(), colors, onOpenPhoto)
+                is SRow -> PhotoCell(row.item, 1f, Modifier.fillMaxWidth(), colors, onOpenPhoto)
             }
         }
     }
+}
+
+@Composable
+private fun PhotoCell(
+    p: FavPhotoItem,
+    aspect: Float,
+    modifier: Modifier,
+    colors: PhotoColors,
+    onOpenPhoto: (String, Int) -> Unit,
+) {
+    AsyncImage(
+        model = p.thumbUrl,
+        contentDescription = p.slug,
+        contentScale = ContentScale.FillWidth,
+        modifier = modifier
+            .aspectRatio(aspect)
+            .clip(RoundedCornerShape(2.dp))
+            .background(colors.paper2)
+            .photoClickable { onOpenPhoto(p.slug, p.idx) },
+    )
 }
 
 @Composable
