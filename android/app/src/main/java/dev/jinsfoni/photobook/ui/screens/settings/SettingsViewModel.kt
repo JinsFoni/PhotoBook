@@ -13,6 +13,7 @@ import dev.jinsfoni.photobook.core.design.ThemeState
 import dev.jinsfoni.photobook.data.prefs.ServerProfile
 import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -62,13 +63,17 @@ class SettingsViewModel(
         @ApplicationContext context: Context,
     ) : this(session, SystemLocaleManager(context))
 
-    val state = combine(session.profiles, session.activeProfileId, session.theme, session.locale) {
-            profiles, activeId, theme, locale ->
+    /** 系统 per-app locale(响应式;初始读一次,切换时直接写)。 */
+    private val systemLocale = MutableStateFlow(localeCtl.currentTags().orEmpty())
+
+    val state = combine(
+        session.profiles, session.activeProfileId, session.theme, session.locale, systemLocale,
+    ) { profiles, activeId, theme, dataStoreLocale, sysLocale ->
         SettingsUiState(
             profiles = profiles,
             activeProfileId = activeId ?: profiles.firstOrNull()?.id,
             theme = theme,
-            locale = localeCtl.currentTags().orEmpty().ifBlank { locale },
+            locale = sysLocale.ifBlank { dataStoreLocale },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -89,8 +94,9 @@ class SettingsViewModel(
 
     /** 语言切换:33+ 走系统 per-app locale(自动重建);31/32 存档 + recreate。 */
     fun setLocale(tag: String, recreate: () -> Unit) {
-        if (localeCtl.currentTags() != null || Build.VERSION.SDK_INT >= 33) {
+        if (Build.VERSION.SDK_INT >= 33) {
             localeCtl.setTags(tag)
+            systemLocale.value = tag
         } else {
             viewModelScope.launch { session.saveLocale(tag) }
             recreate()

@@ -185,19 +185,29 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         context.dataStore.edit { it[localeKey] = tag }
     }
 
-    /** 档案列表:profiles 键优先;旧键(base_url/token/username)迁移为首个档案。 */
-    private fun loadProfiles(prefs: Preferences): List<ServerProfile> {
+    /**
+     * 档案列表:profiles 键优先;旧键(base_url/token/username)迁移为首个档案。
+     * 自动愈合:M2 时代从不写 base_url(地址为编译期常量),早期版本可能把空列表
+     * 固化成 "[]"——只要旧 token 仍在,按未迁移处理,用默认地址重建 legacy 档案。
+     */
+    internal fun loadProfiles(prefs: Preferences): List<ServerProfile> {
         val raw = prefs[profilesKey]
         if (!raw.isNullOrBlank()) {
-            return runCatching { json.decodeFromString<List<ServerProfile>>(raw) }.getOrDefault(emptyList())
+            val parsed = runCatching {
+                json.decodeFromString<List<ServerProfile>>(raw)
+            }.getOrDefault(emptyList())
+            if (parsed.isNotEmpty()) return parsed
         }
-        val url = prefs[baseUrlKey] ?: return emptyList()
+        val legacyToken = prefs[tokenKey]
+        val url = prefs[baseUrlKey]
+            ?: DEFAULT_BASE_URL.takeIf { !legacyToken.isNullOrBlank() }
+            ?: return emptyList()
         return listOf(
             ServerProfile(
                 id = "legacy",
                 baseUrl = url,
                 username = prefs[usernameKey].orEmpty(),
-                token = prefs[tokenKey].orEmpty(),
+                token = legacyToken.orEmpty(),
             ),
         )
     }

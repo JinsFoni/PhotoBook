@@ -112,7 +112,7 @@ fun SettingsScreen(
         SectionLabel(stringResource(R.string.section_language))
         ThemeRow(
             label = stringResource(R.string.lang_simplified),
-            selected = state.locale.let { it.isBlank() || it.startsWith("zh-CN") },
+            selected = state.locale.startsWith("zh-CN"),
             onClick = { vm.setLocale("zh-CN") { activity.recreate() } },
         )
         ThemeRow(
@@ -122,7 +122,7 @@ fun SettingsScreen(
         )
         ThemeRow(
             label = stringResource(R.string.lang_system),
-            selected = false,
+            selected = state.locale.isBlank(),
             onClick = { vm.setLocale("") { activity.recreate() } },
         )
 
