@@ -51,6 +51,7 @@ import dev.jinsfoni.photobook.ui.models.DiscoverFeed
 fun ExploreScreen(
     onOpenCollection: (slug: String) -> Unit,
     onOpenAllCollections: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
     vm: ExploreViewModel = hiltViewModel(),
 ) {
     val colors = LocalPhotoColors.current
@@ -65,6 +66,7 @@ fun ExploreScreen(
                 refreshing = state.refreshing,
                 onOpenCollection = onOpenCollection,
                 onOpenAllCollections = onOpenAllCollections,
+                onOpenSearch = onOpenSearch,
                 onRetry = vm::retry,
             )
             state.error != null -> Box(
@@ -120,6 +122,7 @@ private fun ExploreContent(
     refreshing: Boolean,
     onOpenCollection: (String) -> Unit,
     onOpenAllCollections: () -> Unit,
+    onOpenSearch: () -> Unit,
     onRetry: () -> Unit,
 ) {
     val colors = LocalPhotoColors.current
@@ -148,6 +151,15 @@ private fun ExploreContent(
                     "Photo Collection",
                     style = PhotoType.cardTitle,
                     color = colors.ink,
+                )
+                // 搜索入口:与图集页一致的描边放大镜(20dp,ink2)
+                dev.jinsfoni.photobook.ui.icons.StrokeIcon(
+                    dev.jinsfoni.photobook.ui.icons.SearchIcon,
+                    size = 20.dp,
+                    tint = colors.ink2,
+                    modifier = Modifier
+                        .photoClickable(onOpenSearch)
+                        .padding(4.dp),
                 )
             }
         }

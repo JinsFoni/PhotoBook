@@ -61,6 +61,7 @@ fun MainShell(
                     PhotoTab.EXPLORE -> ExploreScreen(
                         onOpenCollection = onOpenCollection,
                         onOpenAllCollections = openAllCollections,
+                        onOpenSearch = onOpenSearch,
                     )
                     PhotoTab.COLLECTIONS -> CollectionsScreen(
                         initialTag = null,
