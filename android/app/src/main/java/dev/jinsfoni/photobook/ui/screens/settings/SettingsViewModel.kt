@@ -22,15 +22,45 @@ data class SettingsUiState(
     val profiles: List<ServerProfile> = emptyList(),
     val activeProfileId: String? = null,
     val theme: ThemeMode = ThemeMode.LIGHT,
-    /** 当前语言标签("" = 跟随系统);API 33+ 以 LocaleManager 为准。 */
+    /** 当前语言标签("" = 跟随系统);API 33+ 以系统 per-app locale 为准。 */
     val locale: String = "",
 )
 
+/** per-app 语言控制抽象:33+ 系统实现,低版本不支持(回落 DataStore + recreate)。 */
+interface LocaleManagerApi {
+    /** 当前 per-app locale 标签;null = 平台不支持或未设置。 */
+    fun currentTags(): String?
+    fun setTags(tag: String)
+}
+
+/** 系统实现(API 33+ LocaleManager;低版本 currentTags 恒 null)。 */
+class SystemLocaleManager(private val context: Context) : LocaleManagerApi {
+    override fun currentTags(): String? =
+        if (Build.VERSION.SDK_INT >= 33) {
+            context.getSystemService(LocaleManager::class.java)
+                ?.applicationLocales?.toLanguageTags()?.ifBlank { null }
+        } else null
+
+    override fun setTags(tag: String) {
+        if (Build.VERSION.SDK_INT >= 33) {
+            context.getSystemService(LocaleManager::class.java)?.applicationLocales =
+                if (tag.isBlank()) LocaleList.getEmptyLocaleList()
+                else LocaleList.forLanguageTags(tag)
+        }
+    }
+}
+
 @HiltViewModel
-class SettingsViewModel @Inject constructor(
+class SettingsViewModel(
     private val session: SessionStoreApi,
-    @ApplicationContext private val appContext: Context,
+    private val localeCtl: LocaleManagerApi,
 ) : ViewModel() {
+
+    @Inject
+    constructor(
+        session: SessionStoreApi,
+        @ApplicationContext context: Context,
+    ) : this(session, SystemLocaleManager(context))
 
     val state = combine(session.profiles, session.activeProfileId, session.theme, session.locale) {
             profiles, activeId, theme, locale ->
@@ -38,10 +68,7 @@ class SettingsViewModel @Inject constructor(
             profiles = profiles,
             activeProfileId = activeId ?: profiles.firstOrNull()?.id,
             theme = theme,
-            locale = if (Build.VERSION.SDK_INT >= 33) {
-                val lm = appContext.getSystemService(LocaleManager::class.java)
-                lm?.applicationLocales?.toLanguageTags().orEmpty().ifBlank { locale }
-            } else locale,
+            locale = localeCtl.currentTags().orEmpty().ifBlank { locale },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -62,10 +89,8 @@ class SettingsViewModel @Inject constructor(
 
     /** 语言切换:33+ 走系统 per-app locale(自动重建);31/32 存档 + recreate。 */
     fun setLocale(tag: String, recreate: () -> Unit) {
-        if (Build.VERSION.SDK_INT >= 33) {
-            val lm = appContext.getSystemService(LocaleManager::class.java)
-            lm?.applicationLocales = if (tag.isBlank()) LocaleList.getEmptyLocaleList()
-            else LocaleList.forLanguageTags(tag)
+        if (localeCtl.currentTags() != null || Build.VERSION.SDK_INT >= 33) {
+            localeCtl.setTags(tag)
         } else {
             viewModelScope.launch { session.saveLocale(tag) }
             recreate()
