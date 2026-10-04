@@ -8,8 +8,12 @@
   <div class="hero__stage{% if shell_immersive %} hero__stage--immersive{% endif %}" data-hero-stage>
     <img class="hero__bg" data-active="false" alt="" aria-hidden="true">
     <img class="hero__bg" data-active="false" alt="" aria-hidden="true">
-    <img class="hero__img" data-active="false" alt="">
-    <img class="hero__img" data-active="false" alt="">
+    <div class="hero__fg" data-active="false">
+      <div class="hero__clip"><img class="hero__img" alt=""></div>
+    </div>
+    <div class="hero__fg" data-active="false">
+      <div class="hero__clip"><img class="hero__img" alt=""></div>
+    </div>
   </div>
   <div class="hero__scrim"></div>
   <div class="hero__caption">
@@ -109,11 +113,17 @@
   if (!featured.length) return;
   var fi = 0, layer = 0, pending = 0;
   var bgs = document.querySelectorAll(".hero__bg");
-  var fgs = document.querySelectorAll(".hero__img");
+  var fgs = document.querySelectorAll(".hero__fg");
   var strip = document.querySelector("[data-sheet]");
   var BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
   bgs.forEach(function (l) { l.src = BLANK; });
-  fgs.forEach(function (l) { l.src = BLANK; l.setAttribute("aria-hidden", "true"); });
+  /* 三层前景: .hero__fg 定框层(底色+淡化), .hero__clip 按照片宽高比
+     取 contain 矩形并裁切, 内层 img 在矩形内做 ≥1 的缓落缩放
+     (从微 zoom 落到满幅 —— 恒 ≥ 满幅故永不露上下缝, 溢出全被裁掉) */
+  fgs.forEach(function (fg) {
+    fg.setAttribute("aria-hidden", "true");
+    fg.querySelector(".hero__img").src = BLANK;
+  });
 
   /* 高清档(≤2400w)而非原图:完整显示且首屏快;
      前景 contain 完整呈现,背景同图模糊压暗填两侧 */
@@ -126,12 +136,17 @@
     img.onload = function () {
       if (token !== pending) return;
       var i = layer;
+      var fg = fgs[i];
+      /* 裁切框按本图真实宽高比重定 contain 矩形(激活同帧生效, 无过渡) */
+      fg.querySelector(".hero__clip").style.setProperty(
+        "--ar", (img.naturalWidth / img.naturalHeight).toFixed(4));
+      fg.querySelector(".hero__img").src = img.src;
       bgs[i].src = img.src;
-      fgs[i].src = img.src;
+      document.dispatchEvent(new CustomEvent("pc:hero-bg", { detail: { src: img.src } }));
       bgs.forEach(function (l) { l.dataset.active = "false"; });
       fgs.forEach(function (l) { l.dataset.active = "false"; });
       bgs[i].dataset.active = "true";
-      fgs[i].dataset.active = "true";
+      fg.dataset.active = "true";
       layer = i === 0 ? 1 : 0;
     };
   }

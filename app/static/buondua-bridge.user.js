@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.0.2
+// @version      1.0.3
 // @description  在 buondua.com 卡片右下角显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -195,6 +195,7 @@
   let queryTimer = null;
 
   function queryAndRender() {
+    lastQuery = Date.now();
     const cards = cardNodes();
     const serials = new Set(cards.map(c => c.dataset.id));
     const ds = serialFromLocation();
@@ -248,6 +249,8 @@
   }
 
   // ---- 启动 + 监听 --------------------------------------------------------------
+  let lastQuery = 0;
+
   function loop() {
     queryAndRender();
     queryTimer = setTimeout(loop, 5000);
@@ -263,11 +266,18 @@
 
   function boot() {
     loop();
-    // 翻页/懒加载: 新卡片出现时立即查一次(节流: 打断循环,600ms 后重启)
+    // 新卡片出现时尽快补一次查询。注意不能打断 loop 的保底轮询:
+    // tag 等筛选页挂着广告 widget, DOM 变动持续不断(间隔 <600ms),
+    // 旧版 clearTimeout+重启会把轮询无限饿死, 徽标一张都不出。
+    // 这里独立计时 + 3s 节流: 变动触发提前查, 5s 轮询始终兜底。
+    let moTimer = null;
     const mo = new MutationObserver(muts => {
       if (muts.some(badgeMutation)) return;
-      clearTimeout(queryTimer);
-      queryTimer = setTimeout(loop, 600);
+      if (moTimer) return;
+      moTimer = setTimeout(function () {
+        moTimer = null;
+        if (Date.now() - lastQuery >= 3000) queryAndRender();
+      }, 600);
     });
     mo.observe(document.body, { childList: true, subtree: true });
   }

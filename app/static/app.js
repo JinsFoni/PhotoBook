@@ -37,6 +37,8 @@ window.PC = (function () {
     grid: '<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>',
     user: '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
     logout: '<path d="M9 4H5v16h4M14 8l4 4-4 4M18 12H9"/>',
+    expand: '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>',
+    compress: '<path d="M9 4v5H4M15 4v5h5M20 15h-5v5M4 15h5v5"/>',
     blur: '<circle cx="12" cy="12" r="4.2"/><path d="M12 3.2v2.2M12 18.6v2.2M3.2 12h2.2M18.6 12h2.2M5.8 5.8l1.6 1.6M16.6 16.6l1.6 1.6M18.2 5.8l-1.6 1.6M7.4 16.6l-1.6 1.6" stroke-dasharray="1.5 2.4"/>'
   };
 
@@ -94,6 +96,11 @@ window.PC = (function () {
     try { localStorage.setItem(THEME_KEY, v); } catch (e) {}
     applyTheme();
     renderBlurLayer();
+    /* 发现页在访前轮播已播: 切入虚化时垫底层直接跟当前轮播图,
+       而不是 boot 注入的"今日封面"(两者可能不同图) */
+    if (v === "blur" && heroBgSrc) {
+      document.dispatchEvent(new CustomEvent("pc:hero-bg", { detail: { src: heroBgSrc } }));
+    }
     document.dispatchEvent(new CustomEvent("pc:theme"));
   }
 
@@ -108,6 +115,7 @@ window.PC = (function () {
      图源由服务端 boot_json.blur_src 按路径注入, 跨页导航自动更新。 */
   /* 预载缓存: 记录当前垫底图的就绪状态 */
   var preload = { src: "", ok: false };
+  var heroBgSrc = ""; /* 发现页轮播当前图的 src(blur 主题垫底层跟随它) */
 
   function renderBlurLayer() {
     var el = document.querySelector("[data-page-blur]");
@@ -132,17 +140,21 @@ window.PC = (function () {
     if (!on) {
       /* 切出虚化: 把图摘下来, 回来时才走完整上墙路径 */
       el.removeAttribute("data-ready");
+      var zoom = el.querySelector(".page-blur__zoom");
       var old = el.querySelector("img");
       if (old) old.remove();
+      if (zoom) { zoom.style.transition = "none"; zoom.style.transform = ""; }
       return;
     }
+    var zoomEl = el.querySelector(".page-blur__zoom");
+    if (!zoomEl) { zoomEl = document.createElement("div"); zoomEl.className = "page-blur__zoom"; el.appendChild(zoomEl); }
     if (!el.querySelector("img")) {
       /* head 内联脚本可能已建好一张(首帧直出背景), 优先收养它,
          避免同一 URL 建两个 img 导致跨页时闪烁 */
       var adopted = document.head.querySelector("img[data-page-blur-img]");
       if (adopted) {
         adopted.removeAttribute("data-page-blur-img");
-        el.appendChild(adopted);
+        zoomEl.appendChild(adopted);
         el.setAttribute("data-ready", "true");
         return;
       }
@@ -150,22 +162,69 @@ window.PC = (function () {
       im.alt = "";
       if (preload.ok && preload.src === src) {
         im.src = src; /* 预载已完成, 直接上墙淡入 */
-        el.appendChild(im);
+        zoomEl.appendChild(im);
         el.setAttribute("data-ready", "true");
       } else {
         /* 图未就绪: 挂上元素等 onload; 3 秒兑底强制显示,
            避免黑屏等太久(正常路径下预载早已完成) */
         im.onload = function () {
-          if (im.parentNode === el) el.setAttribute("data-ready", "true");
+          if (im.parentNode === zoomEl) el.setAttribute("data-ready", "true");
         };
         im.src = src;
-        el.appendChild(im);
+        zoomEl.appendChild(im);
         clearTimeout(renderBlurLayer._t);
         renderBlurLayer._t = setTimeout(function () {
-          if (im.parentNode === el) el.setAttribute("data-ready", "true");
+          if (im.parentNode === zoomEl) el.setAttribute("data-ready", "true");
         }, 3000);
       }
     }
+  }
+
+  /* ---------- 首页轮播 ↔ blur 垫底层同步 -----------------------------
+     发现页轮播每换一张图, 广播 pc:hero-bg; blur 主题下垫底层换上
+     同一张图(同 hero 配方: 900 档已在页里, 这里收到的已是 2400 档,
+     浏览器有缓存直接淡入)。整页一块背景, 与轮播无缝一体。
+     非 blur 主题只做预载, 不动页面。 */
+  document.addEventListener("pc:hero-bg", function (e) {
+    var el = document.querySelector("[data-page-blur]");
+    if (!el || !e.detail || !e.detail.src) return;
+    var src = e.detail.src;
+    heroBgSrc = src;
+    if (state.theme !== "blur") return; /* 仅虚化模式需要整页同步 */
+    var cur = el.querySelector("img");
+    if (cur && cur.src === src) return;
+    /* 轮播驱动的换图带缓落回弹; 首次上墙(切主题/进页)不带 */
+    el.dataset.sync = "true";
+    swapBlurImg(el, src);
+  });
+
+  function swapBlurImg(el, src) {
+    var im = new Image();
+    im.alt = "";
+    im.onload = function () {
+      if (state.theme !== "blur") return;
+      var stale = el.querySelector("img");
+      if (stale) stale.remove();
+      var z = el.querySelector(".page-blur__zoom");
+      if (!z) { z = document.createElement("div"); z.className = "page-blur__zoom"; el.appendChild(z); }
+      z.appendChild(im);
+      el.setAttribute("data-ready", "true");
+      /* 回弹: 缩放钉在外层 zoom 容器(img 静止承载 blur 滤镜, 只栅格化
+         一次), 先无过渡钉在放大档, 下一帧放回基础档走 1400ms 缓落
+         (灯箱 backdrop 同款配方 —— 不钉直接换 src 会从中间值抖动) */
+      if (el.dataset.sync === "true") {
+        var zoom = el.querySelector(".page-blur__zoom");
+        if (!zoom) return;
+        zoom.style.transition = "none";
+        zoom.style.transform = "scale(1.4)";
+        requestAnimationFrame(function () {
+          if (!zoom.parentNode || zoom.parentNode !== el) return;
+          zoom.style.transition = "";
+          zoom.style.transform = "";
+        });
+      }
+    };
+    im.src = src;
   }
 
   /* ---------- favourites(服务端)------------------------------------------ */
@@ -484,8 +543,26 @@ window.PC = (function () {
 
   /* ---------- lightbox -------------------------------------------------- */
   var LB_ZOOM = 1.5; /* 放大倍数: fit 尺寸 ×1.5(可调) */
-  var lb = { photos: [], index: 0, title: "", collection: "", zoom: false, hi: false, el: null, bdFront: null,
+  var lb = { photos: [], index: 0, title: "", collection: "", zoom: false, hi: false, el: null, bdFront: null, imgFront: null,
              pan: { x: 0, y: 0 }, dragging: false, dragMoved: false, dragStart: null, tstart: null };
+
+  /* 主图双缓冲图层对: a/b 两张 img 交替。front = 最近一次揭示的层 */
+  function lbImgPair() {
+    var el = lb.el;
+    var a = el.querySelector('[data-lb-img="a"]');
+    var b = el.querySelector('[data-lb-img="b"]');
+    var front = lb.imgFront === b ? b : a;
+    return [front, front === a ? b : a];
+  }
+
+  /* 当前真正显示画面的层(ready=true): 交叉/加载等待期可能是前层,
+     其余时刻即 front; 都未就绪(垫底显示中)返回 front */
+  function lbVisibleImg() {
+    var pair = lbImgPair();
+    if (pair[0].dataset.ready === "true") return pair[0];
+    if (pair[1].dataset.ready === "true") return pair[1];
+    return pair[0];
+  }
 
   function lightboxSrc(p, w) {
     if (!w) return "/media/" + p.file;             /* 真原图:下载 / 1:1 放大 */
@@ -525,15 +602,20 @@ window.PC = (function () {
       '<img class="lightbox__backdrop" data-lb-bd="b" alt="" decoding="async">' +
       "</div>" +
       '<div class="lightbox__stage">' +
-      /* 垫底层: 900 档先上屏撑住画面, 主图 2400 就绪后淡入盖住 */
+      /* 垫底层: 900 档先上屏撑住画面, 主图就绪后淡入盖住 */
       '<img class="lightbox__under" data-lb-under alt="" aria-hidden="true" decoding="async">' +
       '<button class="lightbox__nav lightbox__nav--prev" type="button" data-lb-prev aria-label="' + t("Previous photo") + '">' + icon("left") + "</button>" +
-      '<img class="lightbox__img" data-lb-img alt="" decoding="async">' +
+      /* 主图双缓冲(轮播同款定框结构): figure 定框(overflow:hidden, 按照片
+         ar 取 contain 矩形, 永不缩放) + 内层 img 只做 settle 缩放 ≥1,
+         溢出全被定框裁掉 —— 边缘静止, 残影从结构上不可能 */
+      '<figure class="lightbox__img" data-lb-img="a"><img class="lightbox__photo" alt="" decoding="async" draggable="false"></figure>' +
+      '<figure class="lightbox__img" data-lb-img="b"><img class="lightbox__photo" alt="" decoding="async" draggable="false"></figure>' +
       '<button class="lightbox__nav lightbox__nav--next" type="button" data-lb-next aria-label="' + t("Next photo") + '">' + icon("right") + "</button>" +
       "</div>" +
       '<div class="lightbox__foot">' +
       '<span class="lightbox__counter" data-lb-counter></span>' +
       '<div class="lightbox__foot-actions">' +
+      '<button class="icon-btn" type="button" data-lb-fullscreen aria-pressed="false" title="' + t("Fullscreen") + '">' + icon("expand") + "</button>" +
       '<button class="icon-btn" type="button" data-lb-bg aria-pressed="' + (lbBg === "blur" ? "true" : "false") + '" title="' + t("Backdrop: blurred cover") + '">' + icon(lbBg === "blur" ? "blur" : "moon") + "</button>" +
       '<button class="fav fav--labelled" type="button" data-fav="photo" data-fav-key="" aria-pressed="false" title="' + t("Favourite photo") + '">' +
       icon("heart") + '<span data-fav-label>' + t("Save") + '</span><span class="sr">' + t("Add to favourites") + "</span></button>" +
@@ -542,13 +624,15 @@ window.PC = (function () {
       '<div class="lightbox__progress"><i data-lb-progress></i></div>';
     document.body.appendChild(el);
     lb.el = el;
-    el.querySelector("[data-lb-img]").setAttribute("draggable", "false"); /* 防原生拖图 */
 
     el.querySelector("[data-lb-close]").addEventListener("click", close);
     el.querySelector("[data-lb-bg]").addEventListener("click", toggleBackdrop);
+    el.querySelector("[data-lb-fullscreen]").addEventListener("click", toggleFullscreen);
     el.querySelector("[data-lb-prev]").addEventListener("click", function () { go(-1); });
     el.querySelector("[data-lb-next]").addEventListener("click", function () { go(1); });
-    el.querySelector("[data-lb-img]").addEventListener("click", toggleZoom);
+    el.querySelectorAll("[data-lb-img]").forEach(function (fig) {
+      fig.querySelector(".lightbox__photo").addEventListener("click", toggleZoom);
+    });
     /* 点击背景空白关闭;拖拽后释放的 click 不算(dragMoved 守卫) */
     el.addEventListener("click", function (e) { if (e.target === el && !lb.dragMoved) close(); });
 
@@ -566,7 +650,7 @@ window.PC = (function () {
       lb.pan.x = nx > 0 ? Math.min(b.left, nx) : Math.max(-b.right, nx);
       lb.pan.y = ny > 0 ? Math.min(b.up, ny) : Math.max(-b.down, ny);
       lb.dragMoved = true;
-      lb.el.querySelector("[data-lb-img]").style.transform =
+      lbVisibleImg().style.transform =
         "translate(" + lb.pan.x + "px," + lb.pan.y + "px)";
     };
     var onDragEnd = function () {
@@ -600,6 +684,28 @@ window.PC = (function () {
       var dy = e.changedTouches[0].clientY - sy;
       if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1);
     }, { passive: true });
+
+    /* 滚轮切换照片。触控板惯性会拖出几十个小 delta 事件且正负抖动,
+       固定节流会切完下一张又被余波切回上一张。所以: delta 先累加,
+       攒够阈值才切; 切完进入抑制期, 直到滚动彻底停下(180ms 无事件)
+       才重新武装, 惯性余波全部吃掉 */
+    var wheelAcc = 0, wheelArmed = true, wheelSettle;
+    el.addEventListener("wheel", function (e) {
+      if (el.dataset.open !== "true" || lb.zoom) { wheelAcc = 0; return; }
+      e.preventDefault();
+      clearTimeout(wheelSettle);
+      if (!wheelArmed) {
+        wheelSettle = setTimeout(function () { wheelArmed = true; wheelAcc = 0; }, 180);
+        return;
+      }
+      wheelAcc += e.deltaY;
+      if (Math.abs(wheelAcc) < 40 || lb.photos.length < 2) return;
+      var dir = wheelAcc > 0 ? 1 : -1;
+      wheelAcc = 0;
+      wheelArmed = false;
+      wheelSettle = setTimeout(function () { wheelArmed = true; }, 180);
+      go(dir);
+    }, { passive: false });
 
     document.addEventListener("keydown", function (e) {
       if (el.dataset.open !== "true") return;
@@ -639,6 +745,7 @@ window.PC = (function () {
 
   function close() {
     if (!lb.el) return;
+    if (fullscreenEl()) document.exitFullscreen();
     lb.el.dataset.open = "false";
     document.body.classList.remove("is-locked");
     lbShownUrl = "";
@@ -655,15 +762,15 @@ window.PC = (function () {
   }
 
   /* 1:1 放大专用:按需加载真原图并替换(预览档用于 fit 显示已足够) */
-  function upgradeOriginal(p, img) {
+  function upgradeOriginal(p, fig) {
     if (!p || lb.hi) return;
     var full = new Image();
     full.src = lightboxSrc(p);
     var swap = function () {
-      if (lb.photos[lb.index] !== p) return;
+      if (lb.photos[lb.index] !== p || lbVisibleImg() !== fig) return;
       lb.hi = true;
-      img.src = full.src;
-      img.dataset.full = "true";
+      fig.querySelector(".lightbox__photo").src = full.src;
+      fig.dataset.full = "true";
     };
     if (full.decode) { full.decode().then(swap, swap); }
     else { full.onload = swap; }
@@ -673,10 +780,10 @@ window.PC = (function () {
      横图放大后居中双向溢出。用当前 rect 减去已应用的 pan 还原基准位置
      (拖拽中 transform 无过渡, rect 无滞后)。图没超出则锁 0。 */
   function panBounds() {
-    var img = lb.el.querySelector("[data-lb-img]");
+    var fig = lbVisibleImg();
     var st = lb.el.querySelector(".lightbox__stage");
     var stR = st.getBoundingClientRect();
-    var r = img.getBoundingClientRect();
+    var r = fig.getBoundingClientRect();
     var pan = lb.pan || { x: 0, y: 0 };
     var baseTop = r.top - pan.y, baseBottom = r.bottom - pan.y;
     var baseLeft = r.left - pan.x, baseRight = r.right - pan.x;
@@ -689,34 +796,35 @@ window.PC = (function () {
   }
 
   /* 退出放大:清除内联尺寸/平移,回到 fit 显示 */
-  function zoomOff(img) {
+  function zoomOff(fig) {
     lb.zoom = false;
     lb.pan = { x: 0, y: 0 };
-    img.style.width = "";
-    img.style.height = "";
-    img.style.transform = "";
-    img.dataset.zoomed = "false";
-    img.style.cursor = "zoom-in";
+    fig.style.width = "";
+    fig.style.height = "";
+    fig.style.transform = "";
+    fig.dataset.zoomed = "false";
+    fig.querySelector(".lightbox__photo").style.cursor = "zoom-in";
     lb.el.dataset.zoom = "false";
   }
 
   /* 放大 = fit 尺寸 × LB_ZOOM(替代原先的 1:1 原图,倍数太大);
-     平移不再用 stage 滚动,改按住左键拖拽(transform) */
+     平移不再用 stage 滚动,改按住左键拖拽(transform)。
+     只作用于当前可见层(ready), 防止命中交叉/等待期的 idle 层 */
   function toggleZoom() {
     if (lb.dragMoved) return; /* 拖拽结束时的 click 不算缩放切换 */
-    var img = lb.el.querySelector("[data-lb-img]");
-    if (lb.zoom) { zoomOff(img); return; }
+    var fig = lbVisibleImg();
+    if (lb.zoom) { zoomOff(fig); return; }
     lb.zoom = true;
     /* offsetWidth/H: transform 不影响它们; getBoundingClientRect 会把
-       入场 scale(0.985) 过渡中的中间值算进基准, 导致放大尺寸偏小 */
-    img.style.width = Math.round(img.offsetWidth * LB_ZOOM) + "px";
-    img.style.height = Math.round(img.offsetHeight * LB_ZOOM) + "px";
-    img.dataset.zoomed = "true";
-    img.style.cursor = "grab";
+       入场过渡中的中间值算进基准, 导致放大尺寸偏小 */
+    fig.style.width = Math.round(fig.offsetWidth * LB_ZOOM) + "px";
+    fig.style.height = Math.round(fig.offsetHeight * LB_ZOOM) + "px";
+    fig.dataset.zoomed = "true";
+    fig.querySelector(".lightbox__photo").style.cursor = "grab";
     lb.el.dataset.zoom = "true";
     lb.pan = { x: 0, y: 0 };
     /* 放大才需要真原图 1:1 细节;fit 显示用高清版已足够 */
-    upgradeOriginal(lb.photos[lb.index], img);
+    upgradeOriginal(lb.photos[lb.index], fig);
   }
 
   /* 鼠标拖拽过程中抑制原生图片拖拽与文本选择 */
@@ -738,6 +846,33 @@ window.PC = (function () {
     b.innerHTML = icon(lbBg === "blur" ? "blur" : "moon");
     b.title = lbBg === "blur" ? t("Backdrop: blurred cover") : t("Backdrop: solid");
   }
+
+  /* ---------- 灯箱全屏 -----------------------------------------------------
+     浏览器 Fullscreen API 作用于灯箱元素本身;全屏态顶/底栏改悬浮在图上
+     (图铺满视口, 栏不能还在顶部压出一行)。退出途径: 按钮、Esc/F11 原生
+     退出、关灯箱 —— fullscreenchange 里统一刷新按钮态 */
+  function fullscreenEl() {
+    return document.fullscreenElement;
+  }
+  function toggleFullscreen() {
+    if (fullscreenEl()) {
+      document.exitFullscreen();
+      return;
+    }
+    var request = lb.el.requestFullscreen || lb.el.webkitRequestFullscreen;
+    if (request) request.call(lb.el);
+  }
+  function paintFullscreenBtn() {
+    if (!lb.el) return;
+    var b = lb.el.querySelector("[data-lb-fullscreen]");
+    if (!b) return;
+    var on = !!fullscreenEl();
+    lb.el.dataset.fullscreen = on ? "true" : "false";
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.innerHTML = icon(on ? "compress" : "expand");
+    b.title = on ? t("Exit fullscreen") : t("Fullscreen");
+  }
+  document.addEventListener("fullscreenchange", paintFullscreenBtn);
 
   function paintBackdrop() {
     if (!lb.el) return;
@@ -765,18 +900,39 @@ window.PC = (function () {
     var reveal = function () {
       if (back.dataset.src !== src) return;                    /* 已被更新的加载覆盖 */
       if (lbBg !== "blur" || lb.photos[lb.index] !== p) return; /* stale */
-      back.style.zIndex = "2";
-      if (front) front.style.zIndex = "1";
-      back.dataset.ready = "true";
-      lb.bdFront = back;
-      if (front) setTimeout(function () {
-        /* 期间未被新一轮换前 → 撤旧层(在新层之下淡出, 不可见) */
-        if (lb.bdFront === back) { front.dataset.ready = "false"; front.style.zIndex = ""; }
-      }, 650);
+      /* 复用层归零: 层被复用时 transform 可能停在回涨半路(回涨 1400ms
+         > 撤层宽限 650ms)甚至已是 none, 直接置 ready 的过渡会从近 1 处
+         起步 = 回弹消失(首层必现动效、后续切换全无的根因)。
+         无过渡重置到 scale(1.2) 后, 必须隔一个 rAF(而非仅 reflow)再
+         恢复过渡置 ready —— 同帧"重置→置 ready"会让浏览器把过渡起点
+         算在重置前的计算样式上, 起步值随机(实测 1.03~1.25 抖动) */
+      back.style.transition = "none";
+      back.style.transform = "scale(1.2)";
+      back.style.opacity = "0";
+      requestAnimationFrame(function () {
+        if (back.dataset.src !== src) return;                    /* 已被更新的加载覆盖 */
+        if (lbBg !== "blur" || lb.photos[lb.index] !== p) return; /* stale */
+        back.style.transition = "";
+        back.style.transform = "";
+        back.style.opacity = "";
+        back.style.zIndex = "2";
+        if (front) front.style.zIndex = "1";
+        back.dataset.ready = "true";
+        lb.bdFront = back;
+        if (front) setTimeout(function () {
+          /* 期间未被新一轮换前 → 撤旧层(在新层之下淡出, 不可见);
+             ready=false 让它回涨 1.2, 与新层缓落互为镜像 */
+          if (lb.bdFront === back) { front.dataset.ready = "false"; front.style.zIndex = ""; }
+        }, 650);
+      });
     };
     back.dataset.src = src;
-    if (back.dataset.src === src && back.complete && back.naturalWidth > 0) {
-      /* 同 URL 曾在这层加载过(solid 往返/翻回去): 不重触发 onload, 直接揭示 */
+    if (back.getAttribute("src") === src && back.complete && back.naturalWidth > 0) {
+      /* 同 URL 曾在这层加载过(solid 往返/翻回去): onload 不会因重复赋值
+         再触发, 直接揭示。注意判据必须是已挂的 src 属性 —— 曾写成
+         back.dataset.src === src, 而上一行刚把它赋成新 src, 恒真;
+         于是 900 档已入 HTTP 缓存的图(网格页看过)每次都走"揭示"却从不
+         赋 src, 该层永远显示上一张的内容 = 背景与照片对不上 */
       back.onload = null;
       reveal();
       return;
@@ -850,20 +1006,39 @@ window.PC = (function () {
     if (!el) return;
     var p = lb.photos[lb.index];
     if (!p) return;
-    var img = el.querySelector("[data-lb-img]");
-    var first = !lbShownUrl;   /* 无画面可留 → 走上屏淡入 */
-    img.dataset.zoomed = "false";
-    img.dataset.full = "false"; /* 视图上屏后置 true(预览档即终档) */
+    /* 双缓冲(轮播同款定框结构): 新图载入 idle 定框淡入 + 框内照片缓落
+       (1.015→1); 前层(旧画面)转离场 —— 镜像回涨 + 淡化, 交叉无空帧。
+       首开(舞台无画面)只走入场, 无交叉。img/fig = 定框 figure,
+       照片是框内 .lightbox__photo */
+    var pair = lbImgPair();
+    var fig = pair[1], prev = pair[0];
+    var photo = fig.querySelector(".lightbox__photo");
+    var first = !lbShownUrl;
+    fig.dataset.zoomed = "false";
+    fig.dataset.full = "false"; /* 视图上屏后置 true(预览档即终档) */
     lb.hi = false;              /* 切图后真原图需重新按需加载 */
     lb.zoom = false;
     lb.pan = { x: 0, y: 0 };
-    img.style.width = "";       /* 清除放大模式内联尺寸/平移 */
-    img.style.height = "";
-    img.style.transform = "";
+    fig.style.width = "";       /* 清除放大模式内联尺寸/平移/层序 */
+    fig.style.height = "";
+    fig.style.transform = "";
+    fig.style.zIndex = "";
     el.dataset.zoom = "false"; /* 切图/重开时退出放大模式(容器+图同步复位) */
-    img.style.cursor = "zoom-in";
-    if (first) img.dataset.ready = "false";
-    img.alt = lb.title ? t("{title} — photo {n}", { title: lb.title, n: lb.index + 1 }) : t("Photo {n}", { n: lb.index + 1 });
+    photo.style.cursor = "zoom-in";
+    photo.alt = lb.title ? t("{title} — photo {n}", { title: lb.title, n: lb.index + 1 }) : t("Photo {n}", { n: lb.index + 1 });
+    /* --ar 先按入库元数据预置(定框矩形立即就位); 揭示时再按解码尺寸
+       校正一次(元数据缺失时兜底), 见下方 reveal */
+    fig.style.setProperty("--ar",
+      (p.w && p.h ? p.w / p.h : (photo.naturalWidth && photo.naturalHeight)
+        ? photo.naturalWidth / photo.naturalHeight : 0.66).toFixed(4));
+    /* 离场层复位残留(尺寸/平移/缩放态), src 保留 —— 交叉期间它就是当前画面 */
+    prev.style.width = "";
+    prev.style.height = "";
+    prev.style.transform = "";
+    prev.style.zIndex = "";
+    prev.dataset.zoomed = "false";
+    prev.querySelector(".lightbox__photo").style.cursor = "zoom-in";
+    prev.querySelector(".lightbox__photo").alt = "";
 
     /* 垫底层先行: 900 档与网格页同 URL 必命中 HTTP 缓存, 同步换上,
        主图就绪前舞台始终有画面; dataset.src 守卫丢弃连翻时的过期 onload */
@@ -876,39 +1051,51 @@ window.PC = (function () {
       under.onload = function () {
         if (under.dataset.src !== uSrc) return;
         under.dataset.ready = "true";
-        /* 旧帧冻结问题: 主图还压着上一张旧图而 2400 迟迟不到时,
-           画面是"卡住的旧图"。给热路径 120ms 宽限(缓存命中时硬切
-           已完成, 不折腾); 超时仍未上屏 → 淡出旧帧露出模糊垫底,
-           "由虚到实"替代冻结帧(Immich 多层渐显思路) */
+        /* 冻结帧兜底: 垫底已就位而 2400 迟迟不揭示时, 旧层还挂着上一张
+           —— 120ms 宽限后淡出旧层露出垫底(900 新图), 替代卡住的旧帧 */
         setTimeout(function () {
           if (seq !== lbSeq || lbShownUrl === url) return;
           if (el.dataset.zoom === "true") return;
-          img.dataset.ready = "false";
+          prev.dataset.ready = "false";
         }, 120);
       };
     }
     paintBackdrop();   /* 氛围层同为 900 档, 立即出现, 不等主图 */
 
     /* 主图终档 2400(服务端已预热; 未命中时也只生成这一档, 不再有二次升级);
-       就绪后淡入盖住垫底层。从不取 24MP 原图全尺寸解码。
-       预取已上移到 open()/go() 导航瞬间, 不在此处排队 */
+       从不取 24MP 原图全尺寸解码。预取已上移到 open()/go() 导航瞬间 */
     var url = lightboxSrc(p, LB_W);
     lbHoldUrl = url;
     var seq = ++lbSeq;
     lbReady(url).then(function (e) {
       if (!e || seq !== lbSeq || lb.photos[lb.index] !== p) return;
-      /* 舞台上已有图 → 保持 opacity 1 硬切, 不再经历"抹白 300ms + 淡入 300ms" */
-      img.src = url;
-      img.dataset.ready = "true";
-      img.dataset.full = "true"; /* LB_W 即终档, 免升级 */
+      if (lbImgPair()[1] !== fig) return;   /* 已被更新一轮的揭示覆盖 */
+      /* 揭示前按解码尺寸校正 --ar(元数据缺失时兜底; 定框矩形必须与
+         2400 档 contain 矩形严格一致, 缩放溢出才会被完整裁在框内) */
+      var nw = e.img.naturalWidth, nh = e.img.naturalHeight;
+      if (nw && nh) fig.style.setProperty("--ar", (nw / nh).toFixed(4));
+      photo.src = url;
+      fig.dataset.full = "true"; /* LB_W 即终档, 免升级 */
       lbShownUrl = url;
-      /* 主图完全不透明后再撤垫底层: 它比主图大 1.2% 且带 blur,
-         一直压在底下会露出模糊光晕。350ms > 主图 300ms 淡入,
-         撤的过程主图已完整覆盖, 无缝。若 2400 加载失败, 垫底层
-         留在原地 → 优雅降级为模糊 900 图而非旧图/空屏 */
-      setTimeout(function () {
-        if (under.dataset.src === uSrc) under.dataset.ready = "false";
-      }, 350);
+      lb.imgFront = fig;
+      if (!first) {
+        /* 交叉: 新层置于旧层之上淡入, 旧层镜像回涨+淡化。
+           层序: 入场内联 z2 > 离场类 z1(.lightbox__img[data-departing]);
+           离场毕撤标记与内联层序, 归位为 idle */
+        prev.dataset.departing = "true";
+        fig.style.zIndex = "2";
+        setTimeout(function () {
+          if (lb.imgFront === fig && prev.dataset.departing === "true") {
+            prev.removeAttribute("data-departing");
+            fig.style.zIndex = "";
+          }
+        }, 680);
+      }
+      fig.dataset.ready = "true";
+      prev.dataset.ready = "false";
+      /* 新层已接住画面, 垫底层随即撤去; 若 2400 加载失败, 兜底逻辑
+         已让垫底(900 新图)可见 → 降级为低清而非旧图/空屏 */
+      under.dataset.ready = "false";
     });
 
     var title = el.querySelector("[data-lb-title]");

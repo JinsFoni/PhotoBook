@@ -103,7 +103,7 @@ def _published_collections(s: Session) -> list[Collection]:
 async def discovery(request: Request, s: Session = Depends(get_db)):
     user = request.state.user
     cols = _published_collections(s)
-    featured = [c for c in cols if c.featured][:4] or cols[:4]
+    featured = [c for c in cols if c.featured][:16] or cols[:16]
     latest = cols[:6]
     models = s.scalars(select(Model).where(Model.status == "published")
                        .order_by(desc(Model.featured), Model.name)).all()

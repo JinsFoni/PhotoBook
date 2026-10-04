@@ -38,6 +38,11 @@
      基于 Klee One, 汉字/假名同源风格统一, 自带拉丁字重可兑底)
      — 文艺书卷风 (原 Bodoni Moda 不覆盖 CJK, 汉字走系统回退) */
   --display: "EB Garamond", "LXGW WenKai Screen", "Times New Roman", serif;
+  /* 纯拉丁展示文本(品牌字标等)专用: 不排 LXGW —— 强刷时三个字体按到达
+     顺序先后就位, wordmark 依次被 Times→LXGW(笔画粗重, 观感"突然变粗")
+     →Garamond 重排三次; 拉丁文本跳过 LXGW 后只重排一次, 且 LXGW 体积大
+     (整包 css+分片)常比 Garamond 晚到, 正是闪烁源 */
+  --display-latin: "EB Garamond", "Times New Roman", serif;
   --ui: "Archivo", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
 
   --fs-micro: 11px;
@@ -143,7 +148,16 @@ html {
 /* 虚化垫底层(blur 主题): 固定在视口最底层。
    底色由 html[data-theme=blur] 提供(深墨, 点击立即落底可读);
    真实 <img> 承载虚化图(浏览器原生加载/缓存, 无 CSS 变量兼容问题),
-   预载完成(data-ready)后 620ms 淡入; ::after 深色纱保证前景对比 */
+   预载完成(data-ready)后 620ms 淡入; 压暗直接烘进 brightness 滤镜。
+   注意: 不可用 ::after 纱层压暗 —— 半透明纱铺在 transform 动画的
+   blur 图上, 过渡中图被合成器分块重栅格化, 块界经纱层叠加显形为
+   "格子状色彩断层"; 烘进同一滤镜通道则完全干净(灯箱 backdrop
+   brightness(0.55) 无此问题同理)。0.28 ≈ 原纱层 0.78/0.66 渐变的中值乘数。
+   滤镜与动画必须严格分层: <img> 静止承载 blur+压暗, **无任何过渡**
+   (内容与样式都不变 → 只栅格化一次, 陈旧 tile 无处产生);
+   淡入 + 回弹缩放全走外层 .page-blur__zoom —— 纯纹理变换/透明度,
+   不触发重栅格化。img 上哪怕只留 opacity 过渡, 换图淡入时滤镜层
+   自身在动画, 落定后会残留一块陈旧 tile 成"矩形亮区" */
 html[data-theme="blur"] { background: #101114; }
 .page-blur {
   position: fixed;
@@ -155,23 +169,23 @@ html[data-theme="blur"] { background: #101114; }
   pointer-events: none;
 }
 .page-blur[data-on="true"] { opacity: 1; visibility: visible; }
+.page-blur__zoom {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: scale(1.12);
+  /* 淡入(620ms) + 轮播同步换图的缓落回弹(1.4→1.12, 1400ms),
+     节奏与首页 hero__bg/灯箱 backdrop 一致 */
+  transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
+}
+.page-blur[data-ready="true"] .page-blur__zoom { opacity: 1; }
 .page-blur img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(46px) saturate(1.12);
-  transform: scale(1.12);
-  opacity: 0;
-  transition: opacity 620ms var(--ease);
-}
-.page-blur[data-ready="true"] img { opacity: 1; }
-.page-blur::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to bottom, rgba(8, 9, 10, 0.78), rgba(8, 9, 10, 0.66));
+  filter: blur(46px) brightness(0.28) saturate(1.12);
 }
 
 body {
@@ -408,7 +422,7 @@ table { border-collapse: collapse; }
 }
 
 .wordmark {
-  font-family: var(--display);
+  font-family: var(--display-latin);
   font-size: 19px;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -1201,34 +1215,87 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   overflow: hidden;
   height: clamp(480px, 86vh, 960px);
 }
-.hero__stage { position: absolute; inset: 0; }
+.hero__stage { position: absolute; inset: 0; container-type: size; }
+
+/* blur 主题: 轮播背景整块让位给全页垫底层 .page-blur(由轮播切换
+   同步喂同一张图, 见 app.js 的 pc:hero-bg), hero 自身双缓冲背景退出,
+   整页从上到下只有一块虚化背景, 无缝一体 */
+[data-theme="blur"] .hero { background: transparent; }
+[data-theme="blur"] .hero__bg { display: none; }
+/* scrim 也退场: 它渐变到 hero 底边截止, 与 .page-blur 的均匀滤镜压暗
+   浓度不同, 会在 hero 底边压出一条横线; 压暗已烘进垫底层 brightness,
+   整页从上到下浓度一致才无缝 */
+[data-theme="blur"] .hero__scrim { display: none; }
 
 /* 竖图全宽横幅的完整呈现方案:前景 contain 整张显示(不裁切);
-   背景同图放大模糊压暗,填补两侧空白(影楼画册常用) */
+   背景同图放大模糊压暗,填补两侧空白(影楼画册常用)。
+   前景拆三层: .hero__fg 定框(半透明底色铺满, 永不缩放 —— 缩层框会
+   露出深色边框/呼吸感), .hero__clip 按照片宽高比精确取 contain 矩形
+   并裁切, .hero__img 在矩形内做照片缓落缩放。缩放必须 ≥1(从微 zoom
+   缓落到满幅): <1 会让竖图的上下边离开横幅边缘, 切换时露出缝隙;
+   ≥1 的溢出全被 clip 吃掉, 亮边永远不会扫出 contain 矩形外成白晕 */
 .hero__bg,
-.hero__img {
+.hero__fg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   opacity: 0;
-  transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
+  transition: opacity 620ms var(--ease);
 }
 
 .hero__bg {
+  /* 外扩 80px(灯箱 bdwrap 同款 overscan): blur(46px) 在元素边缘取样
+     到外部透明区会暗一圈, 切换 settle 时暗边随 1.15→1 内移成"阴影遮罩";
+     溢出边缘移到视口外后取样永远有内容, 暗环不可能出现 */
+  position: absolute;
+  inset: -80px;
+  width: calc(100% + 160px);
+  height: calc(100% + 160px);
+  /* 全局 max-width:100% 会把外扩后的宽度钳回舞台宽, 元素右缘缩回
+     x=1360, 视口最右 80px 透出暗底成"右侧压暗"——必须显式解除 */
+  max-width: none;
+  max-height: none;
   object-fit: cover;
   transform: scale(1.15);
   filter: blur(46px) brightness(0.55) saturate(1.12);
+  transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
 }
 
-.hero__img {
-  object-fit: contain;
-  background: rgba(8, 9, 10, 0.42); /* 图比横幅窄时透出的底色与背景自然融合 */
+.hero__fg {
+  /* 曾带 rgba(8,9,10,0.42) 底色让照片两侧"与背景融合", 实际是铺满
+     舞台的深色遮罩: 竖图/窄图时两侧大片压暗(右侧最明显)。
+     背景已是同图虚化, 去掉底色直接透出即可 */
+}
+
+/* contain 矩形: 宽 = min(舞台宽, 舞台高×ar), 高按 ar 推导
+   (cqw/cqh 相对 .hero__stage 这个 size container)。竖图取全高、
+   横图取全宽, 一条公式同时覆盖; --ar 由 showHero 在图片载入时写入 */
+.hero__clip {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: min(100cqw, calc(100cqh * var(--ar, 2)));
+  aspect-ratio: var(--ar, 2);
+  overflow: hidden;
+}
+
+.hero__clip .hero__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* 框随照片 ar 取, 实际不裁切; --ar 缺失时兜底不拉伸 */
   transform: scale(1.015);
+  transition: transform 1400ms var(--ease);
 }
 
 .hero__bg[data-active="true"],
-.hero__img[data-active="true"] { opacity: 1; transform: none; }
+.hero__fg[data-active="true"] { opacity: 1; transform: none; }
+.hero__fg[data-active="true"] .hero__img { transform: none; }
+/* 离场层随淡化从 1 涨回 1.015(基础规则): 与入场层 1.015→1 互为镜像,
+   双向 settle 即旧版手感; 两向都恒 ≥ 满幅, 上下永不露缝, 溢出全在
+   clip 之内, 不会出现黑框、缝隙或亮晕 */
 
 .hero__scrim {
   position: absolute;
@@ -1747,8 +1814,12 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
    solid 模式整层隐藏, 恢复纯色背景 */
 /* 氛围层双缓冲容器: 必须自建层叠上下文(z-index:0), 否则内层 backdrop
    的 zIndex 交替会泄漏到灯箱根层, 盖住 stage 主图与顶/底栏;
-   建立后两块 backdrop 的交替只在容器内部生效, 容器整体仍在 stage 之下 */
-.lightbox__bdwrap { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+   建立后两块 backdrop 的交替只在容器内部生效, 容器整体仍在 stage 之下。
+   外扩 80px(overscan): blur(46px) 在元素边缘向内采样透明像素形成暗边,
+   backdrop 缓落到 scale(1) 时暗边正好落进视口成"四周黑圈"(轮播的暗边
+   被顶栏/scrim 遮住故不可见); 外扩后元素边缘恒在视口外, 暗边永不出现,
+   Ken Burns 1.12→1 照常(相对视口的运动幅度略增, 体感一致) */
+.lightbox__bdwrap { position: absolute; inset: -80px; z-index: 0; pointer-events: none; }
 .lightbox__backdrop {
   position: absolute;
   inset: 0;
@@ -1756,12 +1827,17 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   height: 100%;
   object-fit: cover;
   filter: blur(46px) brightness(0.55) saturate(1.12);
-  transform: scale(1.12);
+  transform: scale(1.2);
   opacity: 0;
-  transition: opacity 620ms var(--ease);
+  transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
   pointer-events: none;
 }
-.lightbox__backdrop[data-ready="true"] { opacity: 1; }
+/* 就绪层: 淡入 + Ken Burns 缓落(1.2→1)。滤镜/遮罩配色实测不可动:
+   亮度与纹理强度是乘法联动(brightness 调暗会连纹理一起压没, A/B 实测
+   旧配方反而最亮最清晰), 可见的"动"只能靠幅度 —— 灯箱水平半位移
+   1.15=108px 偏小, 1.3=216px 约翻倍, 观感接近轮播。
+   离场层回涨互为镜像(压在新层之下, 淡出中不可见) */
+.lightbox__backdrop[data-ready="true"] { opacity: 1; transform: none; }
 .lightbox[data-bg="solid"] .lightbox__backdrop { opacity: 0; }
 .lightbox[data-bg="blur"] { background: rgba(8, 9, 10, 0.82); }
 /* blur 模式: 顶/底栏无实体底, 完全透明, 与虚化垫底融为一体 */
@@ -1806,28 +1882,51 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   padding: 0 var(--pad);
   min-height: 0;
   overflow: hidden;
+  container-type: size; /* 定框按 cqh×ar 取 contain 矩形(与 .hero__stage 同法) */
 }
+/* 主图双缓冲 = 首页轮播同款「定框」结构: 外层 .lightbox__img 是定框
+   —— 按照片宽高比精确取 contain 矩形(宽 = min(容器宽, 容器高×ar),
+   --ar 在揭示瞬间由 paint 按解码尺寸写入), overflow:hidden 裁切;
+   内层 .lightbox__photo 铺满定框、只做 settle 缩放。缩放恒 ≥1(1.015→1,
+   与轮播一致): 溢出全被定框裁掉, 定框矩形本身永不缩放, 照片边缘像素
+   永远扫不出最终矩形。裸 img 自身缩放(不论往哪边缩)四条边都在动,
+   与垫底层(scale 1)叠加必然叠出一圈回弹残影 —— 定框从结构上消灭它 */
 .lightbox__img {
-  /* absolute + inset:0 + margin:auto:百分比 max 尺寸相对 stage 的 padding box 解析,
-     竖图不再溢出被裁(grid 行高由内容决定时 max-height:100% 无基准,会被当作 none) */
+  /* absolute + inset:0 + margin:auto 居中; 100% 相对 stage 的 padding box,
+     与垫底层 max-width/height 同基准 → 定框矩形与垫底 contain 矩形重合 */
   position: absolute;
   inset: 0;
   margin: auto;
-  max-width: 100%;
+  width: min(100%, calc(100cqh * var(--ar, 0.66)));
   max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
+  aspect-ratio: var(--ar, 0.66);
+  overflow: hidden;
   opacity: 0;
-  transform: scale(0.985);
-  transition: opacity 300ms var(--ease), transform 300ms var(--ease);
-  cursor: zoom-in;
+  transition: opacity 620ms var(--ease);
   box-shadow: var(--shadow-lb, none);
 }
-.lightbox__img[data-ready="true"] { opacity: 1; transform: none; }
-.lightbox__img[data-zoomed="true"] { max-width: none; max-height: none; cursor: grab; }
+.lightbox__img[data-ready="true"] { opacity: 1; }
+.lightbox__photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* 定框随照片 ar 取, 实际不裁切; --ar 缺失时兜底不拉伸 */
+  transform: scale(1.015);
+  transition: transform 1400ms var(--ease);
+  cursor: zoom-in;
+  -webkit-user-drag: none;
+}
+.lightbox__img[data-ready="true"] .lightbox__photo { transform: none; }
+/* 离场层: 新层揭示时 JS 置 data-ready="false" —— 定框内照片回涨 1.015
+   (被裁, 可见矩形不动)且定框淡化, 与入场层互为镜像 = 双向 settle */
+.lightbox__img[data-departing="true"] { z-index: 1; }
 .lightbox[data-zoom="true"] .lightbox__stage { cursor: grab; user-select: none; }
-.lightbox[data-zoom="true"] .lightbox__img { position: static; transition: opacity 300ms var(--ease); } /* 拖拽平移不能带过渡, 否则图黏滞滞后于鼠标 */
+/* 放大模式: 前层定框转 static 进文档流、溢出可见(平移不能被定框裁)、
+   内联宽高 = fit×1.5(JS); idle 定框必须仍在绝对定位且隐藏,
+   否则成第二个网格项把前层挤偏 */
+.lightbox[data-zoom="true"] .lightbox__img { position: static; max-height: none; overflow: visible; transition: opacity 300ms var(--ease); } /* 拖拽平移不能带过渡, 否则图黏滞滞后于鼠标 */
+.lightbox[data-zoom="true"] .lightbox__img:not([data-ready="true"]) { position: absolute; opacity: 0 !important; }
+.lightbox[data-zoom="true"] .lightbox__photo { cursor: grab; }
 /* 拖拽中: 整个灯箱握住光标, 不随移出 stage 变回箭头 */
 .lightbox[data-dragging="true"],
 .lightbox[data-dragging="true"] * { cursor: grabbing !important; user-select: none; }
@@ -1836,12 +1935,14 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
    拖拽中禁止选中/原生图片拖拽,避免松手后黏着选区 */
 .lightbox[data-zoom="true"] .lightbox__stage.dragging,
 .lightbox[data-zoom="true"] .lightbox__stage.dragging * { user-select: none; }
-.lightbox[data-zoom="true"] .lightbox__img { -webkit-user-drag: none; }
 
 .lightbox__under {
   /* 垫底层(Immich thumbnail 层思路): 900 档网格图同 URL 必命中缓存,
-     开灯箱/切图瞬间先上屏撑住画面, 主图 2400 就绪后淡入盖住它。
-     blur(2px) + 轻放大: 掩盖 900→视口的插值柔边, 呈现"由虚到实"的过渡 */
+     开灯箱/切图瞬间先上屏撑住画面, 主图就绪后淡入盖住它。
+     不加 blur/轻放大: 任何超出主图 contain 矩形的绘制(1.012 放大的
+     实边或模糊外溢)都会在纯色底上亮出一圈白晕, 换图后 200~350ms
+     内最明显。垫底层与主图同 URL 同比例, stage 内 contain 结果
+     完全重合, 边缘零外溢; 代价仅是大屏上垫底可见的短暂瞬间略软 */
   position: absolute;
   inset: 0;
   margin: auto;
@@ -1850,8 +1951,6 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   width: auto;
   height: auto;
   object-fit: contain;
-  filter: blur(2px);
-  transform: scale(1.012);
   opacity: 0;
   transition: opacity 200ms var(--ease);
   pointer-events: none;
@@ -1860,11 +1959,37 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 /* 放大模式: 主图内联尺寸可能超出 stage, 垫底层隐藏避免边缘穿帮 */
 .lightbox[data-zoom="true"] .lightbox__under { opacity: 0 !important; }
 
-/* blur 模式下氛围层(backdrop blur46+scale1.12)已把同图玻璃化铺满全屏;
-   垫底层若再保留自己的 blur+scale1.012, 同一源图两层各自重采样,
-   换图时边缘光晕会呈抖动感。此模式下关掉自身模糊与放大,
-   边缘与主图严格重合(仅作主图未就绪时的画面保底) */
-.lightbox[data-bg="blur"] .lightbox__under { filter: none; transform: none; }
+/* ---------- 灯箱全屏态(:fullscreen 元素即 .lightbox) ----------------------
+   布局与普通态一致(stage 本就 flex:1 占满视口, 照片 contain 适配不裁切);
+   仅顶/底栏改悬浮在图上(absolute, 渐变垫底保证白字可读), 不再占 flex 行。
+   垫底层与放大模式同理隐藏 */
+.lightbox:fullscreen { background: #000; backdrop-filter: none; -webkit-backdrop-filter: none; }
+/* 悬浮栏: absolute 覆盖 stage 之上; 渐变垫底仅保可读, 不改配色逻辑 */
+.lightbox:fullscreen .lightbox__bar,
+.lightbox:fullscreen .lightbox__foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+}
+.lightbox:fullscreen .lightbox__bar {
+  top: 0;
+}
+.lightbox:fullscreen .lightbox__foot {
+  bottom: 0;
+}
+.lightbox:fullscreen .lightbox__title,
+.lightbox:fullscreen .lightbox__counter,
+.lightbox:fullscreen .icon-btn,
+.lightbox:fullscreen .fav,
+.lightbox:fullscreen .btn--ghost { color: rgba(255, 255, 255, 0.94); text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45); }
+.lightbox:fullscreen .icon-btn:hover,
+.lightbox:fullscreen .fav:hover { color: #ffffff; }
+.lightbox:fullscreen .fav[aria-pressed="true"] { color: var(--accent); }
+/* 全屏下隐藏底部进度条 */
+.lightbox:fullscreen .lightbox__progress { display: none; }
+/* 全屏下铺满即裁切, 垫底层含图会从裁切边缘穿帮, 隐藏 */
+.lightbox:fullscreen .lightbox__under { opacity: 0 !important; }
 
 .lightbox__nav {
   position: absolute;
@@ -1877,7 +2002,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   color: var(--ink);
   transition: opacity var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
 }
-.lightbox__nav:hover { background: var(--paper-2); }
+.lightbox__nav:hover { color: var(--ink); } /* 悬停只提亮箭头, 不出方形底框 */
 .lightbox__nav[disabled] { opacity: 0.22; pointer-events: none; }
 .lightbox__nav--prev { left: var(--s4); }
 .lightbox__nav--next { right: var(--s4); }
@@ -1995,7 +2120,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   gap: var(--s7) var(--s6);
   padding-bottom: var(--s7);
 }
-.footer__wordmark { font-family: var(--display); font-size: var(--fs-h3); line-height: 1.2; }
+.footer__wordmark { font-family: var(--display-latin); font-size: var(--fs-h3); line-height: 1.2; }
 .footer__blurb { margin-top: var(--s3); font-size: var(--fs-small); color: var(--ink-3); max-width: 34ch; }
 .footer__col-title {
   font-size: var(--fs-small);
