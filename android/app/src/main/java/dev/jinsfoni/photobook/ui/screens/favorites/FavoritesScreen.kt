@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -185,7 +184,7 @@ fun FavoritesScreen(
                     }
                 }
                 FavTab.PHOTOS -> LazyVerticalGrid(
-                    // 照片段 3 列方图(原型 .grid3:18px 边距,11px gap)
+                    // 照片段 3 列(原型 .grid3:18px 边距,11px gap);图片按原图完整比例展示,不裁方
                     columns = GridCells.Fixed(3),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp),
@@ -194,20 +193,17 @@ fun FavoritesScreen(
                 ) {
                     items(state.photos.size) { i ->
                         val p = state.photos[i]
-                        Box(
-                            Modifier
-                                .aspectRatio(1f)
+                        // 无高度约束 → Coil 按图片内在比例定高(等比缩略图,比例保真)
+                        AsyncImage(
+                            model = p.thumbUrl,
+                            contentDescription = p.slug,
+                            contentScale = ContentScale.FillWidth,
+                            modifier = Modifier
+                                .fillMaxWidth()
                                 .clip(RoundedCornerShape(2.dp))
                                 .background(colors.paper2)
                                 .photoClickable { onOpenPhoto(p.slug, p.idx) },
-                        ) {
-                            AsyncImage(
-                                model = p.thumbUrl,
-                                contentDescription = p.slug,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
+                        )
                     }
                 }
             }
