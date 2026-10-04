@@ -47,6 +47,7 @@ import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.ModelCard
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
 import dev.jinsfoni.photobook.ui.components.photoClickable
+import dev.jinsfoni.photobook.ui.nav.LocalGlassBarBottomInset
 
 /**
  * S7 收藏页:三段 Tab(模特/写真/照片)。数据来自 FavoritesRepository.state
@@ -148,7 +149,7 @@ fun FavoritesScreen(
         when {
             state.loading -> TabSkeleton(state.tab)
             state.error != null -> Box(
-                Modifier.fillMaxSize().padding(bottom = 112.dp),
+                Modifier.fillMaxSize().padding(bottom = 112.dp + LocalGlassBarBottomInset.current),
                 contentAlignment = Alignment.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -161,14 +162,14 @@ fun FavoritesScreen(
                 }
             }
             state.isEmpty() -> Box(
-                Modifier.fillMaxSize().padding(bottom = 112.dp),
+                Modifier.fillMaxSize().padding(bottom = 112.dp + LocalGlassBarBottomInset.current),
                 contentAlignment = Alignment.Center,
             ) { EmptyState(message = emptyText(state.tab)) }
             else -> when (state.tab) {
                 FavTab.MODELS -> LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp),
+                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
                     horizontalArrangement = Arrangement.spacedBy(11.dp),
                     verticalArrangement = Arrangement.spacedBy(11.dp),
                 ) {
@@ -185,7 +186,7 @@ fun FavoritesScreen(
                 FavTab.COLLECTIONS -> LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp),
+                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
                     horizontalArrangement = Arrangement.spacedBy(11.dp),
                     verticalArrangement = Arrangement.spacedBy(11.dp),
                 ) {
@@ -250,7 +251,7 @@ private fun PhotosMasonry(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp),
+            .padding(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
         verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         rows.forEach { row ->

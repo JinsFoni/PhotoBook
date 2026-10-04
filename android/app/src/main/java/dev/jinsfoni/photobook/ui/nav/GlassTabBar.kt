@@ -23,8 +23,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.res.stringResource
 import dev.jinsfoni.photobook.R
 import androidx.compose.ui.draw.BlurredEdgeTreatment
@@ -67,13 +70,28 @@ private val TabHeight = 64.dp
 private val TabShape = RoundedCornerShape(999.dp)
 private val ShellPad = 6.dp
 
+/** 系统导航栏(手势条/三键)高度:底栏上移与各页列表底部留白都要避让。 */
+val LocalGlassBarBottomInset = staticCompositionLocalOf { 0.dp }
+
+/** 玻璃饱和度+亮度:CSS saturate() brightness()(RGB 行整体乘亮度 = 线性提亮)。 */
+private fun glassColorFilter(saturation: Float, brightness: Float) =
+    ColorFilter.colorMatrix(
+        ColorMatrix().apply {
+            setToSaturation(saturation)
+            for (row in 0..2) for (col in 0..4) this[row, col] *= brightness
+        },
+    )
+
 /**
- * 液态玻璃底栏(iOS 26 风格):
- * 1. 玻璃背板:整条 hazeBlur(页面),24dp 重模糊 + surface 垫底 + barBg tint;
- * 2. AGSL 液态透镜(API 33+):背板内容边缘向内折射 + 顶左镜面弧光;31/32 无此层;
- * 3. 选中药丸:accent 24% 玻璃片(独立 hazeBlur 二次模糊压平 + 折射),位置追逐
- *    [position](MainShell 传 pager 小数进度)→ 拖页时「液体跟随」,弹簧产生
+ * 液态玻璃底栏(iOS 26 风格,参数对齐 ui.css):
+ * 1. 玻璃背板:整条 hazeBlur(页面),blur 3dp + saturate 165% + brightness 1.08 薄玻璃
+ *    ——不能用重模糊:bar 紧邻的亮色内容会被晕成横贯全宽的亮带;
+ * 2. 选中药丸:blur 2dp + saturate 180% + brightness 1.14 凸透镜片(--pill 垫色),
+ *    位置追逐 [position](MainShell 传 pager 小数进度)→ 拖页时「液体跟随」,弹簧产生
  *    Gooey 拉伸(移动越快越扁宽,到位回弹);API 31/32 退回纯色药丸。
+ *    注意:AGSL RuntimeShader 透镜不可挂在这里——实测(API 36)其合成层会被
+ *    拉成整条 bar 宽度,在药丸中线拖出横贯亮带,与折射/高光参数无关;
+ * 3. 顶部/底部 1px 高光暗边 + 内晕 = InsetHighlight;外阴影 = tabBarShadow。
  * 选中态 = accent 图标 + 600 字重;按压 scale .94 spring。
  */
 @Composable
@@ -85,7 +103,9 @@ fun GlassTabBar(
     position: Float = selected.ordinal.toFloat(),
 ) {
     val colors = LocalPhotoColors.current
-    val lensShader = rememberLensShader()
+    // API 33+ 用玻璃药丸层;31/32 由 TabItem 画纯色药丸
+    // (AGSL 透镜已弃用:RuntimeShaderEffect 合成层 bug,见类注释)
+    val hasGlassPill = rememberLensShader() != null
 
     // 药丸追逐 pager 小数进度:spring 追赶 = 液体黏滞感
     val pillX by animateFloatAsState(
@@ -106,14 +126,19 @@ fun GlassTabBar(
             .hazeBlur(
                 HazeInput.Sources(hazeState),
                 HazeBlurStyle {
-                    // BiliPai/HazeMaterials 统一用 24dp 重模糊:内容糊成色斑,观感稳定
-                    blurRadius(24.dp)
+                    // ui.css .tabbar: blur(3px) saturate(165%) brightness(1.08)
+                    // 薄磨砂:内容保持可辨,只有轻微软化 + 提亮
+                    blurRadius(3.dp)
                     noiseFactor(0f)
-                    // 不透明 surface 垫底(HazeMaterials 同款):透明区域不再拉低效果层 alpha
+                    // 不透明 surface 垫底(HazeMaterials 同款):透明区域不再拉低效果层 alpha,
+                    // 同时挡住外阴影透过玻璃显形
                     backgroundColor(colors.paper)
-                    // tint 用 surface 色代替 saturate 矩阵:light 40% 白 / dark 48% 黑
                     colorEffects(
-                        listOf(HazeColorEffect.tint(colors.barBg))
+                        listOf(
+                            HazeColorEffect.colorFilter(glassColorFilter(1.65f, 1.08f)),
+                            // tint 用 surface 色代替 CSS background:light 40% 白 / dark 48% 黑
+                            HazeColorEffect.tint(colors.barBg),
+                        )
                     )
                     // 边缘保持硬裁切:形状羽化会让玻璃上下边界发虚、拖出灰带
                     blurredEdgeTreatment(BlurredEdgeTreatment.Rectangle)
@@ -138,8 +163,8 @@ fun GlassTabBar(
         // inset 高光/暗边/内晕
         InsetHighlight()
 
-        // 选中药丸(液体玻璃片):API 33+ 有 AGSL 折射;31/32 由 TabItem 画纯色药丸
-        if (lensShader != null) {
+        // 选中药丸(液体玻璃片):blur 2dp 凸透镜观感;31/32 由 TabItem 画纯色药丸
+        if (hasGlassPill) {
             BoxWithConstraints(Modifier.matchParentSize()) {
                 // 内容区 = 整条 - ShellPad,槽宽 = 内容区/4;药丸宽 = 槽宽 - 6dp
                 val slot = (maxWidth - ShellPad * 2) / PhotoTab.entries.size
@@ -153,35 +178,28 @@ fun GlassTabBar(
                         .graphicsLayer {
                             scaleX = stretch
                             scaleY = 1f - (stretch - 1f) * 0.55f
-                            alpha = 0.99f // 独立组合层,保证 RenderEffect 生效
-                            // 液态透镜放在药丸上(33+):小胶囊尺寸下端帽折射/顶光弧带
-                            // 宽度正确,不会像整条 bar 那样退化成横贯全宽的带状伪影
-                            if (lensShader != null) {
-                                lensShader.setFloatUniform(
-                                    "uResolution",
-                                    floatArrayOf(size.width, size.height),
-                                )
-                                lensShader.setFloatUniform("uStrength", floatArrayOf(2.dp.toPx()))
-                                lensShader.setFloatUniform("uSpecular", floatArrayOf(1f, 1f, 1f, 0.22f))
-                                renderEffect = lensShader.asLensEffect()
-                            }
                         }
                         .clip(TabShape)
                         .hazeBlur(
                             HazeInput.Sources(hazeState),
                             HazeBlurStyle {
-                                // 药丸层压平:模糊强度打折,内容在药丸内更「实」,
-                                // 与整条背板形成前后景深差(液态玻璃的厚度错觉);
+                                // ui.css .tab.active: blur(2px) saturate(180%) brightness(1.14)
+                                // 药丸比背板更清透更亮 = 前后景深差(凸透镜片);
                                 // 中性玻璃(不用 accent 粉),与 iOS 26 原生一致
-                                blurRadius(24.dp)
+                                blurRadius(2.dp)
                                 colorEffects(
-                                    listOf(HazeColorEffect.tint(colors.barBg))
+                                    listOf(
+                                        HazeColorEffect.colorFilter(glassColorFilter(1.8f, 1.14f)),
+                                        HazeColorEffect.tint(colors.barBg),
+                                    )
                                 )
                                 noiseFactor(0f)
                                 backgroundColor(colors.paper)
                                 blurredEdgeTreatment(BlurredEdgeTreatment.Rectangle)
                             },
-                        ),
+                        )
+                        // ui.css .tab.active background: var(--pill)(选中片垫色,very subtle)
+                        .background(colors.pill, TabShape),
                 )
             }
         }
@@ -196,7 +214,7 @@ fun GlassTabBar(
                     tab = tab,
                     selected = tab == selected,
                     // 33+ 药丸由玻璃片画;31/32 退回纯色药丸
-                    showPill = lensShader == null,
+                    showPill = !hasGlassPill,
                     onClick = { onSelect(tab) },
                     modifier = Modifier
                         .weight(1f)

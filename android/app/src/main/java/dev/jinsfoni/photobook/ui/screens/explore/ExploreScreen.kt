@@ -44,6 +44,7 @@ import dev.jinsfoni.photobook.ui.components.CollectionCard
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
 import dev.jinsfoni.photobook.ui.components.photoClickable
+import dev.jinsfoni.photobook.ui.nav.LocalGlassBarBottomInset
 import dev.jinsfoni.photobook.ui.models.DiscoverFeed
 
 /** S1 发现页(原型 s1-explore.html):hero 轮播 → 最新入库 grid2。 */
@@ -132,7 +133,7 @@ private fun ExploreContent(
         columns = GridCells.Fixed(2),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 112.dp),
+        contentPadding = PaddingValues(bottom = 112.dp + LocalGlassBarBottomInset.current),
         horizontalArrangement = Arrangement.spacedBy(13.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {

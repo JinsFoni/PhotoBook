@@ -33,6 +33,7 @@ import dev.jinsfoni.photobook.ui.components.ModelCard
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
 import dev.jinsfoni.photobook.ui.components.TagChip
 import dev.jinsfoni.photobook.ui.components.photoClickable
+import dev.jinsfoni.photobook.ui.nav.LocalGlassBarBottomInset
 
 /**
  * S5 模特列表:2 列 2:3 头像卡(名 Serif 15sp + 「N 个写真」micro)。
@@ -90,7 +91,7 @@ fun ModelsScreen(
         when {
             state.loading -> GridSkeleton()
             state.items.isEmpty() && state.error != null -> Box(
-                Modifier.fillMaxSize().padding(bottom = 112.dp),
+                Modifier.fillMaxSize().padding(bottom = 112.dp + LocalGlassBarBottomInset.current),
                 contentAlignment = Alignment.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -105,13 +106,13 @@ fun ModelsScreen(
                 }
             }
             state.items.isEmpty() -> Box(
-                Modifier.fillMaxSize().padding(bottom = 112.dp),
+                Modifier.fillMaxSize().padding(bottom = 112.dp + LocalGlassBarBottomInset.current),
                 contentAlignment = Alignment.Center,
             ) { EmptyState(message = stringResource(R.string.empty_models)) }
             else -> LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 112.dp),
+                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
                 horizontalArrangement = Arrangement.spacedBy(13.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {

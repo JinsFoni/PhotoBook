@@ -45,38 +45,44 @@ fun InsetHighlight(modifier: Modifier = Modifier) {
             end = Offset(w * 0.92f, h - 0.5f),
             strokeWidth = 1.dp.toPx(),
         )
-        // 内侧泛光:大圆角描边模拟 inset 0 0 14px
+        // 内侧泛光:大圆角描边模拟 inset 0 0 14px。
+        // 描边环必须沿整个 bar 轮廓贴边走:若只罩上半段,描边的下边缘会
+        // 横穿 bar 中部,形成一条不随内容变化的横向亮带(已踩坑)
+        val sw = 10.dp.toPx()
         drawRoundRect(
-            brush = Brush.verticalGradient(listOf(colors.glassGlow, Color.Transparent)),
-            topLeft = Offset(6f, 6f),
-            size = androidx.compose.ui.geometry.Size(w - 12f, h * 0.5f),
+            brush = Brush.verticalGradient(
+                listOf(colors.glassGlow, Color.Transparent),
+                startY = 0f,
+                endY = h,
+            ),
+            topLeft = Offset(sw / 2f, sw / 2f),
+            size = androidx.compose.ui.geometry.Size(w - sw, h - sw),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(999f, 999f),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 10.dp.toPx()),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = sw),
         )
     }
 }
 
 /**
- * 单层外阴影,对齐 BiliPai dropShadow:radius = Small+Micro(≈14px),
- * α 浅色 0.10 / 深色 0.20,dy ≈ 6px。
- * (不再用 CSS 双层重影:0.26α+36px blur 会在胶囊上下糊出两条灰带)
+ * 设计稿双层外阴影(ui.css .tabbar box-shadow):
+ *   0 14dp 36dp rgba(0,0,0,.26) + 0 2dp 8dp rgba(0,0,0,.12)。
+ * 背板有 paper 垫底不透光,阴影只出现在胶囊轮廓外,不会再透过玻璃糊成灰带。
  */
 @Composable
 fun Modifier.tabBarShadow(): Modifier {
     val colors = LocalPhotoColors.current
     val isDark = colors.ink.luminance() > 0.5f
-    val alpha = if (isDark) 0.20f else 0.10f
-    return this.drawShadowLayer(
-        Color.Black.copy(alpha = alpha),
-        blurPx = 14f * 2f, // CSS blur 14px ≈ 双层高斯 sigma 总量
-        dyPx = 6f,
-    )
+    val a1 = if (isDark) 0.26f else 0.14f
+    val a2 = if (isDark) 0.12f else 0.06f
+    return this
+        .drawShadowLayer(Color.Black.copy(alpha = a1), blurDp = 36f, dyDp = 14f)
+        .drawShadowLayer(Color.Black.copy(alpha = a2), blurDp = 8f, dyDp = 2f)
 }
 
 private fun Modifier.drawShadowLayer(
     color: Color,
-    blurPx: Float,
-    dyPx: Float,
+    blurDp: Float,
+    dyDp: Float,
 ): Modifier = this.drawBehind {
     drawIntoCanvas { canvas ->
         val paint = Paint()
@@ -85,10 +91,10 @@ private fun Modifier.drawShadowLayer(
         frameworkPaint.color = color.toArgb()
         // CSS box-shadow blur = 2×高斯 sigma
         frameworkPaint.maskFilter =
-            android.graphics.BlurMaskFilter(blurPx / 2f, android.graphics.BlurMaskFilter.Blur.NORMAL)
+            android.graphics.BlurMaskFilter(blurDp.dp.toPx() / 2f, android.graphics.BlurMaskFilter.Blur.NORMAL)
         val shape = android.graphics.RectF(0f, 0f, size.width, size.height)
         canvas.save()
-        canvas.translate(0f, dyPx)
+        canvas.translate(0f, dyDp.dp.toPx())
         canvas.nativeCanvas.drawRoundRect(shape, size.width / 2f, size.height / 2f, frameworkPaint)
         canvas.restore()
     }

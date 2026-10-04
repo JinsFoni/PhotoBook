@@ -44,8 +44,10 @@ internal const val LENS_SKSL: String = """
         float2 suv = clamp(fragCoord + off, float2(0.0), uResolution - float2(1.0));
         half4 col = uContent.eval(suv);
         // 镜面只看垂直分量(顶光):若含 -n.x 项,左端帽(n.x=-1)会被点亮
-        // 而右端(n.x=+1)被 max(0,·) 截断 → 左右不对称
-        float spec = edge * max(0.0, -n.y);
+        // 而右端(n.x=+1)被 max(0,·) 截断 → 左右不对称。
+        // 平滑因子 pow(edge,4):胶囊中段 |dy|/rad 在中部已达 0.5+,smoothstep 会
+        // 在 bar 中线附近整段点亮,形成横贯的亮带;4 次方把它压到只剩上下边缘
+        float spec = pow(edge, 4.0) * max(0.0, -n.y);
         col.rgb += uSpecular.rgb * uSpecular.a * spec;
         return col;
     }
