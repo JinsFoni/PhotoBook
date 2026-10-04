@@ -166,7 +166,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "Backdrop: solid": {"zh-CN": "纯色背景", "zh-TW": "純色背景"},
     "Fullscreen": {"zh-CN": "全屏", "zh-TW": "全螢幕"},
     "Exit fullscreen": {"zh-CN": "退出全屏", "zh-TW": "退出全螢幕"},
-    "Fullscreen was kept off after page change — click the expand button to resume": {"zh-CN": "切页后已退出全屏 — 点右上角全屏按钮恢复", "zh-TW": "切頁後已退出全螢幕 — 點右上角全螢幕按鈕恢復"},
 
     # ---- 数量词(计数)-------------------------------------------------------
     "collection": {"zh-CN": "个写真集", "zh-TW": "個寫真集"},
