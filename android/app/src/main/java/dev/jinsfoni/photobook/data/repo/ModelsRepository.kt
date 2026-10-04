@@ -24,13 +24,19 @@ class ModelsRepository @Inject constructor(
     private val session: SessionStoreApi,
 ) {
 
-    private var listCache: List<ModelCard>? = null
+    private var listCache: Map<String, List<ModelCard>>? = null
 
-    suspend fun list(featured: Boolean = false): List<ModelCard> {
-        if (!featured) listCache?.let { return it }
-        val dto = safeCall { api.models(if (featured) "1" else null) }
+    suspend fun list(featured: Boolean = false, sort: String = "latest"): List<ModelCard> {
+        if (!featured) {
+            listCache?.get(sort)?.let { return it }
+        }
+        val dto = safeCall { api.models(if (featured) "1" else null, sort) }
         val base = session.currentBaseUrl()
-        return dto.items.map { it.toCard(base) }.also { if (!featured) listCache = it }
+        val cards = dto.items.map { it.toCard(base) }
+        if (!featured) {
+            listCache = (listCache ?: emptyMap()) + (sort to cards)
+        }
+        return cards
     }
 
     suspend fun detail(slug: String): ModelDetail {

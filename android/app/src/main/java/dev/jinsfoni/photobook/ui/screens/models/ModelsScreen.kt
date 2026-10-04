@@ -31,6 +31,7 @@ import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.ModelCard
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
+import dev.jinsfoni.photobook.ui.components.TagChip
 import dev.jinsfoni.photobook.ui.components.photoClickable
 
 /**
@@ -60,6 +61,21 @@ fun ModelsScreen(
                 stringResource(R.string.models_noun),
                 style = PhotoType.byline.copy(fontFamily = FontFamily.Serif, fontSize = 17.sp),
                 color = colors.ink,
+            )
+        }
+
+        // 筛选行:排序 chip + 计数,与写真页 .filterrow 同构
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 2.dp)
+                .padding(bottom = 15.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TagChip(
+                label = if (state.sort == "latest") stringResource(R.string.sort_latest) else stringResource(R.string.sort_earliest),
+                selected = true,
+                onClick = vm::toggleSort,
             )
             Spacer(Modifier.weight(1f))
             if (!state.loading && state.error == null) {

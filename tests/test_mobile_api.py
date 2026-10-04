@@ -281,3 +281,25 @@ def test_favorites_resolve_roundtrip(client, token):
                 json={"type": "photo", "key": f"{slug}:{idx}", "added": False})
     data = client.get("/api/mobile/favorites/resolve", headers=h).json()
     assert data["collections"] == [] and data["photos"] == []
+
+
+def test_models_sort_latest_then_oldest(client):
+    """sort=latest|oldest:精选仍置顶,组内创建时间反转。"""
+    latest = client.get("/api/mobile/models", params={"sort": "latest"}).json()["items"]
+    oldest = client.get("/api/mobile/models", params={"sort": "oldest"}).json()["items"]
+    assert len(latest) == len(oldest)
+    if not latest:
+        pytest.skip("no seeded models")
+    nf_latest = [m["slug"] for m in latest if not m["featured"]]
+    nf_oldest = [m["slug"] for m in oldest if not m["featured"]]
+    assert nf_oldest == list(reversed(nf_latest))
+    # 精选段(若有)同样反转
+    f_latest = [m["slug"] for m in latest if m["featured"]]
+    f_oldest = [m["slug"] for m in oldest if m["featured"]]
+    if f_latest:
+        assert f_oldest == list(reversed(f_latest))
+
+
+def test_models_sort_invalid(client):
+    r = client.get("/api/mobile/models", params={"sort": "bogus"})
+    assert r.status_code == 422

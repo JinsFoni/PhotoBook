@@ -252,9 +252,13 @@ async def mobile_collection_detail(slug: str, s: Session = Depends(get_db)):
 
 @router.get("/models")
 async def mobile_models(s: Session = Depends(get_db),
-                        featured: str = Query("", pattern="^(|1)$")):
+                        featured: str = Query("", pattern="^(|1)$"),
+                        sort: str = Query("latest", pattern="^(latest|oldest)$")):
+    # 精选永远置顶(与时间排序解耦),组内按创建时间 latest 新→旧 / oldest 旧→新
+    created = Model.created_at.desc() if sort == "latest" else Model.created_at.asc()
+    mid = Model.id.desc() if sort == "latest" else Model.id.asc()
     models = s.scalars(select(Model).where(Model.status == "published")
-                       .order_by(desc(Model.featured), Model.name)).all()
+                       .order_by(desc(Model.featured), created, mid)).all()
     if featured:
         models = [m for m in models if m.featured]
     cols = _published_collections(s)

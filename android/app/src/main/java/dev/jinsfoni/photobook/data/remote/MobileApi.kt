@@ -43,7 +43,8 @@ interface MobileApi {
     suspend fun collection(@Path("slug") slug: String): CollectionDto
 
     @GET("models")
-    suspend fun models(@Query("featured") featured: String? = null): ModelsPageDto
+    suspend fun models(@Query("featured") featured: String? = null,
+                       @Query("sort") sort: String = "latest"): ModelsPageDto
 
     @GET("models/{slug}")
     suspend fun model(@Path("slug") slug: String): ModelDetailDto
