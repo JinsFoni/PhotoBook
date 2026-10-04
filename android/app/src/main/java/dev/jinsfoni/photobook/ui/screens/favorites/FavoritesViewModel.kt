@@ -21,13 +21,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** 三段 Tab(design.md S7:模特/写真/照片)。 */
-enum class FavTab(val label: String) { MODELS("模特"), COLLECTIONS("写真"), PHOTOS("照片") }
+/** 三段 Tab(原型 s7:照片/写真/模特,照片段默认选中)。 */
+enum class FavTab(val label: String) { PHOTOS("照片"), COLLECTIONS("写真"), MODELS("模特") }
 
 data class FavPhotoItem(val slug: String, val idx: Int, val thumbUrl: String)
 
 data class FavoritesUiState(
-    val tab: FavTab = FavTab.COLLECTIONS,
+    val tab: FavTab = FavTab.PHOTOS,
     val loading: Boolean = true,
     val models: List<ModelCard> = emptyList(),
     val collections: List<CollectionCard> = emptyList(),
@@ -39,6 +39,13 @@ data class FavoritesUiState(
         FavTab.COLLECTIONS -> "${collections.size} 本"
         FavTab.PHOTOS -> "${photos.size} 张"
     }
+
+    /** Tab 内联计数(原型 .seg .s .n):纯数字,选中态由 UI 变色。 */
+    fun countFor(tab: FavTab): String = when (tab) {
+        FavTab.MODELS -> models.size.toString()
+        FavTab.COLLECTIONS -> collections.size.toString()
+        FavTab.PHOTOS -> photos.size.toString()
+ }
 
     fun isEmpty(): Boolean = when (tab) {
         FavTab.MODELS -> models.isEmpty()

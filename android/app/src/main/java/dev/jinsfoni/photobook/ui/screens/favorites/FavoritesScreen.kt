@@ -5,29 +5,29 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -57,10 +57,15 @@ fun FavoritesScreen(
     val colors = LocalPhotoColors.current
     val state by vm.state.collectAsState()
 
-    androidx.compose.runtime.LaunchedEffect(Unit) { vm.refresh() }
+    // S7 强制 dark(原型 theme:Dark;深色画廊模式,进入照片/模特详情由对方页自管)
+    LaunchedEffect(Unit) {
+        dev.jinsfoni.photobook.core.design.ThemeState.mode =
+            dev.jinsfoni.photobook.core.design.ThemeMode.DARK
+        vm.refresh()
+    }
 
     Column(Modifier.fillMaxSize()) {
-        // appbar
+        // appbar(原型:词标收藏 + 顶栏多选入口 copy 图标,V1 暂无批量操作 → 仅占位)
         Row(
             Modifier
                 .fillMaxWidth()
@@ -73,42 +78,56 @@ fun FavoritesScreen(
                 style = PhotoType.byline.copy(fontFamily = FontFamily.Serif, fontSize = 17.sp),
                 color = colors.ink,
             )
+            Spacer(Modifier.weight(1f))
+            dev.jinsfoni.photobook.ui.icons.StrokeIcon(
+                dev.jinsfoni.photobook.ui.icons.CopyIcon,
+                size = 20.dp,
+                tint = colors.ink2,
+            )
         }
 
-        // 三段 Tab:文本 + 2dp accent 底条(原型 .fav-tabs)
+        // 三段 Tab(原型 .seg:照片/写真/模特;内联计数;整行 1px 底线;选中 2px accent 下划线+计数变红)
         Row(
-            Modifier.padding(horizontal = 18.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(22.dp),
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .drawBehind { drawLine(colors.line, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx()) },
         ) {
-            FavTab.entries.forEach { tab ->
+            FavTab.entries.forEachIndexed { i, tab ->
                 val selected = tab == state.tab
-                // IntrinsicSize.Min: Column 宽度 = 文字宽,底条才不会拓到整行把其他 Tab 挤出屏
                 Column(
                     Modifier
-                        .width(IntrinsicSize.Min)
-                        .photoClickable { vm.selectTab(tab) },
+                        .photoClickable { vm.selectTab(tab) }
+                        .padding(start = if (i == 0) 0.dp else 24.dp)
+                        // 2dp accent 下划线画在本段底部(压在整行底线上,原型 bottom:-1px)
+                        .drawBehind {
+                            if (selected) {
+                                drawRect(
+                                    colors.accent,
+                                    topLeft = Offset(0f, size.height - 2.dp.toPx()),
+                                    size = Size(size.width, 2.dp.toPx()),
+                                )
+                            }
+                        },
                 ) {
-                    Text(
-                        tab.label,
-                        style = if (selected) PhotoType.cardTitle else PhotoType.caption,
-                        color = if (selected) colors.ink else colors.ink3,
-                    )
-                    Box(
-                        Modifier
-                            .padding(top = 5.dp)
-                            .fillMaxWidth()
-                            .height(2.dp)
-                            .clip(RoundedCornerShape(1.dp))
-                            .background(if (selected) colors.accent else androidx.compose.ui.graphics.Color.Transparent)
-                    )
+                    // 计数与文字同基线(原型 inline baseline),底距由外层留白承担
+                    Row(
+                        Modifier.padding(top = 9.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        Text(
+                            tab.label,
+                            style = PhotoType.byline.copy(fontSize = 14.5.sp),
+                            color = if (selected) colors.ink else colors.ink3,
+                        )
+                        Text(
+                            " ${state.countFor(tab)}",
+                            style = PhotoType.tag.copy(fontSize = 10.5.sp),
+                            color = if (selected) colors.accent else colors.ink3,
+                        )
+                    }
                 }
             }
-            Spacer(Modifier.weight(1f))
-            Text(
-                state.countText(),
-                style = PhotoType.micro.copy(letterSpacing = 0.4.sp),
-                color = colors.ink3,
-            )
         }
 
         when {
@@ -166,12 +185,12 @@ fun FavoritesScreen(
                     }
                 }
                 FavTab.PHOTOS -> LazyVerticalGrid(
-                    // 照片段 3 列方图(design.md S7)
+                    // 照片段 3 列方图(原型 .grid3:18px 边距,11px gap)
                     columns = GridCells.Fixed(3),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 112.dp),
-                    horizontalArrangement = Arrangement.spacedBy(9.dp),
-                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp),
+                    horizontalArrangement = Arrangement.spacedBy(11.dp),
+                    verticalArrangement = Arrangement.spacedBy(11.dp),
                 ) {
                     items(state.photos.size) { i ->
                         val p = state.photos[i]
