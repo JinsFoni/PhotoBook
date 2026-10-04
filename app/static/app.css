@@ -38,6 +38,11 @@
      基于 Klee One, 汉字/假名同源风格统一, 自带拉丁字重可兑底)
      — 文艺书卷风 (原 Bodoni Moda 不覆盖 CJK, 汉字走系统回退) */
   --display: "EB Garamond", "LXGW WenKai Screen", "Times New Roman", serif;
+  /* 纯拉丁展示文本(品牌字标等)专用: 不排 LXGW —— 强刷时三个字体按到达
+     顺序先后就位, wordmark 依次被 Times→LXGW(笔画粗重, 观感"突然变粗")
+     →Garamond 重排三次; 拉丁文本跳过 LXGW 后只重排一次, 且 LXGW 体积大
+     (整包 css+分片)常比 Garamond 晚到, 正是闪烁源 */
+  --display-latin: "EB Garamond", "Times New Roman", serif;
   --ui: "Archivo", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
 
   --fs-micro: 11px;
@@ -408,7 +413,7 @@ table { border-collapse: collapse; }
 }
 
 .wordmark {
-  font-family: var(--display);
+  font-family: var(--display-latin);
   font-size: 19px;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -2064,7 +2069,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   gap: var(--s7) var(--s6);
   padding-bottom: var(--s7);
 }
-.footer__wordmark { font-family: var(--display); font-size: var(--fs-h3); line-height: 1.2; }
+.footer__wordmark { font-family: var(--display-latin); font-size: var(--fs-h3); line-height: 1.2; }
 .footer__blurb { margin-top: var(--s3); font-size: var(--fs-small); color: var(--ink-3); max-width: 34ch; }
 .footer__col-title {
   font-size: var(--fs-small);

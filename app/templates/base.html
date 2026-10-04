@@ -53,6 +53,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600&family=EB+Garamond:ital,wght@0,400..700;1,400..600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-screen-webfont@1.7.0/style.css">
+<!-- 预取 EB Garamond 正体 woff2: display=swap 下其到达顺序决定 wordmark
+     是否闪粗 —— LXGW(整包中文)常晚到但分片小快, 先落位的可能是它;
+     preload 让 Garamond 与 CSS 几乎同时就位, 首帧即终帧字体 -->
+<link rel="preload" as="font" type="font/woff2" crossorigin
+      href="https://fonts.gstatic.com/s/ebgaramond/v33/SlGUmQSNjdsmc35JDF1K5GR1SDk_YAPI.woff2">
 <link rel="stylesheet" href="/static/app.css?v={{ asset_ver }}">
 </head>
 <body data-page="{{ page }}">
