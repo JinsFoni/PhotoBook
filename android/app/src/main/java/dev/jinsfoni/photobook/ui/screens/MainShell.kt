@@ -82,6 +82,8 @@ fun MainShell(
         GlassTabBar(
             hazeState = hazeState,
             selected = PhotoTab.entries[pagerState.currentPage],
+            // 小数进度:拖页时选中药丸「液体跟随」
+            position = pagerState.currentPage + pagerState.currentPageOffsetFraction,
             onSelect = { tab ->
                 scope.launch { pagerState.animateScrollToPage(tab.ordinal) }
             },
