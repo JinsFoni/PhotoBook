@@ -41,7 +41,9 @@ internal const val LENS_SKSL: String = """
         float2 off = -n * edge * uStrength;
         float2 suv = clamp(fragCoord + off, float2(0.0), uResolution - float2(1.0));
         half4 col = uContent.eval(suv);
-        float spec = edge * max(0.0, -n.y * 0.85 - n.x * 0.35);
+        // 镜面只看垂直分量(顶光):若含 -n.x 项,左端帽(n.x=-1)会被点亮
+        // 而右端(n.x=+1)被 max(0,·) 截断 → 左右不对称
+        float spec = edge * max(0.0, -n.y);
         col.rgb += uSpecular.rgb * uSpecular.a * spec;
         return col;
     }
