@@ -61,17 +61,6 @@ class AppRootViewModel @Inject constructor(
         }
     }
 
-    /** 主题三态循环(light → dark → blur),持久化。 */
-    fun cycleTheme() {
-        val next = when (ThemeState.mode) {
-            ThemeMode.LIGHT -> ThemeMode.DARK
-            ThemeMode.DARK -> ThemeMode.BLUR
-            ThemeMode.BLUR -> ThemeMode.LIGHT
-        }
-        ThemeState.mode = next
-        viewModelScope.launch { session.saveTheme(next) }
-    }
-
     fun setTheme(mode: ThemeMode) {
         ThemeState.mode = mode
         viewModelScope.launch { session.saveTheme(mode) }
@@ -98,7 +87,6 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                 val hazeState = rememberHazeState()
                 MainShell(
                     hazeState = hazeState,
-                    onThemeCycle = vm::cycleTheme,
                     onOpenSettings = { nav.navigate("settings") },
                     onOpenCollection = { slug -> nav.navigate("detail/$slug") },
                     onOpenModel = { slug -> nav.navigate("model/$slug") },
