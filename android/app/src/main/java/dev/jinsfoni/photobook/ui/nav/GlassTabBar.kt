@@ -180,10 +180,11 @@ fun GlassTabBar(
                             HazeInput.Sources(hazeState),
                             HazeBlurStyle {
                                 // 药丸层压平:模糊强度打折,内容在药丸内更「实」,
-                                // 与整条背板形成前后景深差(液态玻璃的厚度错觉)
+                                // 与整条背板形成前后景深差(液态玻璃的厚度错觉);
+                                // 中性玻璃(不用 accent 粉),与 iOS 26 原生一致
                                 blurRadius(24.dp)
                                 colorEffects(
-                                    listOf(HazeColorEffect.tint(colors.accent.copy(alpha = 0.24f)))
+                                    listOf(HazeColorEffect.tint(colors.barBg))
                                 )
                                 noiseFactor(0f)
                                 backgroundColor(colors.paper)
