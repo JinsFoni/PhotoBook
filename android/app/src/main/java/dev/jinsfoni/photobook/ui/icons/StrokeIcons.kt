@@ -184,19 +184,26 @@ val CopyIcon = part {
 }
 
 val SettingsIcon = part {
-    // 滑杆式设置图标:三条横向滑杆,旋钮错位(比原型的圆+四射线更易识别)
-    // 行 1 y=6,旋钮 x=15
-    moveTo(3f, 6f); horizontalLineTo(12.5f)
-    moveTo(17.5f, 6f); horizontalLineTo(21f)
-    circle(15f, 6f, 2.5f)
-    // 行 2 y=12,旋钮 x=9
-    moveTo(3f, 12f); horizontalLineTo(6.5f)
-    moveTo(11.5f, 12f); horizontalLineTo(21f)
-    circle(9f, 12f, 2.5f)
-    // 行 3 y=18,旋钮 x=15
-    moveTo(3f, 18f); horizontalLineTo(12.5f)
-    moveTo(17.5f, 18f); horizontalLineTo(21f)
-    circle(15f, 18f, 2.5f)
+    // 齿轮造型:外圈 8 齿 + 中孔;齿用短辐条从半径 7.2 到 9.2,圆环半径 7.2
+    // 8 个齿角度 0°/45°/90°/…,坐标预计算(cos/sin × 7.2 与 9.2,绕 12,12)
+    // 齿 0°(右)
+    moveTo(19.2f, 12f); horizontalLineTo(21.2f)
+    // 45°(右下)
+    moveTo(17.09f, 17.09f); lineTo(18.5f, 18.5f)
+    // 90°(下)
+    moveTo(12f, 19.2f); verticalLineTo(21.2f)
+    // 135°(左下)
+    moveTo(6.91f, 17.09f); lineTo(5.5f, 18.5f)
+    // 180°(左)
+    moveTo(4.8f, 12f); horizontalLineTo(2.8f)
+    // 225°(左上)
+    moveTo(6.91f, 6.91f); lineTo(5.5f, 5.5f)
+    // 270°(上)
+    moveTo(12f, 4.8f); verticalLineTo(2.8f)
+    // 315°(右上)
+    moveTo(17.09f, 6.91f); lineTo(18.5f, 5.5f)
+    // 外圈圆环(半径 7.2,中孔由内层透明留出)
+    circle(12f, 12f, 7.2f)
 }
 
 val TabExploreIcon = part {
