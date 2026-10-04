@@ -185,3 +185,15 @@ M3(S9 设置页 / 多服务器 / 主题持久化 / 语言)已实施;以下为与
 | 端上语言跟随系统(API 33+ `LocaleManager`) | 同左;API 31/32 写 DataStore + 提示 recreate | per-app language API 33 起才有;31/32 无官方机制,DataStore 方案仅存值待 M4 接 AppCompatDelegate |
 | 单测覆盖 DataStore 多档案 | DataStore 实现不测(需 robolectric),测 Fake 语义 + 拦截器重写(7 个新用例,总 35) | 测试策略维持「Fake 替身 + VM/仓库优先」,DataStore 迁移逻辑属 Android 框架胶水 |
 | 网络层动态 baseUrl | HostSelectionInterceptor 在 AuthInterceptor 之前重写 scheme/host/port(runBlocking 读活动档案) | Retrofit baseUrl 保持占位值;媒体 URL 仍按 origin 根拼接,不受影响 |
+
+### M3 真机走查补充(2026-10-05,OPPO PKT110/API 36)
+
+| 项目 | 结果 |
+|---|---|
+| S9 全区块渲染(服务器/主题/语言/下载位置) | ✓ |
+| 主题三选 + 循环按钮即点即切 | ✓(虚化/浅色/深色均验证) |
+| 语言 zh-CN ↔ zh-TW 即改即用(per-app locale recreate) | ✓ |
+| 添加第二服务器(192.168.0.102:8001)→ 落档激活 | ✓ |
+| 冷启动请求落点跟随活动档案(HostSelectionInterceptor) | ✓(双向切换,日志确认) |
+| 删除非活动档案 | ✓(列表恢复单档案) |
+| 旧数据自动愈合(M2 空列表固化为 "[]") | ✓(档案行恢复) |
