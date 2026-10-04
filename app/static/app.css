@@ -169,7 +169,9 @@ html[data-theme="blur"] { background: #101114; }
   filter: blur(46px) saturate(1.12);
   transform: scale(1.12);
   opacity: 0;
-  transition: opacity 620ms var(--ease);
+  /* transform 过渡承载轮播同步换图时的缓落回弹(1.18→1.12),
+     节奏与首页 hero__bg/灯箱 backdrop 的 1400ms 一致 */
+  transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
 }
 .page-blur[data-ready="true"] img { opacity: 1; }
 .page-blur::after {
@@ -1207,6 +1209,16 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   height: clamp(480px, 86vh, 960px);
 }
 .hero__stage { position: absolute; inset: 0; container-type: size; }
+
+/* blur 主题: 轮播背景整块让位给全页垫底层 .page-blur(由轮播切换
+   同步喂同一张图, 见 app.js 的 pc:hero-bg), hero 自身双缓冲背景退出,
+   整页从上到下只有一块虚化背景, 无缝一体 */
+[data-theme="blur"] .hero { background: transparent; }
+[data-theme="blur"] .hero__bg { display: none; }
+/* scrim 也退场: 它渐变到 hero 底边截止, 与 .page-blur::after 的均匀纱
+   浓度不同, 会在 hero 底边压出一条横线; 统一交给全页纱(0.66-0.78),
+   整页从上到下浓度一致才无缝 */
+[data-theme="blur"] .hero__scrim { display: none; }
 
 /* 竖图全宽横幅的完整呈现方案:前景 contain 整张显示(不裁切);
    背景同图放大模糊压暗,填补两侧空白(影楼画册常用)。

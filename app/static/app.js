@@ -94,6 +94,11 @@ window.PC = (function () {
     try { localStorage.setItem(THEME_KEY, v); } catch (e) {}
     applyTheme();
     renderBlurLayer();
+    /* 发现页在访前轮播已播: 切入虚化时垫底层直接跟当前轮播图,
+       而不是 boot 注入的"今日封面"(两者可能不同图) */
+    if (v === "blur" && heroBgSrc) {
+      document.dispatchEvent(new CustomEvent("pc:hero-bg", { detail: { src: heroBgSrc } }));
+    }
     document.dispatchEvent(new CustomEvent("pc:theme"));
   }
 
@@ -108,6 +113,7 @@ window.PC = (function () {
      图源由服务端 boot_json.blur_src 按路径注入, 跨页导航自动更新。 */
   /* 预载缓存: 记录当前垫底图的就绪状态 */
   var preload = { src: "", ok: false };
+  var heroBgSrc = ""; /* 发现页轮播当前图的 src(blur 主题垫底层跟随它) */
 
   function renderBlurLayer() {
     var el = document.querySelector("[data-page-blur]");
@@ -166,6 +172,48 @@ window.PC = (function () {
         }, 3000);
       }
     }
+  }
+
+  /* ---------- 首页轮播 ↔ blur 垫底层同步 -----------------------------
+     发现页轮播每换一张图, 广播 pc:hero-bg; blur 主题下垫底层换上
+     同一张图(同 hero 配方: 900 档已在页里, 这里收到的已是 2400 档,
+     浏览器有缓存直接淡入)。整页一块背景, 与轮播无缝一体。
+     非 blur 主题只做预载, 不动页面。 */
+  document.addEventListener("pc:hero-bg", function (e) {
+    var el = document.querySelector("[data-page-blur]");
+    if (!el || !e.detail || !e.detail.src) return;
+    var src = e.detail.src;
+    heroBgSrc = src;
+    if (state.theme !== "blur") return; /* 仅虚化模式需要整页同步 */
+    var cur = el.querySelector("img");
+    if (cur && cur.src === src) return;
+    /* 轮播驱动的换图带缓落回弹; 首次上墙(切主题/进页)不带 */
+    el.dataset.sync = "true";
+    swapBlurImg(el, src);
+  });
+
+  function swapBlurImg(el, src) {
+    var im = new Image();
+    im.alt = "";
+    im.onload = function () {
+      if (state.theme !== "blur") return;
+      var stale = el.querySelector("img");
+      if (stale) stale.remove();
+      el.appendChild(im);
+      el.setAttribute("data-ready", "true");
+      /* 回弹: 先无过渡钉在放大档, 下一帧放回基础档走 1400ms 缓落
+         (灯箱 backdrop 同款配方 —— 不钉直接换 src 会从中间值抖动) */
+      if (im.parentNode === el && el.dataset.sync === "true") {
+        im.style.transition = "none";
+        im.style.transform = "scale(1.4)";
+        requestAnimationFrame(function () {
+          if (im.parentNode !== el) return;
+          im.style.transition = "";
+          im.style.transform = "";
+        });
+      }
+    };
+    im.src = src;
   }
 
   /* ---------- favourites(服务端)------------------------------------------ */

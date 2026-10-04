@@ -142,6 +142,7 @@
         "--ar", (img.naturalWidth / img.naturalHeight).toFixed(4));
       fg.querySelector(".hero__img").src = img.src;
       bgs[i].src = img.src;
+      document.dispatchEvent(new CustomEvent("pc:hero-bg", { detail: { src: img.src } }));
       bgs.forEach(function (l) { l.dataset.active = "false"; });
       fgs.forEach(function (l) { l.dataset.active = "false"; });
       bgs[i].dataset.active = "true";
