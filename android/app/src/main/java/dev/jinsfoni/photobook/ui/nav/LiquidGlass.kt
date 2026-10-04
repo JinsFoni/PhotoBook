@@ -26,12 +26,17 @@ internal const val LENS_SKSL: String = """
     uniform float4 uSpecular;
 
     half4 main(float2 fragCoord) {
-        float2 c = uResolution * 0.5;
-        float2 d = fragCoord - c;
-        float rad = length(d);
-        float rMax = min(c.x, c.y);
-        float r = rad / rMax;
-        float2 n = rad > 0.0001 ? d / rad : float2(0.0);
+        // 胶囊几何:半径 = 高/2,端帽圆心在左右两端;
+        // 取距最近端帽的距离归一化 → 中段 r<1 平坦区(不折射),
+        // 只有两个圆头边缘才有透镜效果(整条宽 bar 不能用 min(cx,cy) 圆形公式)
+        float rad = uResolution.y * 0.5;
+        float2 c1 = float2(rad, rad);
+        float2 c2 = float2(uResolution.x - rad, rad);
+        float2 d1 = fragCoord - c1;
+        float2 d2 = fragCoord - c2;
+        float2 d = length(d1) < length(d2) ? d1 : d2;
+        float r = length(d) / rad;
+        float2 n = length(d) > 0.0001 ? d / length(d) : float2(0.0);
         float edge = smoothstep(0.45, 1.0, r);
         float2 off = -n * edge * uStrength;
         float2 suv = clamp(fragCoord + off, float2(0.0), uResolution - float2(1.0));
