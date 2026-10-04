@@ -184,11 +184,19 @@ val CopyIcon = part {
 }
 
 val SettingsIcon = part {
-    circle(12f, 12f, 3.2f)
-    moveTo(5f, 12f); horizontalLineTo(3f)
-    moveTo(21f, 12f); horizontalLineTo(19f)
-    moveTo(12f, 5f); verticalLineTo(3f)
-    moveTo(12f, 21f); verticalLineTo(19f)
+    // 滑杆式设置图标:三条横向滑杆,旋钮错位(比原型的圆+四射线更易识别)
+    // 行 1 y=6,旋钮 x=15
+    moveTo(3f, 6f); horizontalLineTo(12.5f)
+    moveTo(17.5f, 6f); horizontalLineTo(21f)
+    circle(15f, 6f, 2.5f)
+    // 行 2 y=12,旋钮 x=9
+    moveTo(3f, 12f); horizontalLineTo(6.5f)
+    moveTo(11.5f, 12f); horizontalLineTo(21f)
+    circle(9f, 12f, 2.5f)
+    // 行 3 y=18,旋钮 x=15
+    moveTo(3f, 18f); horizontalLineTo(12.5f)
+    moveTo(17.5f, 18f); horizontalLineTo(21f)
+    circle(15f, 18f, 2.5f)
 }
 
 val TabExploreIcon = part {
