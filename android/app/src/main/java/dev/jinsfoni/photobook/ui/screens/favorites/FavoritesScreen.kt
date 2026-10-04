@@ -1,12 +1,15 @@
 package dev.jinsfoni.photobook.ui.screens.favorites
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -183,28 +187,71 @@ fun FavoritesScreen(
                         )
                     }
                 }
-                FavTab.PHOTOS -> LazyVerticalGrid(
-                    // 照片段 3 列(原型 .grid3:18px 边距,11px gap);图片按原图完整比例展示,不裁方
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp),
-                    horizontalArrangement = Arrangement.spacedBy(11.dp),
-                    verticalArrangement = Arrangement.spacedBy(11.dp),
-                ) {
-                    items(state.photos.size) { i ->
-                        val p = state.photos[i]
-                        // 无高度约束 → Coil 按图片内在比例定高(等比缩略图,比例保真)
-                        AsyncImage(
-                            model = p.thumbUrl,
-                            contentDescription = p.slug,
-                            contentScale = ContentScale.FillWidth,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(colors.paper2)
-                                .photoClickable { onOpenPhoto(p.slug, p.idx) },
-                        )
-                    }
+                FavTab.PHOTOS -> PhotosMasonry(
+                    photos = state.photos,
+                    onOpenPhoto = onOpenPhoto,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 照片段瀑布拼排:3 列,每张按归一比例(竖→2:3、横→3:2,方图 1:1)定高,
+ * 新图总是落入当前最矮列,消除统一列高造成的空白。
+ */
+/**
+ * 照片段瀑布拼排:3 列等宽,每张按归一比例(竖→2:3、横→3:2、方→1:1)定高,
+ * 新图总是落入当前最矮列,消除等高网格造成的空白。
+ * 收藏照片为个人收藏量级(几十至百级),全量组合即可,不引入分页复杂度。
+ */
+@Composable
+private fun PhotosMasonry(
+    photos: List<FavPhotoItem>,
+    onOpenPhoto: (String, Int) -> Unit,
+) {
+    val colors = LocalPhotoColors.current
+    val columns = 3
+    // 每列内容:最短列优先分配(按归一比例高度计距,含间隙近似)
+    val placed: List<List<FavPhotoItem>> = remember(photos) {
+        val heights = FloatArray(columns)
+        val out = List(columns) { mutableListOf<FavPhotoItem>() }
+        for (p in photos) {
+            val norm = when {
+                p.aspect < 0.98f -> 2f / 3f   // 竖版 → 2:3
+                p.aspect > 1.02f -> 3f / 2f   // 横版 → 3:2
+                else -> 1f                    // 方图
+            }
+            val col = heights.indices.minBy { heights[it] }
+            out[col] += p
+            heights[col] += norm + 0.03f
+        }
+        out
+    }
+    Row(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(start = 18.dp, end = 18.dp, bottom = 112.dp),
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
+    ) {
+        placed.forEach { colItems ->
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(11.dp),
+            ) {
+                colItems.forEach { p ->
+                    AsyncImage(
+                        model = p.thumbUrl,
+                        contentDescription = p.slug,
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(p.aspect)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(colors.paper2)
+                            .photoClickable { onOpenPhoto(p.slug, p.idx) },
+                    )
                 }
             }
         }

@@ -353,6 +353,7 @@ async def mobile_favorites_resolve(s: Session = Depends(get_db),
                         "key": f"{c.slug}:{i}", "slug": c.slug, "idx": i,
                         "file": p.filename, "title": c.title,
                         "thumb": f"t/{THUMB_W_CARD}/{p.filename}.webp",
+                        "w": p.width, "h": p.height,
                     })
         out["photos"] = photos
     return out

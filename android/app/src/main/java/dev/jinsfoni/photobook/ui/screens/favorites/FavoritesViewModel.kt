@@ -24,7 +24,13 @@ import javax.inject.Inject
 /** 三段 Tab(原型 s7:照片/写真/模特,照片段默认选中)。 */
 enum class FavTab(val label: String) { PHOTOS("照片"), COLLECTIONS("写真"), MODELS("模特") }
 
-data class FavPhotoItem(val slug: String, val idx: Int, val thumbUrl: String)
+data class FavPhotoItem(
+    val slug: String,
+    val idx: Int,
+    val thumbUrl: String,
+    /** 服务端提供的原图宽高(缺失时按 2:3 竖版处理)。 */
+    val aspect: Float = 2f / 3f,
+)
 
 data class FavoritesUiState(
     val tab: FavTab = FavTab.PHOTOS,
@@ -88,10 +94,13 @@ class FavoritesViewModel @Inject constructor(
                     models = dto.models.map { it.toCard(base) },
                     collections = dto.collections.map { it.toModel(base) },
                     photos = dto.photos.map { p ->
+                        val w = p.w ?: 2
+                        val h = p.h ?: 3
                         FavPhotoItem(
                             slug = p.slug,
                             idx = p.idx,
                             thumbUrl = MediaUrls.fromPrefixed(base, p.thumb ?: ""),
+                            aspect = if (w > 0 && h > 0) w.toFloat() / h else 2f / 3f,
                         )
                     },
                 )

@@ -191,4 +191,6 @@ data class FavPhotoDto(
     val file: String,
     val title: String = "",
     val thumb: String? = null,
+    val w: Int? = null,
+    val h: Int? = null,
 )
