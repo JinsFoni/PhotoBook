@@ -685,6 +685,28 @@ window.PC = (function () {
       if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1);
     }, { passive: true });
 
+    /* 滚轮切换照片。触控板惯性会拖出几十个小 delta 事件且正负抖动,
+       固定节流会切完下一张又被余波切回上一张。所以: delta 先累加,
+       攒够阈值才切; 切完进入抑制期, 直到滚动彻底停下(180ms 无事件)
+       才重新武装, 惯性余波全部吃掉 */
+    var wheelAcc = 0, wheelArmed = true, wheelSettle;
+    el.addEventListener("wheel", function (e) {
+      if (el.dataset.open !== "true" || lb.zoom) { wheelAcc = 0; return; }
+      e.preventDefault();
+      clearTimeout(wheelSettle);
+      if (!wheelArmed) {
+        wheelSettle = setTimeout(function () { wheelArmed = true; wheelAcc = 0; }, 180);
+        return;
+      }
+      wheelAcc += e.deltaY;
+      if (Math.abs(wheelAcc) < 40 || lb.photos.length < 2) return;
+      var dir = wheelAcc > 0 ? 1 : -1;
+      wheelAcc = 0;
+      wheelArmed = false;
+      wheelSettle = setTimeout(function () { wheelArmed = true; }, 180);
+      go(dir);
+    }, { passive: false });
+
     document.addEventListener("keydown", function (e) {
       if (el.dataset.open !== "true") return;
       if (e.key === "ArrowLeft") { e.preventDefault(); go(-1); }
