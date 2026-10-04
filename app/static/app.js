@@ -855,7 +855,17 @@ window.PC = (function () {
 
   /* ---------- 页面全屏(导航栏按钮) ----------------------------------------
      documentElement 进全屏, 整站原样放大; 状态由 fullscreenchange 统一
-     刷新(含 Esc/F11 原生退出)。与灯箱全屏互不冲突: 谁在前台谁持有全屏 */
+     刷新(含 Esc/F11 原生退出)。与灯箱全屏互不冲突: 谁在前台谁持有全屏。
+     Chrome 在整页导航时会自动退出全屏(全屏状态绑定当前文档), 且新文档
+     没有用户手势, 自动续请求会被拒绝或秒撤(实测 change true→false)——
+     手势策略不可绕。跨页改为软保持: 全屏中导航记标记, 新页 boot 检测到
+     标记不在全屏就 toast 提示一键恢复(点按钮 = 带手势的请求, 必成功);
+     用户在新页恢复或主动退出都清标记, 不再提示 */
+  var FS_KEEP_KEY = "pc.fs.page";
+  function fsRequest() {
+    var request = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+    if (request) request.call(document.documentElement);
+  }
   function paintPageFullscreenBtn() {
     var on = !!fullscreenEl();
     document.querySelectorAll("[data-fullscreen-toggle]").forEach(function (b) {
@@ -864,7 +874,25 @@ window.PC = (function () {
       b.setAttribute("aria-label", on ? t("Exit fullscreen") : t("Fullscreen"));
     });
   }
+  function togglePageFullscreen() {
+    if (fullscreenEl()) {
+      try { sessionStorage.removeItem(FS_KEEP_KEY); } catch (e) {}
+      document.exitFullscreen();
+      return;
+    }
+    try { sessionStorage.setItem(FS_KEEP_KEY, "1"); } catch (e) {}
+    fsRequest();
+  }
   document.addEventListener("fullscreenchange", paintPageFullscreenBtn);
+  /* boot 时软续: 上一页全屏中导航过来(标记在)但本页不在全屏 ——
+     自动请求被手势策略挡住, 提示用户点一下(数秒不点自动清标记) */
+  function resumePageFullscreen() {
+    var kept = false;
+    try { kept = sessionStorage.getItem(FS_KEEP_KEY) === "1"; } catch (e) {}
+    if (!kept || fullscreenEl()) return;
+    toast(t("Fullscreen was kept off after page change — click the expand button to resume"));
+    try { sessionStorage.removeItem(FS_KEEP_KEY); } catch (e) {}
+  }
 
   function paintBackdrop() {
     if (!lb.el) return;
@@ -1232,14 +1260,7 @@ window.PC = (function () {
       var topt = t.closest("[data-theme-opt]");
       if (topt) { setTheme(topt.getAttribute("data-theme-opt")); return; }
       if (t.closest("[data-theme-switch]")) { toggleTheme(); return; }
-      if (t.closest("[data-fullscreen-toggle]")) {
-        if (fullscreenEl()) document.exitFullscreen();
-        else {
-          var request = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
-          if (request) request.call(document.documentElement);
-        }
-        return;
-      }
+      if (t.closest("[data-fullscreen-toggle]")) { togglePageFullscreen(); return; }
       if (t.closest("[data-search-open]")) { closeDrawer(); openSearch(); return; }
       if (t.closest("[data-search-close]")) { closeSearch(); return; }
       if (t.closest("[data-drawer-open]")) { openDrawer(); return; }
@@ -1319,6 +1340,7 @@ window.PC = (function () {
     applyTheme(); /* theme buttons live in chrome */
     renderBlurLayer();
     bindChrome();
+    resumePageFullscreen();
     fav.bind();
     syncAll();
     bindPhotoTiles();
