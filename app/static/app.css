@@ -1221,6 +1221,13 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 }
 
 .hero__bg {
+  /* 外扩 80px(灯箱 bdwrap 同款 overscan): blur(46px) 在元素边缘取样
+     到外部透明区会暗一圈, 切换 settle 时暗边随 1.15→1 内移成"阴影遮罩";
+     溢出边缘移到视口外后取样永远有内容, 暗环不可能出现 */
+  position: absolute;
+  inset: -80px;
+  width: calc(100% + 160px);
+  height: calc(100% + 160px);
   object-fit: cover;
   transform: scale(1.15);
   filter: blur(46px) brightness(0.55) saturate(1.12);
