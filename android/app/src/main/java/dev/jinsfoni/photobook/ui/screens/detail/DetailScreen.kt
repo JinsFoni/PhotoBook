@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -103,6 +104,8 @@ fun DetailScreen(
             }
             else -> {
                 val d = state.detail!!
+                // 照片墙重排:竖图成对填满两列,横图独占一行(见 arrangePhotoWall)
+                val wall = remember(d.photos) { arrangePhotoWall(d.photos) }
                 LazyVerticalStaggeredGrid(
                     columns = StaggeredGridCells.Fixed(2),
                     state = gridState,
@@ -156,11 +159,19 @@ fun DetailScreen(
                             }
                         }
                     }
-                    // 照片墙:按 w/h 纵横比,缺尺寸 2:3 兜底
-                    items(d.photos.size) { i ->
-                        val p = d.photos[i]
-                        val ratio = if (p.width > 0 && p.height > 0)
-                            p.width.toFloat() / p.height.toFloat() else 2f / 3f
+                    // 照片墙:竖图统一 2:3,横图跨整行,wall 已重排补位
+                    items(
+                        count = wall.size,
+                        span = { i ->
+                            val p = wall[i]
+                            if (p.width > 0 && p.height > 0 && p.width > p.height)
+                                StaggeredGridItemSpan.FullLine
+                            else StaggeredGridItemSpan.SingleLane
+                        },
+                    ) { i ->
+                        val p = wall[i]
+                        val landscape = p.width > 0 && p.height > 0 && p.width > p.height
+                        val ratio = if (landscape) p.width.toFloat() / p.height.toFloat() else 2f / 3f
                         Box(
                             Modifier
                                 .fillMaxWidth()
@@ -181,6 +192,65 @@ fun DetailScreen(
             }
         }
     }
+}
+
+/**
+ * 照片墙排序:竖图(含未知尺寸)两两成对填满两列,横图独占整行。
+ * 横图前若堆了奇数张竖图,短列会留半格空洞:优先从横图之后借一张竖图插到横图前补位;
+ * 后面没有了,就从前面那段竖图序列把末尾一张挪到横图之后(段长 ≥3 才借);
+ * 两头都借不到(如结尾恰好 1 竖 + 1 横)才留半格,属可接受兜底。
+ * 墙上顺序与灯箱顺序解耦:PhotoItem 自带 idx,点击仍按原序进灯箱。
+ */
+fun arrangePhotoWall(photos: List<PhotoItem>): List<PhotoItem> {
+    fun landscape(p: PhotoItem) = p.width > 0 && p.height > 0 && p.width > p.height
+    val out = mutableListOf<PhotoItem>()
+    val used = BooleanArray(photos.size)
+    var i = 0
+    while (i < photos.size) {
+        if (used[i]) { i++; continue }
+        val p = photos[i]
+        if (landscape(p)) {
+            out += p
+            used[i] = true
+            i++
+            continue
+        }
+        // 收集连续竖图段 [i..j)
+        var j = i
+        while (j < photos.size && !landscape(photos[j])) j++
+        val run = (i until j).filter { !used[it] }
+        run.forEach { used[it] = true }
+        val runOdd = run.size % 2 == 1
+        val hasLandscape = j < photos.size
+        if (!hasLandscape || !runOdd) {
+            out += photos.slice(run)
+        } else {
+            // 奇数段且后面紧跟横图:优先从横图之后借最近的竖图,插到横图前补位
+            var borrow = -1
+            for (k in j + 1 until photos.size) {
+                if (!used[k] && !landscape(photos[k])) { borrow = k; break }
+            }
+            if (borrow >= 0) {
+                used[borrow] = true
+                out += photos.slice(run)
+                out += photos[borrow]
+                out += photos[j] // 横图
+                used[j] = true
+            } else if (run.size >= 3) {
+                // 后面没有竖图:段末尾一张挪到横图之后
+                out += photos.slice(run.dropLast(1))
+                out += photos[j]
+                out += run.last().let { photos[it] }
+                used[j] = true
+            } else {
+                out += photos.slice(run) // 兜底:留半格
+                out += photos[j]
+                used[j] = true
+            }
+        }
+        i = j
+    }
+    return out
 }
 
 @Composable
