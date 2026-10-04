@@ -61,7 +61,6 @@ fun MainShell(
                     PhotoTab.EXPLORE -> ExploreScreen(
                         onOpenCollection = onOpenCollection,
                         onOpenAllCollections = openAllCollections,
-                        onOpenSettings = onOpenSettings,
                     )
                     PhotoTab.COLLECTIONS -> CollectionsScreen(
                         initialTag = null,
@@ -73,6 +72,7 @@ fun MainShell(
                         onOpenModel = onOpenModel,
                         onOpenCollection = onOpenCollection,
                         onOpenPhoto = { slug: String, idx: Int -> onOpenPhoto(slug, idx) },
+                        onOpenSettings = onOpenSettings,
                     )
                 }
             }

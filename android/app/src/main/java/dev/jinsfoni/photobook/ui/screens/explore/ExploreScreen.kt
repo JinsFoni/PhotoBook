@@ -45,16 +45,12 @@ import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
 import dev.jinsfoni.photobook.ui.components.photoClickable
 import dev.jinsfoni.photobook.ui.models.DiscoverFeed
-import dev.jinsfoni.photobook.ui.icons.IconWidths
-import dev.jinsfoni.photobook.ui.icons.SettingsIcon
-import dev.jinsfoni.photobook.ui.icons.StrokeIcon
 
 /** S1 发现页(原型 s1-explore.html):hero 轮播 → 最新入库 grid2。 */
 @Composable
 fun ExploreScreen(
     onOpenCollection: (slug: String) -> Unit,
     onOpenAllCollections: () -> Unit = {},
-    onOpenSettings: () -> Unit = {},
     vm: ExploreViewModel = hiltViewModel(),
 ) {
     val colors = LocalPhotoColors.current
@@ -69,7 +65,6 @@ fun ExploreScreen(
                 refreshing = state.refreshing,
                 onOpenCollection = onOpenCollection,
                 onOpenAllCollections = onOpenAllCollections,
-                onOpenSettings = onOpenSettings,
                 onRetry = vm::retry,
             )
             state.error != null -> Box(
@@ -125,7 +120,6 @@ private fun ExploreContent(
     refreshing: Boolean,
     onOpenCollection: (String) -> Unit,
     onOpenAllCollections: () -> Unit,
-    onOpenSettings: () -> Unit,
     onRetry: () -> Unit,
 ) {
     val colors = LocalPhotoColors.current
@@ -155,19 +149,6 @@ private fun ExploreContent(
                     style = PhotoType.cardTitle,
                     color = colors.ink,
                 )
-                // 设置入口:图标(24dp 描边,ink2),与原型 stroke 图标体系一致
-                Box(
-                    Modifier
-                        .photoClickable(onOpenSettings)
-                        .padding(6.dp),
-                ) {
-                    StrokeIcon(
-                        SettingsIcon,
-                        size = 22.dp,
-                        tint = colors.ink2,
-                        strokeWidth = IconWidths.THIN,
-                    )
-                }
             }
         }
         // hero 轮播(featured,跨两列)

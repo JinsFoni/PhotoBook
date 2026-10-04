@@ -58,6 +58,7 @@ fun FavoritesScreen(
     onOpenModel: (String) -> Unit,
     onOpenCollection: (String) -> Unit,
     onOpenPhoto: (String, Int) -> Unit,
+    onOpenSettings: () -> Unit = {},
     vm: FavoritesViewModel = hiltViewModel(),
 ) {
     val colors = LocalPhotoColors.current
@@ -84,6 +85,20 @@ fun FavoritesScreen(
                 style = PhotoType.byline.copy(fontFamily = FontFamily.Serif, fontSize = 17.sp),
                 color = colors.ink,
             )
+            Spacer(Modifier.weight(1f))
+            // 设置入口:图标(22dp 描边,ink2,THIN),与全局 stroke 图标体系一致
+            Box(
+                Modifier
+                    .photoClickable(onOpenSettings)
+                    .padding(6.dp),
+            ) {
+                dev.jinsfoni.photobook.ui.icons.StrokeIcon(
+                    dev.jinsfoni.photobook.ui.icons.SettingsIcon,
+                    size = 22.dp,
+                    tint = colors.ink2,
+                    strokeWidth = dev.jinsfoni.photobook.ui.icons.IconWidths.THIN,
+                )
+            }
         }
 
         // 三段 Tab(原型 .seg:照片/写真/模特;内联计数;整行 1px 底线;选中 2px accent 下划线+计数变红)
