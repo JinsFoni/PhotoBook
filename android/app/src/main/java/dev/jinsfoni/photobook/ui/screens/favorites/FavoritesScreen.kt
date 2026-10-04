@@ -71,7 +71,7 @@ fun FavoritesScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        // appbar(原型:词标收藏 + 顶栏多选入口 copy 图标,V1 暂无批量操作 → 仅占位)
+        // appbar(词标收藏;原型顶栏有 copy 图标作多选占位,V1 无批量操作已移除)
         Row(
             Modifier
                 .fillMaxWidth()
@@ -83,12 +83,6 @@ fun FavoritesScreen(
                 stringResource(R.string.favorites_noun),
                 style = PhotoType.byline.copy(fontFamily = FontFamily.Serif, fontSize = 17.sp),
                 color = colors.ink,
-            )
-            Spacer(Modifier.weight(1f))
-            dev.jinsfoni.photobook.ui.icons.StrokeIcon(
-                dev.jinsfoni.photobook.ui.icons.CopyIcon,
-                size = 20.dp,
-                tint = colors.ink2,
             )
         }
 
