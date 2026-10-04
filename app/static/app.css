@@ -148,7 +148,16 @@ html {
 /* 虚化垫底层(blur 主题): 固定在视口最底层。
    底色由 html[data-theme=blur] 提供(深墨, 点击立即落底可读);
    真实 <img> 承载虚化图(浏览器原生加载/缓存, 无 CSS 变量兼容问题),
-   预载完成(data-ready)后 620ms 淡入; ::after 深色纱保证前景对比 */
+   预载完成(data-ready)后 620ms 淡入; 压暗直接烘进 brightness 滤镜。
+   注意: 不可用 ::after 纱层压暗 —— 半透明纱铺在 transform 动画的
+   blur 图上, 过渡中图被合成器分块重栅格化, 块界经纱层叠加显形为
+   "格子状色彩断层"; 烘进同一滤镜通道则完全干净(灯箱 backdrop
+   brightness(0.55) 无此问题同理)。0.28 ≈ 原纱层 0.78/0.66 渐变的中值乘数。
+   滤镜与动画必须严格分层: <img> 静止承载 blur+压暗, **无任何过渡**
+   (内容与样式都不变 → 只栅格化一次, 陈旧 tile 无处产生);
+   淡入 + 回弹缩放全走外层 .page-blur__zoom —— 纯纹理变换/透明度,
+   不触发重栅格化。img 上哪怕只留 opacity 过渡, 换图淡入时滤镜层
+   自身在动画, 落定后会残留一块陈旧 tile 成"矩形亮区" */
 html[data-theme="blur"] { background: #101114; }
 .page-blur {
   position: fixed;
@@ -160,25 +169,23 @@ html[data-theme="blur"] { background: #101114; }
   pointer-events: none;
 }
 .page-blur[data-on="true"] { opacity: 1; visibility: visible; }
+.page-blur__zoom {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: scale(1.12);
+  /* 淡入(620ms) + 轮播同步换图的缓落回弹(1.4→1.12, 1400ms),
+     节奏与首页 hero__bg/灯箱 backdrop 一致 */
+  transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
+}
+.page-blur[data-ready="true"] .page-blur__zoom { opacity: 1; }
 .page-blur img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(46px) saturate(1.12);
-  transform: scale(1.12);
-  opacity: 0;
-  /* transform 过渡承载轮播同步换图时的缓落回弹(1.18→1.12),
-     节奏与首页 hero__bg/灯箱 backdrop 的 1400ms 一致 */
-  transition: opacity 620ms var(--ease), transform 1400ms var(--ease);
-}
-.page-blur[data-ready="true"] img { opacity: 1; }
-.page-blur::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to bottom, rgba(8, 9, 10, 0.78), rgba(8, 9, 10, 0.66));
+  filter: blur(46px) brightness(0.28) saturate(1.12);
 }
 
 body {
@@ -1215,8 +1222,8 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
    整页从上到下只有一块虚化背景, 无缝一体 */
 [data-theme="blur"] .hero { background: transparent; }
 [data-theme="blur"] .hero__bg { display: none; }
-/* scrim 也退场: 它渐变到 hero 底边截止, 与 .page-blur::after 的均匀纱
-   浓度不同, 会在 hero 底边压出一条横线; 统一交给全页纱(0.66-0.78),
+/* scrim 也退场: 它渐变到 hero 底边截止, 与 .page-blur 的均匀滤镜压暗
+   浓度不同, 会在 hero 底边压出一条横线; 压暗已烘进垫底层 brightness,
    整页从上到下浓度一致才无缝 */
 [data-theme="blur"] .hero__scrim { display: none; }
 

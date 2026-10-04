@@ -33,7 +33,7 @@
   var s = document.createElement("style");
   s.textContent =
     ".page-blur{opacity:1!important;visibility:visible!important}" +
-    (same ? ".page-blur img{opacity:1!important}" : "");
+    (same ? ".page-blur__zoom{opacity:1!important}" : "");
   document.head.appendChild(s);
   var i = new Image();
   i.alt = "";
@@ -42,7 +42,11 @@
   var adopt = function () {
     var el = document.querySelector("[data-page-blur]");
     if (!el || el.querySelector("img")) return;
-    el.appendChild(i);
+    /* img 挂进 zoom 容器(img 静止承载 blur 滤镜只栅格化一次,
+       缩放动画在外层, 同层混用落定后会残留陈旧 tile 成矩形亮区) */
+    var z = el.querySelector(".page-blur__zoom");
+    if (!z) { z = document.createElement("div"); z.className = "page-blur__zoom"; el.appendChild(z); }
+    z.appendChild(i);
     el.setAttribute("data-ready", "true");
   };
   if (document.body) adopt();
@@ -61,7 +65,7 @@
 <link rel="stylesheet" href="/static/app.css?v={{ asset_ver }}">
 </head>
 <body data-page="{{ page }}">
-<div class="page-blur" data-page-blur data-on="false" aria-hidden="true"></div>
+<div class="page-blur" data-page-blur data-on="false" aria-hidden="true"><div class="page-blur__zoom"></div></div>
 <a class="skip" href="#main">{{ t('Skip to content') }}</a>
 {% block body %}{% endblock %}
 <script>window.PB_DATA = {{ data_json | default('{}') | safe }};

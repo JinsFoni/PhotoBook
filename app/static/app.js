@@ -138,17 +138,21 @@ window.PC = (function () {
     if (!on) {
       /* 切出虚化: 把图摘下来, 回来时才走完整上墙路径 */
       el.removeAttribute("data-ready");
+      var zoom = el.querySelector(".page-blur__zoom");
       var old = el.querySelector("img");
       if (old) old.remove();
+      if (zoom) { zoom.style.transition = "none"; zoom.style.transform = ""; }
       return;
     }
+    var zoomEl = el.querySelector(".page-blur__zoom");
+    if (!zoomEl) { zoomEl = document.createElement("div"); zoomEl.className = "page-blur__zoom"; el.appendChild(zoomEl); }
     if (!el.querySelector("img")) {
       /* head 内联脚本可能已建好一张(首帧直出背景), 优先收养它,
          避免同一 URL 建两个 img 导致跨页时闪烁 */
       var adopted = document.head.querySelector("img[data-page-blur-img]");
       if (adopted) {
         adopted.removeAttribute("data-page-blur-img");
-        el.appendChild(adopted);
+        zoomEl.appendChild(adopted);
         el.setAttribute("data-ready", "true");
         return;
       }
@@ -156,19 +160,19 @@ window.PC = (function () {
       im.alt = "";
       if (preload.ok && preload.src === src) {
         im.src = src; /* 预载已完成, 直接上墙淡入 */
-        el.appendChild(im);
+        zoomEl.appendChild(im);
         el.setAttribute("data-ready", "true");
       } else {
         /* 图未就绪: 挂上元素等 onload; 3 秒兑底强制显示,
            避免黑屏等太久(正常路径下预载早已完成) */
         im.onload = function () {
-          if (im.parentNode === el) el.setAttribute("data-ready", "true");
+          if (im.parentNode === zoomEl) el.setAttribute("data-ready", "true");
         };
         im.src = src;
-        el.appendChild(im);
+        zoomEl.appendChild(im);
         clearTimeout(renderBlurLayer._t);
         renderBlurLayer._t = setTimeout(function () {
-          if (im.parentNode === el) el.setAttribute("data-ready", "true");
+          if (im.parentNode === zoomEl) el.setAttribute("data-ready", "true");
         }, 3000);
       }
     }
@@ -199,17 +203,22 @@ window.PC = (function () {
       if (state.theme !== "blur") return;
       var stale = el.querySelector("img");
       if (stale) stale.remove();
-      el.appendChild(im);
+      var z = el.querySelector(".page-blur__zoom");
+      if (!z) { z = document.createElement("div"); z.className = "page-blur__zoom"; el.appendChild(z); }
+      z.appendChild(im);
       el.setAttribute("data-ready", "true");
-      /* 回弹: 先无过渡钉在放大档, 下一帧放回基础档走 1400ms 缓落
+      /* 回弹: 缩放钉在外层 zoom 容器(img 静止承载 blur 滤镜, 只栅格化
+         一次), 先无过渡钉在放大档, 下一帧放回基础档走 1400ms 缓落
          (灯箱 backdrop 同款配方 —— 不钉直接换 src 会从中间值抖动) */
-      if (im.parentNode === el && el.dataset.sync === "true") {
-        im.style.transition = "none";
-        im.style.transform = "scale(1.4)";
+      if (el.dataset.sync === "true") {
+        var zoom = el.querySelector(".page-blur__zoom");
+        if (!zoom) return;
+        zoom.style.transition = "none";
+        zoom.style.transform = "scale(1.4)";
         requestAnimationFrame(function () {
-          if (im.parentNode !== el) return;
-          im.style.transition = "";
-          im.style.transform = "";
+          if (!zoom.parentNode || zoom.parentNode !== el) return;
+          zoom.style.transition = "";
+          zoom.style.transform = "";
         });
       }
     };
