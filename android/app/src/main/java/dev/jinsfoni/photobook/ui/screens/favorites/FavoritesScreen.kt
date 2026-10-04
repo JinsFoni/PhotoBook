@@ -131,7 +131,8 @@ fun FavoritesScreen(
                 ) {
                     // 计数与文字同基线(原型 inline baseline),底距由外层留白承担
                     Row(
-                        Modifier.padding(top = 9.dp),
+                        // 底距留出文字与下划线之间的空隙(accent 线仍压在整行底线上)
+                        Modifier.padding(top = 9.dp, bottom = 10.dp),
                         verticalAlignment = Alignment.Bottom,
                     ) {
                         Text(
