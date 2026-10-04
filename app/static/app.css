@@ -1986,8 +1986,8 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lightbox:fullscreen .icon-btn:hover,
 .lightbox:fullscreen .fav:hover { color: #ffffff; }
 .lightbox:fullscreen .fav[aria-pressed="true"] { color: var(--accent); }
-.lightbox:fullscreen .lightbox__progress { background: rgba(255, 255, 255, 0.22); }
-.lightbox:fullscreen .lightbox__progress i { background: rgba(255, 255, 255, 0.9); }
+/* 全屏下隐藏底部进度条 */
+.lightbox:fullscreen .lightbox__progress { display: none; }
 /* 全屏下铺满即裁切, 垫底层含图会从裁切边缘穿帮, 隐藏 */
 .lightbox:fullscreen .lightbox__under { opacity: 0 !important; }
 
