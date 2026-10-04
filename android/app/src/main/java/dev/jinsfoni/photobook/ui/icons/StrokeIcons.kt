@@ -184,26 +184,15 @@ val CopyIcon = part {
 }
 
 val SettingsIcon = part {
-    // 齿轮造型:外圈 8 齿 + 中孔;齿用短辐条从半径 7.2 到 9.2,圆环半径 7.2
-    // 8 个齿角度 0°/45°/90°/…,坐标预计算(cos/sin × 7.2 与 9.2,绕 12,12)
-    // 齿 0°(右)
-    moveTo(19.2f, 12f); horizontalLineTo(21.2f)
-    // 45°(右下)
-    moveTo(17.09f, 17.09f); lineTo(18.5f, 18.5f)
-    // 90°(下)
-    moveTo(12f, 19.2f); verticalLineTo(21.2f)
-    // 135°(左下)
-    moveTo(6.91f, 17.09f); lineTo(5.5f, 18.5f)
-    // 180°(左)
-    moveTo(4.8f, 12f); horizontalLineTo(2.8f)
-    // 225°(左上)
-    moveTo(6.91f, 6.91f); lineTo(5.5f, 5.5f)
-    // 270°(上)
-    moveTo(12f, 4.8f); verticalLineTo(2.8f)
-    // 315°(右上)
-    moveTo(17.09f, 6.91f); lineTo(18.5f, 5.5f)
-    // 外圈圆环(半径 7.2,中孔由内层透明留出)
-    circle(12f, 12f, 7.2f)
+    // 舵轮风格:外圈 + 内圈 + 三根辐条(从内圈缘伸到外圈缘,120° 均布,一根朝上)
+    circle(12f, 12f, 8.5f)
+    circle(12f, 12f, 3.4f)
+    // 辐条 90°(上):(12, 8.6) → (12, 3.5)
+    moveTo(12f, 8.6f); verticalLineTo(3.5f)
+    // 辐条 210°(左下):内圈缘 (9.06, 13.7) → 外圈缘 (4.64, 16.25)
+    moveTo(9.06f, 13.7f); lineTo(4.64f, 16.25f)
+    // 辐条 330°(右下):(14.94, 13.7) → (19.36, 16.25)
+    moveTo(14.94f, 13.7f); lineTo(19.36f, 16.25f)
 }
 
 val TabExploreIcon = part {
