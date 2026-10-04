@@ -37,6 +37,8 @@ window.PC = (function () {
     grid: '<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>',
     user: '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
     logout: '<path d="M9 4H5v16h4M14 8l4 4-4 4M18 12H9"/>',
+    expand: '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>',
+    compress: '<path d="M9 4v5H4M15 4v5h5M20 15h-5v5M4 15h5v5"/>',
     blur: '<circle cx="12" cy="12" r="4.2"/><path d="M12 3.2v2.2M12 18.6v2.2M3.2 12h2.2M18.6 12h2.2M5.8 5.8l1.6 1.6M16.6 16.6l1.6 1.6M18.2 5.8l-1.6 1.6M7.4 16.6l-1.6 1.6" stroke-dasharray="1.5 2.4"/>'
   };
 
@@ -370,6 +372,7 @@ window.PC = (function () {
         '<a class="icon-btn" href="/favorites" aria-label="' + t("Favourites") + '">' + icon("heart") +
         '<span class="icon-btn__dot" data-fav-dot hidden></span></a>' +
         '<button class="icon-btn" type="button" data-theme-toggle aria-label="' + t("Switch theme") + '"></button>' +
+        '<button class="icon-btn" type="button" data-fullscreen-toggle aria-pressed="false" aria-label="' + t("Fullscreen") + '" title="' + t("Fullscreen") + '">' + icon("expand") + "</button>" +
         '<a class="avatar-btn" href="/profile" aria-label="' + t("Your profile") + '">' +
         (ME.avatar
           ? '<img src="' + ME.avatar + '" alt="" width="30" height="30">'
@@ -613,6 +616,7 @@ window.PC = (function () {
       '<div class="lightbox__foot">' +
       '<span class="lightbox__counter" data-lb-counter></span>' +
       '<div class="lightbox__foot-actions">' +
+      '<button class="icon-btn" type="button" data-lb-fullscreen aria-pressed="false" title="' + t("Fullscreen") + '">' + icon("expand") + "</button>" +
       '<button class="icon-btn" type="button" data-lb-bg aria-pressed="' + (lbBg === "blur" ? "true" : "false") + '" title="' + t("Backdrop: blurred cover") + '">' + icon(lbBg === "blur" ? "blur" : "moon") + "</button>" +
       '<button class="fav fav--labelled" type="button" data-fav="photo" data-fav-key="" aria-pressed="false" title="' + t("Favourite photo") + '">' +
       icon("heart") + '<span data-fav-label>' + t("Save") + '</span><span class="sr">' + t("Add to favourites") + "</span></button>" +
@@ -624,6 +628,7 @@ window.PC = (function () {
 
     el.querySelector("[data-lb-close]").addEventListener("click", close);
     el.querySelector("[data-lb-bg]").addEventListener("click", toggleBackdrop);
+    el.querySelector("[data-lb-fullscreen]").addEventListener("click", toggleFullscreen);
     el.querySelector("[data-lb-prev]").addEventListener("click", function () { go(-1); });
     el.querySelector("[data-lb-next]").addEventListener("click", function () { go(1); });
     el.querySelectorAll("[data-lb-img]").forEach(function (fig) {
@@ -719,6 +724,7 @@ window.PC = (function () {
 
   function close() {
     if (!lb.el) return;
+    if (fullscreenEl()) document.exitFullscreen();
     lb.el.dataset.open = "false";
     document.body.classList.remove("is-locked");
     lbShownUrl = "";
@@ -819,6 +825,46 @@ window.PC = (function () {
     b.innerHTML = icon(lbBg === "blur" ? "blur" : "moon");
     b.title = lbBg === "blur" ? t("Backdrop: blurred cover") : t("Backdrop: solid");
   }
+
+  /* ---------- 灯箱全屏 -----------------------------------------------------
+     浏览器 Fullscreen API 作用于灯箱元素本身;全屏态顶/底栏改悬浮在图上
+     (图铺满视口, 栏不能还在顶部压出一行)。退出途径: 按钮、Esc/F11 原生
+     退出、关灯箱 —— fullscreenchange 里统一刷新按钮态 */
+  function fullscreenEl() {
+    return document.fullscreenElement;
+  }
+  function toggleFullscreen() {
+    if (fullscreenEl()) {
+      document.exitFullscreen();
+      return;
+    }
+    var request = lb.el.requestFullscreen || lb.el.webkitRequestFullscreen;
+    if (request) request.call(lb.el);
+  }
+  function paintFullscreenBtn() {
+    if (!lb.el) return;
+    var b = lb.el.querySelector("[data-lb-fullscreen]");
+    if (!b) return;
+    var on = !!fullscreenEl();
+    lb.el.dataset.fullscreen = on ? "true" : "false";
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.innerHTML = icon(on ? "compress" : "expand");
+    b.title = on ? t("Exit fullscreen") : t("Fullscreen");
+  }
+  document.addEventListener("fullscreenchange", paintFullscreenBtn);
+
+  /* ---------- 页面全屏(导航栏按钮) ----------------------------------------
+     documentElement 进全屏, 整站原样放大; 状态由 fullscreenchange 统一
+     刷新(含 Esc/F11 原生退出)。与灯箱全屏互不冲突: 谁在前台谁持有全屏 */
+  function paintPageFullscreenBtn() {
+    var on = !!fullscreenEl();
+    document.querySelectorAll("[data-fullscreen-toggle]").forEach(function (b) {
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.innerHTML = icon(on ? "compress" : "expand");
+      b.setAttribute("aria-label", on ? t("Exit fullscreen") : t("Fullscreen"));
+    });
+  }
+  document.addEventListener("fullscreenchange", paintPageFullscreenBtn);
 
   function paintBackdrop() {
     if (!lb.el) return;
@@ -1186,6 +1232,14 @@ window.PC = (function () {
       var topt = t.closest("[data-theme-opt]");
       if (topt) { setTheme(topt.getAttribute("data-theme-opt")); return; }
       if (t.closest("[data-theme-switch]")) { toggleTheme(); return; }
+      if (t.closest("[data-fullscreen-toggle]")) {
+        if (fullscreenEl()) document.exitFullscreen();
+        else {
+          var request = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+          if (request) request.call(document.documentElement);
+        }
+        return;
+      }
       if (t.closest("[data-search-open]")) { closeDrawer(); openSearch(); return; }
       if (t.closest("[data-search-close]")) { closeSearch(); return; }
       if (t.closest("[data-drawer-open]")) { openDrawer(); return; }

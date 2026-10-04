@@ -1959,6 +1959,38 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 /* 放大模式: 主图内联尺寸可能超出 stage, 垫底层隐藏避免边缘穿帮 */
 .lightbox[data-zoom="true"] .lightbox__under { opacity: 0 !important; }
 
+/* ---------- 灯箱全屏态(:fullscreen 元素即 .lightbox) ----------------------
+   布局与普通态一致(stage 本就 flex:1 占满视口, 照片 contain 适配不裁切);
+   仅顶/底栏改悬浮在图上(absolute, 渐变垫底保证白字可读), 不再占 flex 行。
+   垫底层与放大模式同理隐藏 */
+.lightbox:fullscreen { background: #000; backdrop-filter: none; -webkit-backdrop-filter: none; }
+/* 悬浮栏: absolute 覆盖 stage 之上; 渐变垫底仅保可读, 不改配色逻辑 */
+.lightbox:fullscreen .lightbox__bar,
+.lightbox:fullscreen .lightbox__foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+}
+.lightbox:fullscreen .lightbox__bar {
+  top: 0;
+}
+.lightbox:fullscreen .lightbox__foot {
+  bottom: 0;
+}
+.lightbox:fullscreen .lightbox__title,
+.lightbox:fullscreen .lightbox__counter,
+.lightbox:fullscreen .icon-btn,
+.lightbox:fullscreen .fav,
+.lightbox:fullscreen .btn--ghost { color: rgba(255, 255, 255, 0.94); text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45); }
+.lightbox:fullscreen .icon-btn:hover,
+.lightbox:fullscreen .fav:hover { color: #ffffff; }
+.lightbox:fullscreen .fav[aria-pressed="true"] { color: var(--accent); }
+.lightbox:fullscreen .lightbox__progress { background: rgba(255, 255, 255, 0.22); }
+.lightbox:fullscreen .lightbox__progress i { background: rgba(255, 255, 255, 0.9); }
+/* 全屏下铺满即裁切, 垫底层含图会从裁切边缘穿帮, 隐藏 */
+.lightbox:fullscreen .lightbox__under { opacity: 0 !important; }
+
 .lightbox__nav {
   position: absolute;
   top: 50%;
