@@ -1946,7 +1946,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   color: var(--ink);
   transition: opacity var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
 }
-.lightbox__nav:hover { background: var(--paper-2); }
+.lightbox__nav:hover { color: var(--ink); } /* 悬停只提亮箭头, 不出方形底框 */
 .lightbox__nav[disabled] { opacity: 0.22; pointer-events: none; }
 .lightbox__nav--prev { left: var(--s4); }
 .lightbox__nav--next { right: var(--s4); }
