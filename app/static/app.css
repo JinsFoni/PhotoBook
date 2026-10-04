@@ -1228,6 +1228,10 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   inset: -80px;
   width: calc(100% + 160px);
   height: calc(100% + 160px);
+  /* 全局 max-width:100% 会把外扩后的宽度钳回舞台宽, 元素右缘缩回
+     x=1360, 视口最右 80px 透出暗底成"右侧压暗"——必须显式解除 */
+  max-width: none;
+  max-height: none;
   object-fit: cover;
   transform: scale(1.15);
   filter: blur(46px) brightness(0.55) saturate(1.12);
