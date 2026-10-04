@@ -154,7 +154,7 @@ def _run_job(job_id: int) -> None:
     library_root = None
     archive_tmp = None
     serial: int | None = None
-    archive_file: Path | None = None   # 压缩包落点(下载开始前赋值)
+    archive_files: list[Path] = []     # 压缩包落点(下载开始前赋值, 分卷多个)
     archive_done = False               # 只有下载完整结束才允许删包
     try:
         job = s.get(HarvestJob, job_id)
@@ -205,39 +205,46 @@ def _run_job(job_id: int) -> None:
             s.commit()
             return
 
-        # 4. 解析短链 → 直链
+        # 4. 解析短链 → 直链。分卷压缩会挂多条短链(标题带 "1 / 2"),
+        #    必须全下,只下第一卷解压必缺卷;任一卷解析失败整任务失败
+        #    (缺卷的包解出来也是废的,不值得半成品)
         if not target.shortlinks:
             _finish(s, job, "failed", "详情页未找到下载短链")
             s.commit()
             return
-        link = target.shortlinks[0]
-        try:
-            direct_page = net.resolve_ouo(link)
-        except net.UnsupportedHostError as e:
-            _finish(s, job, "failed", str(e))
-            s.commit()
-            return
-        if not direct_page:
-            _finish(s, job, "failed", "短链解析失败")
-            s.commit()
-            return
-        info = net.mediafire_info_from_url(direct_page)
-        if not info["direct_url"]:
-            _finish(s, job, "failed", "未获取到直链")
-            s.commit()
-            return
+        infos = []
+        for link in target.shortlinks:
+            try:
+                direct_page = net.resolve_ouo(link)
+            except net.UnsupportedHostError as e:
+                _finish(s, job, "failed", str(e))
+                s.commit()
+                return
+            if not direct_page:
+                _finish(s, job, "failed", f"短链解析失败: {link}")
+                s.commit()
+                return
+            info = net.mediafire_info_from_url(direct_page)
+            if not info["direct_url"]:
+                _finish(s, job, "failed", f"未获取到直链: {info['filename']}")
+                s.commit()
+                return
+            infos.append(info)
 
-        # 5. 下载(流式 + 进度)
+        # 5. 逐卷下载(流式 + 进度 + 断点续传)。进度跨卷累加:
+        #    bytes_done = 前面各卷已下字节数 + 当前卷进度
         job.status = "downloading"
-        job.bytes_total = info["size"]
+        job.bytes_total = sum(i["size"] for i in infos)
         s.commit()
 
         archive_tmp = library_root / "_tmp"
         archive_tmp.mkdir(parents=True, exist_ok=True)
-        archive_file = archive_tmp / (info["filename"] or f"{job.serial}.rar")
+        archive_files = [archive_tmp / (i["filename"] or f"{job.serial}-{n}.rar")
+                         for n, i in enumerate(infos)]
+        done_offset = 0  # 已完整落盘的卷累计字节数(进度跨卷累加)
 
         def progress(done: int, total: int) -> None:
-            job.bytes_done = done
+            job.bytes_done = done_offset + done
             job.bytes_total = total or job.bytes_total
             job.updated_at = _now()
             try:
@@ -245,19 +252,36 @@ def _run_job(job_id: int) -> None:
             except Exception:
                 s.rollback()
 
-        pipeline.download_stream(info["direct_url"], archive_file,
-                                 expected_sha256=info["sha256"],
-                                 max_bytes=4 * 1024**3,
-                                 on_progress=progress,
-                                 stream_key=job_id)
-        archive_done = True  # SHA256 已过, 此后失败可删包(失败重试会重新下载)
+        for info, archive_file in zip(infos, archive_files):
+            # 上次跑到后段失败: 已完整落盘的卷直接复用(大小核对), 不重下
+            if archive_file.exists() and info["size"] \
+                    and archive_file.stat().st_size == info["size"]:
+                done_offset += info["size"]
+                continue
+            pipeline.download_stream(info["direct_url"], archive_file,
+                                     expected_sha256=info["sha256"],
+                                     max_bytes=4 * 1024**3,
+                                     on_progress=progress,
+                                     stream_key=job_id)
+            done_offset += archive_file.stat().st_size
+        archive_done = True  # 全部卷 SHA256 已过, 此后失败可删包(失败重试会重新下载)
 
-        # 6. 解压 + 归档
+        # 6. 解压 + 归档。多卷包(RAR .part1.rar / 7z .001 / zip 分卷)从
+        #    首卷解; 首卷选择: 命中已知首卷特征的优先, 否则按文件名排序取第一
+        def _volume_key(p: Path):
+            name = p.name.lower()
+            for rank, pat in enumerate((".part1.rar", ".part01.rar", ".001",
+                                        ".zip", ".7z", ".rar")):
+                if name.endswith(pat):
+                    return rank, name
+            return 99, name
+
         work_dir = archive_tmp / f"work-{job.serial}"
         if work_dir.exists():
             import shutil
             shutil.rmtree(work_dir)
-        pipeline.extract_archive(archive_file, work_dir, target.password)
+        pipeline.extract_archive(min(archive_files, key=_volume_key),
+                                 work_dir, target.password)
         final_dir = pipeline.archive_collection(work_dir, library_root,
                                                 model_name=target.model_name,
                                                 title=target.title or f"serial-{job.serial}",
@@ -329,7 +353,7 @@ def _run_job(job_id: int) -> None:
         if _run_tokens.get(job_id) == token:
             try:
                 _cleanup_run(archive_tmp, serial,
-                             archive_file if archive_done else None)
+                             archive_files if archive_done else [])
                 _prune_tmp(archive_tmp or (library_root / "_tmp" if library_root else None))
             except Exception:
                 pass
@@ -340,11 +364,11 @@ def _run_job(job_id: int) -> None:
 
 
 def _cleanup_run(archive_tmp, serial: int | None,
-                 archive_file: Path | None) -> None:
+                 archive_files: list[Path]) -> None:
     """清理一次任务运行的产物(仅本任务的, 不碰其他任务的续传文件)。
 
     - work-{serial} 目录: 一律删(解压产物, 归档后已无价值)
-    - 本任务下载完的压缩包: 删(已入库, 留着只占空间)
+    - 本任务下载完的压缩包(含全部分卷): 删(已入库, 留着只占空间)
     - *.part / 未完成包: 保留 — 重试的断点续传基础
     """
     import shutil
@@ -352,8 +376,8 @@ def _cleanup_run(archive_tmp, serial: int | None,
         return
     if serial is not None:
         shutil.rmtree(archive_tmp / f"work-{serial}", ignore_errors=True)
-    if archive_file:
-        archive_file.unlink(missing_ok=True)
+    for f in archive_files:
+        f.unlink(missing_ok=True)
 
 
 def _prune_tmp(archive_tmp) -> None:
