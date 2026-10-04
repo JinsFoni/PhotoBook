@@ -156,15 +156,8 @@ fun DetailScreen(
                             }
                         }
                     }
-                    // 照片墙:按 w/h 纵横比,缺尺寸 2:3 兜底;横版图跨整行,避免半列里太小
-                    items(
-                        count = d.photos.size,
-                        span = { i ->
-                            val p = d.photos[i]
-                            if (p.width > p.height) StaggeredGridItemSpan.FullLine
-                            else StaggeredGridItemSpan.SingleLane
-                        },
-                    ) { i ->
+                    // 照片墙:按 w/h 纵横比,缺尺寸 2:3 兜底
+                    items(d.photos.size) { i ->
                         val p = d.photos[i]
                         val ratio = if (p.width > 0 && p.height > 0)
                             p.width.toFloat() / p.height.toFloat() else 2f / 3f
