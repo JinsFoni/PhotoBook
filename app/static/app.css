@@ -1235,7 +1235,9 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 }
 
 .hero__fg {
-  background: rgba(8, 9, 10, 0.42); /* 图比横幅窄时透出的底色与背景自然融合 */
+  /* 曾带 rgba(8,9,10,0.42) 底色让照片两侧"与背景融合", 实际是铺满
+     舞台的深色遮罩: 竖图/窄图时两侧大片压暗(右侧最明显)。
+     背景已是同图虚化, 去掉底色直接透出即可 */
 }
 
 /* contain 矩形: 宽 = min(舞台宽, 舞台高×ar), 高按 ar 推导
