@@ -1991,6 +1991,13 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 /* 全屏下铺满即裁切, 垫底层含图会从裁切边缘穿帮, 隐藏 */
 .lightbox:fullscreen .lightbox__under { opacity: 0 !important; }
 
+/* ---------- 页面全屏态(导航栏按钮, documentElement 进全屏) ----------------
+   内容等比放大一档, 收窄两侧留白; 用 zoom 而非 transform:scale ——
+   scale 会让 fixed 后代(垫底层/灯箱/搜索层)改以变换后的祖先定位,
+   铺满视口的层全部错位。zoom 只放大布局, fixed 层跟随放大后超出
+   视口的部分自然裁掉(cover 背景/栏仍在正确位置) */
+html:fullscreen { zoom: 1.05; }
+
 .lightbox__nav {
   position: absolute;
   top: 50%;
