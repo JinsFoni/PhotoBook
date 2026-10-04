@@ -804,8 +804,12 @@ window.PC = (function () {
       }, 650);
     };
     back.dataset.src = src;
-    if (back.dataset.src === src && back.complete && back.naturalWidth > 0) {
-      /* 同 URL 曾在这层加载过(solid 往返/翻回去): 不重触发 onload, 直接揭示 */
+    if (back.getAttribute("src") === src && back.complete && back.naturalWidth > 0) {
+      /* 同 URL 曾在这层加载过(solid 往返/翻回去): onload 不会因重复赋值
+         再触发, 直接揭示。注意判据必须是已挂的 src 属性 —— 曾写成
+         back.dataset.src === src, 而上一行刚把它赋成新 src, 恒真;
+         于是 900 档已入 HTTP 缓存的图(网格页看过)每次都走"揭示"却从不
+         赋 src, 该层永远显示上一张的内容 = 背景与照片对不上 */
       back.onload = null;
       reveal();
       return;
