@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BuonDua → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.0.3
-// @description  在 buondua.com 卡片右下角显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列
+// @version      1.1.0
+// @description  在 buondua.com 卡片右下角与详情页标签行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列
 // @author       PhotoBook
 // @match        https://buondua.com/*
 // @match        https://www.buondua.com/*
@@ -126,6 +126,9 @@
   .pb-badge.is-wait{cursor:wait;opacity:.7}
   .pb-shake{animation:pbshake .3s}
   @keyframes pbshake{25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+  .pb-badge--inline{position:static;margin-left:auto;flex:none;min-height:26px;height:auto;
+    padding:4px 10px;border-radius:13px}
+  .pb-badge--inline.is-done:hover{transform:none}
   `;
   const style = document.createElement("style");
   style.textContent = CSS;
@@ -160,6 +163,16 @@
   }
 
   function ensureDetailHost() {
+    // 首选: 标签行(.article-tags > .tags), 徽标挂行最右侧;
+    // 找不到再退回封面容器(.post-image / .item-thumb)
+    const tagsRow = document.querySelector(".article-tags .tags");
+    if (tagsRow) {
+      // 转成可换行的 flex 行, 徽标用 margin-left:auto 推到最右
+      tagsRow.style.display = "flex";
+      tagsRow.style.flexWrap = "wrap";
+      tagsRow.style.alignItems = "center";
+      return tagsRow;
+    }
     const host = document.querySelector(".post-image") ||
                  document.querySelector(".item-thumb");
     if (!host) return null;
@@ -170,10 +183,11 @@
   function setBadge(host, serial, state, pending) {
     const st = pending || state;
     const text = pending === "pending" ? "…" : (LABEL[st] || st);
+    const inline = host.classList.contains("tags");  // 标签行内联布局, 非封面绝对定位
     let el = host.querySelector(".pb-badge");
     if (!el) {
       el = document.createElement("button");
-      el.className = "pb-badge";
+      el.className = "pb-badge" + (inline ? " pb-badge--inline" : "");
       el.type = "button";
       host.appendChild(el);
       el.addEventListener("click", function (ev) {
@@ -185,7 +199,9 @@
     }
     el.dataset.state = st;
     el.dataset.serial = serial;
-    el.className = "pb-badge " + (pending === "pending" ? "is-wait" : CLS[st] || "");
+    el.className = "pb-badge " +
+      (inline ? "pb-badge--inline " : "") +
+      (pending === "pending" ? "is-wait" : CLS[st] || "");
     el.textContent = text;
     // 已入库/队列中的按钮不响应点击
   }
