@@ -28,6 +28,7 @@ import dev.jinsfoni.photobook.ui.screens.models.ModelsScreen
 import dev.jinsfoni.photobook.ui.nav.GlassTabBar
 import dev.jinsfoni.photobook.ui.nav.LocalGlassBarBottomInset
 import dev.jinsfoni.photobook.ui.nav.PhotoTab
+import dev.jinsfoni.photobook.ui.nav.rememberGlassBarBackdropSource
 import kotlinx.coroutines.launch
 
 /**
@@ -54,13 +55,18 @@ fun MainShell(
     }
 
     CompositionLocalProvider(LocalGlassBarBottomInset provides navBarInset) {
+        // 液态玻璃采集源(BiliPai ChromeBackdropSource 同款):挂在页面容器上,
+        // 底栏 drawBackdrop 采样它 —— 页面先录进 GraphicsLayer 再上屏,底栏永远采不到自身
+        val liquidSource = rememberGlassBarBackdropSource()
         Box(Modifier.fillMaxSize().background(colors.paper)) {
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
                     .fillMaxSize()
                     // 收雪:页面内容进入 haze,玻璃底栏取它做磨砂
-                    .hazeSource(hazeState),
+                    .hazeSource(hazeState)
+                    // 液态玻璃采集:同页内容双录(miuix layerBackdrop + GraphicsLayer 回放)
+                    .then(liquidSource.modifier),
             ) { page ->
                 // haze capture 不含 modifier 链上 hazeSource 之前的绘制(如 background),
                 // 所以不透明底必须画在 source 内容**内部**:各屏不含 paper 底,
@@ -96,6 +102,7 @@ fun MainShell(
                 onSelect = { tab ->
                     scope.launch { pagerState.animateScrollToPage(tab.ordinal) }
                 },
+                liquidBackdrop = liquidSource.backdrop,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     // 先让出系统导航栏(手势区/三键区),再贴设计稿的 14/20dp 边距

@@ -62,11 +62,6 @@ class AppRootViewModel @Inject constructor(
         }
     }
 
-    fun setLiquidGlass(enabled: Boolean) {
-        ThemeState.liquidGlass = enabled
-        viewModelScope.launch { session.saveLiquidGlass(enabled) }
-    }
-
     fun setTheme(mode: ThemeMode) {
         ThemeState.mode = mode
         viewModelScope.launch { session.saveTheme(mode) }

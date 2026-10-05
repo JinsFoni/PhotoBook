@@ -17,6 +17,9 @@ okhttp = "5.5.0"
 coil = "3.6.3"
 telephoto = "0.19.0"
 haze = "2.0.1"
+# miuix-blur:BiliPai 液态玻璃同款 Backdrop 体系(layerBackdrop/drawBackdrop/blur/lens)
+# 库声明 minSdk 33,经 manifest tools:overrideLibrary 用于 31/32(其内部 shader 路径均有 SDK>=33 守卫)
+miuixBlur = "0.9.4"
 datastore = "1.2.1"
 junit = "4.13.2"
 turbine = "1.2.1"
@@ -49,6 +52,7 @@ coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp"
 telephoto-zoomable-image-coil3 = { group = "me.saket.telephoto", name = "zoomable-image-coil3", version.ref = "telephoto" }
 haze = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
 haze-blur = { group = "dev.chrisbanes.haze", name = "haze-blur", version.ref = "haze" }
+miuix-blur = { group = "top.yukonga.miuix.kmp", name = "miuix-blur-android", version.ref = "miuixBlur" }
 datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }

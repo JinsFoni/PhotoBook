@@ -22,7 +22,7 @@ val LocalThemeMode = staticCompositionLocalOf { ThemeMode.LIGHT }
 object ThemeState {
     var mode by mutableStateOf(ThemeMode.LIGHT)
 
-    /** 液态玻璃底栏开关:false = 现有薄磨砂;true = AGSL 折射液态玻璃(参考 iOS 26)。 */
+    /** 液态玻璃底栏开关:false = 现有薄磨砂;true = BiliPai 同款液态玻璃(API 33+)。 */
     var liquidGlass by mutableStateOf(false)
 }
 

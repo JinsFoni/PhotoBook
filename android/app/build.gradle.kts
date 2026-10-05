@@ -72,6 +72,8 @@ dependencies {
     implementation(libs.telephoto.zoomable.image.coil3)
     implementation(libs.haze)
     implementation(libs.haze.blur)
+    // BiliPai 同款液态玻璃 Backdrop 体系(公开 Maven Central 构件)
+    implementation(libs.miuix.blur)
 
     debugImplementation(libs.compose.ui.tooling)
 

@@ -26,8 +26,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
 import dev.jinsfoni.photobook.R
 import androidx.compose.ui.draw.BlurredEdgeTreatment
@@ -35,16 +38,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
-import android.graphics.RuntimeShader
-import android.os.Build
-import androidx.annotation.RequiresApi
-import androidx.compose.ui.graphics.RenderEffect
-import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.unit.dp
-import dev.jinsfoni.photobook.core.design.ThemeState
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
@@ -52,9 +47,15 @@ import dev.chrisbanes.haze.blur.HazeColorEffect
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
+import dev.jinsfoni.photobook.core.design.ThemeState
 import dev.jinsfoni.photobook.ui.components.photoClickable
 import dev.jinsfoni.photobook.ui.icons.IconWidths
 import dev.jinsfoni.photobook.ui.icons.StrokeIcon
+import top.yukonga.miuix.kmp.blur.Backdrop
+import top.yukonga.miuix.kmp.blur.blur
+import top.yukonga.miuix.kmp.blur.colorControls
+import top.yukonga.miuix.kmp.blur.drawBackdrop
+import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 
 /** 底部 4 个 tab(顺序即导航顺序),图标取自 StrokeIcons(路径对照 ui.js)。 */
 enum class PhotoTab(val iconParts: List<dev.jinsfoni.photobook.ui.icons.IconPart>) {
@@ -90,56 +91,22 @@ private fun glassColorFilter(saturation: Float, brightness: Float) =
     )
 
 /**
- * AGSL 折射透镜(液态玻璃模式):包在 hazeBlur 层之外,对本层已模糊内容
- * 做圆角矩形 SDF 边缘折射。uContent 只能采样本层,所以透镜必须挂在
- * clip → lens → hazeBlur 的顺序里(透镜在外,模糊在内)。
- * 注意:透镜只能包「背板」,不能包画在背板之上的前景(药丸/图标)——
- * 否则边缘折射环会把前景的高对比边复制进环带,读成一圈幽灵胶囊。
- * [shader] 为 null(低版本 / 关闭)时是空操作。
- */
-@RequiresApi(33)
-private fun Modifier.lensEffect(
-    shader: RuntimeShader?,
-    enabled: Boolean,
-    cornerRadius: androidx.compose.ui.unit.Dp,
-    refraction: androidx.compose.ui.unit.Dp = 7.dp,
-): Modifier = if (shader == null || !enabled) this else this.graphicsLayer {
-    val size = size
-    shader.setFloatUniform(
-        "uSize",
-        size.width,
-        size.height,
-    )
-    shader.setFloatUniform("uRadius", cornerRadius.toPx())
-    // 边缘折射环带宽 = refraction;向内折射深度 = refraction;色散 0.15(细微,过强出
-    // 彩虹描边);安全边距 15dp = 环带宽 + 背板模糊 6dp 再留余量:折射采样完全跳过
-    // 被模糊晕染的最外圈,否则页面内容(白卡/暖色照片)会被压成彩色描边
-    shader.setFloatUniform("uRefractionHeight", refraction.toPx())
-    shader.setFloatUniform("uRefractionAmount", refraction.toPx())
-    shader.setFloatUniform("uDispersion", 0.15f)
-    shader.setFloatUniform("uEdgeInset", 15.dp.toPx())
-    renderEffect = android.graphics.RenderEffect
-        .createRuntimeShaderEffect(shader, "uContent")
-        .asComposeRenderEffect()
-}
-
-/**
- * 玻璃底栏,两种材质由 ThemeState.liquidGlass 切换:
+ * 玻璃底栏,两种材质由 ThemeState.liquidGlass 切换(BiliPai/miuix 同款架构):
  *
- * 薄磨砂(默认,关)= 旧版:
- * 1. 玻璃背板:整条 hazeBlur(页面),blur 3dp + saturate 165% + brightness 1.08 薄玻璃
- *    ——不能用重模糊:bar 紧邻的亮色内容会被晕成横贯全宽的亮带;
- * 2. 选中药丸:blur 2dp + saturate 180% + brightness 1.14 凸透镜片(--pill 垫色),
- *    位置追逐 [position](MainShell 传 pager 小数进度)→ 拖页时「液体跟随」,弹簧产生
- *    Gooey 拉伸(移动越快越扁宽,到位回弹);API 31/32 退回纯色药丸。
+ * 薄磨砂(默认,关)= 旧版 hazeBlur 链,参数不变:
+ * 1. 背板:blur 3dp + saturate 165% + brightness 1.08 薄玻璃;
+ * 2. 药丸:blur 2dp + saturate 180% + brightness 1.14 凸透镜片。
  *
- * 液态玻璃(开,参考 iOS 26 / BiliPai):背板换成重模糊磨砂(12dp),
- * 整条 bar 与选中药丸各自包一层 AGSL 折射透镜(LiquidLensShader:圆角矩形 SDF,
- * 只在边缘一圈按 SDF 梯度偏移采样 = 边缘折射环,中心 1:1 零畸变;RGB 波长色散)。
- * 注意 AGSL 只能采样本层内容,透镜必须包在 hazeBlur 层之外(uContent = 已模糊背板)。
- * API < 33 无 RuntimeShader,开关只退化为更重的磨砂。
+ * 液态玻璃(开,BiliPai tuned 预设):整条 bar 与选中药丸各自独立 drawBackdrop
+ * (miuix-blur 的 Backdrop 体系:页面内容先被 ChromeBackdropSource 式采集进
+ * GraphicsLayer,再由库做降采样高斯模糊 + AGSL 折射透镜,并自动管理折射
+ * 采样所需的 padding/边界)——
+ * 1. 背板:vibrancy(saturate 1.5) → blur 4dp → 透镜(高/量各 8dp);
+ * 2. 药丸:blur 4dp → 透镜(高 10dp/量 14dp,Miuix 上游药丸参数)。
+ * API < 33 库内全部 shader 路径有守卫,自动退化为纯色表面。
  *
- * 共通:顶部/底部 1px 高光暗边 = InsetHighlight;外阴影 = tabBarShadow;
+ * 共通:药丸位置追逐 [position](MainShell 传 pager 小数进度)→ 拖页时「液体跟随」,
+ * 弹簧产生 Gooey 拉伸;顶部/底部 1px 高光暗边 = InsetHighlight;外阴影 = tabBarShadow;
  * 选中态 = accent 图标 + 600 字重;按压 scale .94 spring。
  */
 @Composable
@@ -149,21 +116,15 @@ fun GlassTabBar(
     onSelect: (PhotoTab) -> Unit,
     modifier: Modifier = Modifier,
     position: Float = selected.ordinal.toFloat(),
+    liquidBackdrop: Backdrop? = null,
 ) {
     val colors = LocalPhotoColors.current
     val liquid = ThemeState.liquidGlass
     val darkTheme = colors.ink.luminance() > 0.5f
-    // 液态玻璃基底 tint:barBg(40/48% alpha)是薄磨砂的量,重模糊下暖色照片会
-    // 透成棕色涂鸦;iOS 深色液态玻璃基底接近不透明。深色 ≈70% paper2,浅色 ≈60% 白;
-    // 药丸比背板浅一档 = 前后景深差(凸透镜片)
-    val liquidBarTint = if (darkTheme) Color(0xB916181B) else Color(0x99FFFFFF)
-    val liquidPillTint = if (darkTheme) Color(0xA61E2124) else Color(0xA6FFFFFF)
+    // 液态模式需要 API 33+(RuntimeShader);缺 backdrop/低版本退回薄磨砂链
+    val liquidActive = liquid && liquidBackdrop != null && isRuntimeShaderSupported()
     // API 33+ 用玻璃药丸层;31/32 由 TabItem 画纯色药丸
-    val hasGlassPill = rememberLensShader() != null
-    // 液态玻璃透镜:API 33+ 才有 RuntimeShader;开关关闭时不挂
-    val lensOn = liquid && hasGlassPill
-    val barLens = remember { if (Build.VERSION.SDK_INT >= 33) RuntimeShader(LIQUID_LENS_SKSL) else null }
-    val pillLens = remember { if (Build.VERSION.SDK_INT >= 33) RuntimeShader(LIQUID_LENS_SKSL) else null }
+    val hasGlassPill = isRuntimeShaderSupported()
 
     // 药丸追逐 pager 小数进度:spring 追赶 = 液体黏滞感
     val pillX by animateFloatAsState(
@@ -174,41 +135,27 @@ fun GlassTabBar(
     // Gooey 拉伸:离目标越远越扁宽(飞行中),到位回弹;体积感由 scaleY 反向补偿
     val stretch = 1f + (pillX - position).let { kotlin.math.abs(it) }.coerceAtMost(1.5f) * 0.10f
 
+    // BiliPai tuned 预设的容器色:表面 40% alpha(dark 用暗 surface,light 用白)
+    // ——液态玻璃的 tint 走 onDrawSurface,不再是 haze 的 colorEffects
+    val liquidContainer = if (darkTheme) Color(0xFF16181B).copy(alpha = 0.40f) else Color.White.copy(alpha = 0.40f)
+    val liquidPillContainer = if (darkTheme) Color(0xFF1E2124).copy(alpha = 0.32f) else Color.White.copy(alpha = 0.46f)
+
     Box(
         modifier
             .height(TabHeight)
             .tabBarShadow()
-            .clip(TabShape),
-    ) {
-        // 背板(独立子层):薄磨砂 = 轻模糊;液态玻璃 = 重模糊磨砂 + 透镜折边。
-        // 透镜/模糊必须只作用于这一子层——若挂在外层 Box 链上,RenderEffect
-        // 会把前景(药丸/图标)一起折进边缘环,读成一圈幽灵胶囊
-        Box(
-            Modifier
-                .matchParentSize()
-                .then(
-                    if (lensOn) {
-                        Modifier.lensEffect(barLens, enabled = true, cornerRadius = TabHeight / 2)
-                    } else {
-                        Modifier
-                    },
-                )
-                .hazeBlur(
-                    HazeInput.Sources(hazeState),
-                    HazeBlurStyle {
-                        if (liquid) {
-                            // 液态玻璃:6dp 中度模糊——保留内容轮廓让边缘折射可读
-                            // (12dp 重模糊会把压边糊成一圈纯色,只剩毛玻璃观感)
-                            blurRadius(6.dp)
-                            noiseFactor(0f)
-                            backgroundColor(colors.paper)
-                            colorEffects(
-                                listOf(
-                                    HazeColorEffect.colorFilter(glassColorFilter(1.8f, 1.10f)),
-                                    HazeColorEffect.tint(liquidBarTint),
-                                )
-                            )
-                        } else {
+            .clip(TabShape)
+            .then(
+                if (liquidActive && liquidBackdrop != null) {
+                    Modifier.liquidGlassSurface(
+                        backdrop = liquidBackdrop,
+                        shape = TabShape,
+                        containerColor = liquidContainer,
+                    )
+                } else {
+                    Modifier.hazeBlur(
+                        HazeInput.Sources(hazeState),
+                        HazeBlurStyle {
                             // ui.css .tabbar: blur(3px) saturate(165%) brightness(1.08)
                             // 薄磨砂:内容保持可辨,只有轻微软化 + 提亮
                             blurRadius(3.dp)
@@ -223,14 +170,16 @@ fun GlassTabBar(
                                     HazeColorEffect.tint(colors.barBg),
                                 )
                             )
-                        }
-                        // 边缘保持硬裁切:形状羽化会让玻璃上下边界发虚、拖出灰带
-                        blurredEdgeTreatment(BlurredEdgeTreatment.Rectangle)
-                    },
-                ),
-        )
-        // 斜向流光(::after,115deg sheen)——暗色下左端泛白已整体去掉,仅浅色保留
-        if (colors.ink.luminance() < 0.5f) {
+                            // 边缘保持硬裁切:形状羽化会让玻璃上下边界发虚、拖出灰带
+                            blurredEdgeTreatment(BlurredEdgeTreatment.Rectangle)
+                        },
+                    )
+                },
+            ),
+    ) {
+        // 斜向流光(::after,115deg sheen)——暗色下左端泛白已整体去掉,仅浅色保留;
+        // 液态模式由 surface 层自绘 tint,不再叠 sheen
+        if (!liquidActive && colors.ink.luminance() < 0.5f) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -247,7 +196,9 @@ fun GlassTabBar(
             )
         }
         // inset 高光/暗边/内晕
-        InsetHighlight()
+        if (!liquidActive) {
+            InsetHighlight()
+        }
 
         // 选中药丸(液体玻璃片);31/32 由 TabItem 画纯色药丸
         if (hasGlassPill) {
@@ -266,43 +217,37 @@ fun GlassTabBar(
                             scaleY = 1f - (stretch - 1f) * 0.55f
                         }
                         .clip(TabShape)
-                        .lensEffect(
-                            pillLens,
-                            enabled = lensOn,
-                            cornerRadius = (TabHeight - ShellPad * 2) / 2,
-                            // 药丸小、正压在亮色照片上:折射 7dp 会把亮色压成一圈白环,
-                            // 收窄到 4dp 保留玻璃厚度感又不堆积成环
-                            refraction = 4.dp,
-                        )
-                        .hazeBlur(
-                            HazeInput.Sources(hazeState),
-                            HazeBlurStyle {
-                                if (liquid) {
-                                    // 药丸比背板更清透更亮 = 前后景深差(凸透镜片)
-                                    blurRadius(6.dp)
-                                    colorEffects(
-                                        listOf(
-                                            HazeColorEffect.colorFilter(glassColorFilter(1.9f, 1.18f)),
-                                            HazeColorEffect.tint(liquidPillTint),
+                        .then(
+                            if (liquidActive && liquidBackdrop != null) {
+                                Modifier.liquidGlassSurface(
+                                    backdrop = liquidBackdrop,
+                                    shape = TabShape,
+                                    containerColor = liquidPillContainer,
+                                    isPill = true,
+                                )
+                            } else {
+                                Modifier.hazeBlur(
+                                    HazeInput.Sources(hazeState),
+                                    HazeBlurStyle {
+                                        // ui.css .tab.active: blur(2px) saturate(180%) brightness(1.14)
+                                        // 药丸比背板更清透更亮 = 前后景深差(凸透镜片);
+                                        // 中性玻璃(不用 accent 粉),与 iOS 26 原生一致
+                                        blurRadius(2.dp)
+                                        colorEffects(
+                                            listOf(
+                                                HazeColorEffect.colorFilter(glassColorFilter(1.8f, 1.14f)),
+                                                HazeColorEffect.tint(colors.barBg),
+                                            )
                                         )
-                                    )
-                                } else {
-                                    // ui.css .tab.active: blur(2px) saturate(180%) brightness(1.14)
-                                    blurRadius(2.dp)
-                                    colorEffects(
-                                        listOf(
-                                            HazeColorEffect.colorFilter(glassColorFilter(1.8f, 1.14f)),
-                                            HazeColorEffect.tint(colors.barBg),
-                                        )
-                                    )
-                                }
-                                noiseFactor(0f)
-                                backgroundColor(colors.paper)
-                                blurredEdgeTreatment(BlurredEdgeTreatment.Rectangle)
+                                        noiseFactor(0f)
+                                        backgroundColor(colors.paper)
+                                        blurredEdgeTreatment(BlurredEdgeTreatment.Rectangle)
+                                    },
+                                )
                             },
                         )
                         // ui.css .tab.active background: var(--pill)(选中片垫色,very subtle)
-                        .background(colors.pill, TabShape),
+                        .then(if (!liquidActive) Modifier.background(colors.pill, TabShape) else Modifier),
                 )
             }
         }
@@ -327,6 +272,44 @@ fun GlassTabBar(
         }
     }
 }
+
+/**
+ * BiliPai miuixFloatingDockSurface 液态玻璃简化版:
+ * drawBackdrop(页面采集)→ vibrancy → blur → 折射透镜 → onDrawSurface 垫容器色。
+ * [isPill] = 药丸档:Miuix 上游药丸透镜参数(高 10dp/量 14dp),色散可见。
+ */
+private fun Modifier.liquidGlassSurface(
+    backdrop: Backdrop,
+    shape: Shape,
+    containerColor: Color,
+    isPill: Boolean = false,
+): Modifier = drawBackdrop(
+    backdrop = backdrop,
+    shape = { shape },
+    effects = {
+        colorControls(brightness = 0f, contrast = 1f, saturation = 1.5f)
+        val blurPx = (if (isPill) 4.dp else 4.dp).toPx()
+        blur(blurPx, blurPx)
+        if (isPill) {
+            // Miuix 上游药丸透镜:高 10dp / 折射量 14dp,色散 0.5(API pill 同款)
+            lens(
+                refractionHeight = 10.dp.toPx(),
+                refractionAmount = 14.dp.toPx(),
+                chromaticAberration = 0.4f,
+            )
+        } else {
+            // 壳体透镜:64dp 高 bar 用 8dp(过强会让上下折射边在中线相撞出虾线)
+            lens(
+                refractionHeight = 8.dp.toPx(),
+                refractionAmount = 8.dp.toPx(),
+                chromaticAberration = 0f,
+            )
+        }
+    },
+    onDrawSurface = {
+        drawRect(containerColor)
+    },
+)
 
 @Composable
 private fun TabItem(
