@@ -4,8 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{{ app_name }}{% endblock %}</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230c0d0f'/%3E%3Crect x='7.5' y='7.5' width='17' height='17' fill='none' stroke='%23f7f7f5' stroke-width='1.6'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <meta name="theme-color" content="#0c0d0f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/static/manifest.webmanifest">
 <script>
 /* 首屏前同步用户主题(localStorage), 避免整页导航时
    先按默认渲染再被尾部 JS 纠正 → 页面闪一下;
@@ -71,6 +76,12 @@
 <script>window.PB_DATA = {{ data_json | default('{}') | safe }};
 window.PB_BOOT = {{ boot_json(request) | safe }};</script>
 <script src="/static/app.js?v={{ asset_ver }}"></script>
+<script>
+/* PWA: 注册 service worker(可安装 + 离线兜底)。失败静默, 不影响正常使用 */
+if ("serviceWorker" in navigator && {{ "true" if is_pwa else "false" }}) {
+  navigator.serviceWorker.register("/sw.js").catch(function () {});
+}
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

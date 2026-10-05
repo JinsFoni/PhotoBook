@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>离线 — Photo Collection</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid; place-items: center;
+    background: #0c0d0f; color: #f7f7f5;
+    font-family: "EB Garamond", "LXGW WenKai Screen", Georgia, serif;
+    text-align: center; padding: 24px;
+  }
+  .frame {
+    width: 120px; height: 120px; margin: 0 auto 28px;
+    border: 2px solid #f7f7f5; display: grid; place-items: center;
+    opacity: .85;
+  }
+  .frame span { font-size: 44px; }
+  h1 { font-size: 20px; font-weight: 500; margin: 0 0 10px; letter-spacing: .06em; }
+  p { font-size: 14px; opacity: .6; margin: 0 0 26px; line-height: 1.7; }
+  button {
+    appearance: none; background: none; color: #f7f7f5;
+    border: 1px solid rgba(247,247,245,.45); padding: 9px 26px;
+    font: inherit; font-size: 14px; cursor: pointer;
+  }
+  button:hover { border-color: #f7f7f5; }
+</style>
+</head>
+<body>
+<main>
+  <div class="frame" aria-hidden="true"><span>□</span></div>
+  <h1>当前离线</h1>
+  <p>无法连接到相册服务器。<br>恢复网络后点击下方按钮重试。</p>
+  <button onclick="location.reload()">重试</button>
+</main>
+</body>
+</html>

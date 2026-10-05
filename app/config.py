@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     # ---- 会话 -------------------------------------------------------------
     session_ttl_hours: int = 24 * 14
 
+    # ---- PWA ---------------------------------------------------------------
+    # manifest + service worker(可安装/离线兜底页); 局域网部署不需要时置 false
+    pwa_enabled: bool = True
+
     def ensure_dirs(self) -> None:
         for d in (self.data_dir, self.media_dir, self.library_dir):
             d.mkdir(parents=True, exist_ok=True)
