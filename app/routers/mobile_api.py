@@ -191,7 +191,8 @@ def _published_collections(s: Session) -> list[Collection]:
 async def mobile_discover(s: Session = Depends(get_db)):
     cols = _published_collections(s)
     featured = [c for c in cols if c.featured][:4] or cols[:4]
-    latest = cols[:6]
+    # 12 个:发现页轮播吃前 12(客户端 HeroCarousel take(12));网格只展示前 6
+    latest = cols[:12]
     models = s.scalars(select(Model).where(Model.status == "published")
                        .order_by(desc(Model.featured), Model.name)).all()
     tags = s.scalars(select(Tag).order_by(Tag.name)).all()

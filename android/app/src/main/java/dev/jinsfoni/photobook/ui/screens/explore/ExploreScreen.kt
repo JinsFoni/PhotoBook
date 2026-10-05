@@ -165,10 +165,10 @@ private fun ExploreContent(
                 )
             }
         }
-        // hero 轮播(最新入库前 4,跨两列;不按 featured 精选标记走)
+        // hero 轮播(最新入库前 12,跨两列;不按 featured 精选标记走)
         item(span = { GridItemSpan(2) }) {
             HeroCarousel(
-                items = feed.latest.take(4),
+                items = feed.latest.take(12),
                 onOpen = onOpenCollection,
             )
         }
@@ -190,7 +190,8 @@ private fun ExploreContent(
                 }
             }
         }
-        items(feed.latest.size) { i ->
+        // 网格只展示前 6(latest 已扩到 12,头 12 给上面的轮播)
+        items(feed.latest.size.coerceAtMost(6)) { i ->
             val c = feed.latest[i]
             CollectionCard(
                 title = c.title,
