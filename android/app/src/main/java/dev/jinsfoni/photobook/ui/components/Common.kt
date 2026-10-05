@@ -89,7 +89,7 @@ fun CollectionCard(
     }
 }
 
-/** 节标题:20px 衬线 + 右侧 accent 动作(原型 .section-head)。 */
+/** 节标题:20px 衬线 + 右侧 accent 动作(原型 .section-head)。横向边距由调用方给。 */
 @Composable
 fun SectionHeader(
     title: String,
@@ -101,7 +101,7 @@ fun SectionHeader(
     androidx.compose.foundation.layout.Row(
         modifier
             .fillMaxWidth()
-            .padding(start = 18.dp, end = 18.dp, top = 28.dp, bottom = 15.dp),
+            .padding(top = 28.dp, bottom = 15.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
     ) {
@@ -111,7 +111,7 @@ fun SectionHeader(
                 actionText,
                 style = PhotoType.caption,
                 color = colors.accent,
-                modifier = Modifier.photoClickable(onAction),
+                modifier = Modifier.photoClickable(onAction).padding(horizontal = 18.dp),
             )
         }
     }

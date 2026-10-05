@@ -216,7 +216,10 @@ private fun ModelDetailContent(
         }
         // 「写真 N」标题
         item(span = { GridItemSpan(2) }) {
-            dev.jinsfoni.photobook.ui.components.SectionHeader(title = "写真 ${d.count}")
+            dev.jinsfoni.photobook.ui.components.SectionHeader(
+                title = "写真 ${d.count}",
+                modifier = Modifier.padding(horizontal = 18.dp),
+            )
         }
         if (d.collections.isEmpty()) {
             item(span = { GridItemSpan(2) }) {

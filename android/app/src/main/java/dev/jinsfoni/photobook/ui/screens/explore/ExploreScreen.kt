@@ -133,7 +133,8 @@ private fun ExploreContent(
         columns = GridCells.Fixed(2),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 112.dp + LocalGlassBarBottomInset.current),
+        // 与写真页一致:左右 18dp 留白,卡片不贴屏幕边
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
         horizontalArrangement = Arrangement.spacedBy(13.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -144,7 +145,7 @@ private fun ExploreContent(
                     .fillMaxWidth()
                     .background(colors.paper)
                     .statusBarsPadding()
-                    .padding(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 12.dp),
+                    .padding(top = 6.dp, bottom = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {

@@ -138,7 +138,12 @@ fun SearchScreen(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 if (r.models.isNotEmpty()) {
-                    item(span = { GridItemSpan(2) }) { SectionHeader(title = "模特 ${r.models.size}") }
+                    item(span = { GridItemSpan(2) }) {
+                        SectionHeader(
+                            title = "模特 ${r.models.size}",
+                            modifier = Modifier.padding(horizontal = 18.dp),
+                        )
+                    }
                     items(r.models.size) { i ->
                         val m = r.models[i]
                         ModelCard(
@@ -150,7 +155,12 @@ fun SearchScreen(
                     }
                 }
                 if (r.collections.isNotEmpty()) {
-                    item(span = { GridItemSpan(2) }) { SectionHeader(title = "写真 ${r.collections.size}") }
+                    item(span = { GridItemSpan(2) }) {
+                        SectionHeader(
+                            title = "写真 ${r.collections.size}",
+                            modifier = Modifier.padding(horizontal = 18.dp),
+                        )
+                    }
                     items(r.collections.size) { i ->
                         val c = r.collections[i]
                         CollectionCard(
@@ -162,7 +172,12 @@ fun SearchScreen(
                     }
                 }
                 if (r.tags.isNotEmpty()) {
-                    item(span = { GridItemSpan(2) }) { SectionHeader(title = "标签 ${r.tags.size}") }
+                    item(span = { GridItemSpan(2) }) {
+                        SectionHeader(
+                            title = "标签 ${r.tags.size}",
+                            modifier = Modifier.padding(horizontal = 18.dp),
+                        )
+                    }
                     item(span = { GridItemSpan(2) }) {
                         androidx.compose.foundation.layout.FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(7.dp),
