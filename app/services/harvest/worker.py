@@ -251,10 +251,15 @@ def _run_job(job_id: int) -> None:
         archive_files = [archive_tmp / (i["filename"] or f"{job.serial}-{n}.rar")
                          for n, i in enumerate(infos)]
         done_offset = 0  # 已完整落盘的卷累计字节数(进度跨卷累加)
+        all_sizes_known = all(i["size"] for i in infos)
 
         def progress(done: int, total: int) -> None:
             job.bytes_done = done_offset + done
-            job.bytes_total = total or job.bytes_total
+            # total 是当前卷的 content-length; 总大小已按各卷 size 求和时
+            # 不能被单卷值覆盖。仅当存在未知大小的卷(求和为 0/偏小)时,
+            # 才用「已完卷累计 + 当前卷 total」近似总进度。
+            if total and not all_sizes_known:
+                job.bytes_total = done_offset + total
             job.updated_at = _now()
             try:
                 s.commit()
