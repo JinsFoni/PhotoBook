@@ -22,7 +22,6 @@
         <div>
           <p class="hero__model"><a data-hero-model href="#"></a></p>
           <h1 class="hero__title"><a data-hero-title href="#"></a></h1>
-          <span class="hero__baseline" aria-hidden="true"></span>
         </div>
         <div class="hero__side">
           {% from '_ui.html' import icon %}
@@ -111,7 +110,7 @@
 (function () {
   var featured = window.PB_DATA.featured || [];
   if (!featured.length) return;
-  var fi = 0, layer = 0, pending = 0;
+  var fi = 0, pi = 0, layer = 0, pending = 0;
   var bgs = document.querySelectorAll(".hero__bg");
   var fgs = document.querySelectorAll(".hero__fg");
   var strip = document.querySelector("[data-sheet]");
@@ -161,11 +160,19 @@
     }).join("");
     strip.querySelectorAll("[data-frame]").forEach(function (b) {
       b.addEventListener("click", function () {
-        strip.querySelectorAll("[data-frame]").forEach(function (x) { x.setAttribute("aria-current", "false"); });
-        b.setAttribute("aria-current", "true");
-        showHero(c.photos[Number(b.dataset.frame)]);
+        showPhoto(Number(b.dataset.frame));
+        restartAuto();
       });
     });
+  }
+
+  /* 组内逐帧: 换主图 + 同步小图高亮, 不动标题/链接(那属于整组) */
+  function showPhoto(i) {
+    pi = i;
+    strip.querySelectorAll("[data-frame]").forEach(function (x) { x.setAttribute("aria-current", "false"); });
+    var b = strip.querySelector('[data-frame="' + i + '"]');
+    if (b) b.setAttribute("aria-current", "true");
+    showHero(featured[fi].photos[i]);
   }
 
   function renderHero() {
@@ -178,14 +185,33 @@
 
   function setFeatured(n) {
     fi = (n + featured.length) % featured.length;
+    pi = 0;
     renderHero();
     renderSheet();
-    showHero(featured[fi].photos[0]);
+    showPhoto(0);
   }
 
-  document.querySelector("[data-sheet-prev]").addEventListener("click", function () { setFeatured(fi - 1); });
-  document.querySelector("[data-sheet-next]").addEventListener("click", function () { setFeatured(fi + 1); });
+  /* 自动播放: 先在本组内每 3s 换一张照片, 小图播完再切下一组写真集;
+     任何手动交互重置计时, 页面隐藏时不空转 */
+  var AUTO_MS = 3000;
+  var autoTimer = 0;
+  function restartAuto() {
+    clearInterval(autoTimer);
+    autoTimer = setInterval(function () {
+      if (document.hidden) return;
+      advance();
+    }, AUTO_MS);
+  }
+  function advance() {
+    var frames = strip.querySelectorAll("[data-frame]").length;
+    if (pi + 1 < frames) showPhoto(pi + 1);
+    else setFeatured(fi + 1);
+  }
+
+  document.querySelector("[data-sheet-prev]").addEventListener("click", function () { setFeatured(fi - 1); restartAuto(); });
+  document.querySelector("[data-sheet-next]").addEventListener("click", function () { setFeatured(fi + 1); restartAuto(); });
   setFeatured(0);
+  restartAuto();
 })();
 </script>
 {% endblock %}
