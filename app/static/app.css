@@ -130,8 +130,6 @@
 }
 @media (max-width: 760px) {
   :root { --pad: 20px; --gutter: 12px; --header-h: 56px; --s9: 72px; --s10: 96px; }
-  /* 移动端卡片标题缩小, 双行截断(桌面不限) */
-  .card__title { font-size: 15px; }
 }
 
 /* ---------- 2. Reset ----------------------------------------------------- */
@@ -570,6 +568,10 @@ table { border-collapse: collapse; }
   line-height: 1.25;
   padding-block: var(--s2);
   border-bottom: 1px solid var(--line);
+}
+/* 移动端抽屉导航字号收敛 */
+@media (max-width: 760px) {
+  .drawer__link { font-size: 20px; line-height: 1.3; }
 }
 
 .drawer__foot {
@@ -1050,6 +1052,8 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
   }
+  /* 卡片标题缩小(须与基础规则同区域, 此处源码顺序在其后才能覆盖 21px) */
+  .card__title { font-size: 12px; }
   .vm-grid .card__caption { flex-wrap: wrap; }
   .vm-grid .model-card__name { white-space: normal; margin-top: var(--s3); }
   .vm-grid .model-card__tags { visibility: visible; position: static; }
