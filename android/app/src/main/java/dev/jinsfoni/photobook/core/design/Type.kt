@@ -1,5 +1,7 @@
 package dev.jinsfoni.photobook.core.design
 
+import android.content.Context
+import android.graphics.Typeface
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -10,16 +12,28 @@ import dev.jinsfoni.photobook.R
 /**
  * 字体对齐 Android 设计稿(docs/android-design/ui/ui.css):
  *   .serif: Georgia,"Songti SC","Noto Serif SC" → 标题衬线;
- *           Georgia 是商业字体不能打包,用 Google 开源的度量兼容替代 Gelasio。
+ *           Georgia 是商业字体不能打包,用 Google 开源的度量兼容替代 Gelasio;
+ *           中文走 Noto Serif SC(= 设计稿栈里的 Noto Serif SC),打包 400 一档 ——
+ *           系统中文回退链在多数机型上指向黑体,衬线中文必须自带。
  *   正文/UI:系统无衬线(设计稿 -apple-system/"PingFang SC")→ Archivo 对齐 web --ui。
- * 中文无对应字形,回退系统字体(与设计稿的字体栈行为一致)。
  */
 // Gelasio 是静态字体,按设计稿正文/标题都是 400 常规;带 500/600 备 UI 加粗用。
-val PhotoSerif = FontFamily(
-    Font(R.font.gelasio_regular, FontWeight.Normal),
-    Font(R.font.gelasio_medium, FontWeight.Medium),
-    Font(R.font.gelasio_semibold, FontWeight.SemiBold),
-)
+// 中文标题要衬线:Compose 的 FontFamily 多字体只按字重选一个、不做逐字符回退,
+// Gelasio 没有中文会直接掉到系统黑体。用平台 Typeface.CustomFallbackBuilder 组链
+// ( Gelasio → Noto Serif SC → 系统 serif ),中文落到思源宋体 ——
+// 即设计稿 .serif 栈 "Georgia, Songti SC, Noto Serif SC" 的 Android 对应物。
+val PhotoSerif: FontFamily by lazy {
+    val ctx: Context = dev.jinsfoni.photobook.PhotoBookApp.instance
+    val gelasio = android.graphics.fonts.Font.Builder(ctx.resources, R.font.gelasio_regular).build()
+    val notoSerifSc = android.graphics.fonts.Font.Builder(ctx.resources, R.font.noto_serif_sc_regular).build()
+    val platform = Typeface.CustomFallbackBuilder(
+        android.graphics.fonts.FontFamily.Builder(gelasio).build(),
+    )
+        .addCustomFallback(android.graphics.fonts.FontFamily.Builder(notoSerifSc).build())
+        .setSystemFallback("serif")
+        .build()
+    FontFamily(typeface = platform)
+}
 
 val PhotoSans = FontFamily(
     Font(R.font.archivo_regular, FontWeight.Normal),
