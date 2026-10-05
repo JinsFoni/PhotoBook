@@ -108,10 +108,13 @@ private fun Modifier.lensEffect(
         size.height,
     )
     shader.setFloatUniform("uRadius", cornerRadius.toPx())
-    // 边缘折射环带宽 6dp;向内折射深度 6dp(压边越深透镜感越强);色散 0.15(细微,过强出彩虹描边)
-    shader.setFloatUniform("uRefractionHeight", 6.dp.toPx())
-    shader.setFloatUniform("uRefractionAmount", 6.dp.toPx())
+    // 边缘折射环带宽 7dp;向内折射深度 7dp;色散 0.15(细微,过强出彩虹描边);
+    // 安全边距 15dp = 环带宽 7dp + 背板模糊 6dp 再留余量:折射采样完全跳过
+    // 被模糊晕染的最外圈,否则页面内容(白卡/暖色照片)会被压成彩色描边
+    shader.setFloatUniform("uRefractionHeight", 7.dp.toPx())
+    shader.setFloatUniform("uRefractionAmount", 7.dp.toPx())
     shader.setFloatUniform("uDispersion", 0.15f)
+    shader.setFloatUniform("uEdgeInset", 15.dp.toPx())
     renderEffect = android.graphics.RenderEffect
         .createRuntimeShaderEffect(shader, "uContent")
         .asComposeRenderEffect()
@@ -174,8 +177,9 @@ fun GlassTabBar(
                 HazeInput.Sources(hazeState),
                 HazeBlurStyle {
                     if (liquid) {
-                        // 液态玻璃:厚玻璃,内容柔化成色块,亮度提一点保持通透
-                        blurRadius(12.dp)
+                        // 液态玻璃:6dp 中度模糊——保留内容轮廓让边缘折射可读
+                        // (12dp 重模糊会把压边糊成一圈纯色,只剩毛玻璃观感)
+                        blurRadius(6.dp)
                         noiseFactor(0f)
                         backgroundColor(colors.paper)
                         colorEffects(

@@ -20,6 +20,9 @@ internal const val LIQUID_LENS_SKSL: String = """
     uniform float uRefractionHeight;
     uniform float uRefractionAmount;
     uniform float uDispersion;
+    // 折射采样向内再加的安全边距(≈背板模糊半径):模糊会把层外页面内容
+    // 晕进边缘一圈,直接采这一圈会把页面的红/黄色压成彩色描边
+    uniform float uEdgeInset;
 
     // 到圆角矩形边缘的有符号距离(内部为负)
     float sdRoundedRect(float2 coord, float2 halfSize, float radius) {
@@ -50,6 +53,10 @@ internal const val LIQUID_LENS_SKSL: String = """
         float radius = min(uRadius, min(halfSize.x, halfSize.y));
         float sd = sdRoundedRect(c, halfSize, radius);
 
+        // 形状之外一概透明:Haze 的模糊会把层边界向外扩,把页面内容
+        // (白卡/暖色照片)smeared 到玻璃外一圈 = 彩色描边;严格裁回形状
+        if (sd > 0.0) return half4(0.0);
+
         // 边缘环带之外(深入玻璃 > height)原样输出:中心内容零畸变
         if (-sd >= uRefractionHeight) return uContent.eval(fragCoord);
         float sdIn = min(sd, 0.0);
@@ -58,16 +65,21 @@ internal const val LIQUID_LENS_SKSL: String = """
         float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
         float2 grad = gradSd(c, halfSize, gradRadius);
         // 向内采样(负号,Kyant0/BiliPai 同款):边缘外侧的内容被「压进」
-        // 边环 = 凸透镜折射;向外采样会越出玻璃层采到层外像素(蓝色描边 bug)
-        float2 refracted = clamp(fragCoord - depth * grad, float2(0.0), uSize - float2(1.0));
+        // 边环 = 凸透镜折射;额外加 uEdgeInset 跳过被模糊污染的最外圈,
+        // 环内显示的是更靠内的干净内容(重复一小段模糊内容,肉眼不可见)
+        float2 refracted = clamp(
+            fragCoord - (depth + uEdgeInset) * grad,
+            float2(1.0),
+            uSize - float2(1.0)
+        );
 
         if (uDispersion <= 0.0) return uContent.eval(refracted);
 
         // RGB 波长色散:偏移集中在边缘环带外侧(depth 已随边缘增大),
         // 内侧两通道收敛回主采样,不出浑浊彩边
         float2 disp = depth * grad * uDispersion;
-        float2 rC = clamp(refracted + disp, float2(0.0), uSize - float2(1.0));
-        float2 bC = clamp(refracted - disp, float2(0.0), uSize - float2(1.0));
+        float2 rC = clamp(refracted + disp, float2(1.0), uSize - float2(1.0));
+        float2 bC = clamp(refracted - disp, float2(1.0), uSize - float2(1.0));
         half4 r = uContent.eval(rC);
         half4 g = uContent.eval(refracted);
         half4 b = uContent.eval(bC);
