@@ -4,9 +4,8 @@
 
 {% block main %}
 <div class="wrap">
-  <div class="page-head">
-    <h1 class="page-head__title" data-title>{{ t('Collections') }}</h1>
-    <p class="page-head__sub" data-sub>{{ t('Every published sitting in the archive, newest first.') }}</p>
+  <div class="page-head" style="padding-top:var(--s6)">
+    <p class="page-head__sub" style="margin-top:0" data-sub>{{ t('Every published sitting in the archive, newest first.') }}</p>
   </div>
 
   <div class="filters">
@@ -278,7 +277,6 @@
   });
   tagSel.addEventListener("change", function (e) {
     f.tag = e.target.value; syncUrl();
-    document.querySelector("[data-title]").textContent = f.tag ? "#" + f.tag : PC.t("Collections");
     render();
   });
   modelSel.addEventListener("change", function (e) { f.model = e.target.value; syncUrl(); render(); });
@@ -288,7 +286,6 @@
       f = { name: "", tag: "", model: "", sort: "newest" };
       document.querySelector("[data-f-name]").value = "";
       tagSel.value = ""; modelSel.value = "";
-      document.querySelector("[data-title]").textContent = PC.t("Collections");
       syncUrl(); render();
     });
   });
