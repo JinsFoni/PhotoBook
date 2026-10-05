@@ -32,6 +32,7 @@ open class FakeSessionStore : SessionStoreApi {
     override val activeProfileId: Flow<String?> = activeIdFlow
     override val theme: Flow<ThemeMode> = themeFlow
     override val liquidGlass: Flow<Boolean> = MutableStateFlow(false)
+    override val loadOriginal: Flow<Boolean> = MutableStateFlow(false)
     override val locale: Flow<String> = localeFlow
 
     override suspend fun currentBaseUrl(): String =
@@ -96,6 +97,8 @@ open class FakeSessionStore : SessionStoreApi {
     override suspend fun saveTheme(mode: ThemeMode) { themeFlow.value = mode }
 
     override suspend fun saveLiquidGlass(enabled: Boolean) { }
+
+    override suspend fun saveLoadOriginal(enabled: Boolean) { }
 
     override suspend fun saveLocale(tag: String) { localeFlow.value = tag }
 

@@ -25,6 +25,8 @@ data class SettingsUiState(
     val theme: ThemeMode = ThemeMode.LIGHT,
     /** 液态玻璃底栏开关(false = 薄磨砂)。 */
     val liquidGlass: Boolean = false,
+    /** 灯箱加载原图(false = 2400px 预览图)。 */
+    val loadOriginal: Boolean = false,
     /** 当前语言标签("" = 跟随系统);API 33+ 以系统 per-app locale 为准。 */
     val locale: String = "",
 )
@@ -75,6 +77,7 @@ class SettingsViewModel(
         session.liquidGlass,
         session.locale,
         systemLocale,
+        session.loadOriginal,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         SettingsUiState(
@@ -83,6 +86,7 @@ class SettingsViewModel(
             theme = values[2] as ThemeMode,
             liquidGlass = values[3] as Boolean,
             locale = (values[5] as String).ifBlank { values[4] as String },
+            loadOriginal = values[6] as Boolean,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -105,6 +109,11 @@ class SettingsViewModel(
     fun setLiquidGlass(enabled: Boolean) {
         ThemeState.liquidGlass = enabled
         viewModelScope.launch { session.saveLiquidGlass(enabled) }
+    }
+
+    /** 灯箱原图开关:灯箱直接订阅 SessionStore.loadOriginal,落库即生效。 */
+    fun setLoadOriginal(enabled: Boolean) {
+        viewModelScope.launch { session.saveLoadOriginal(enabled) }
     }
 
     /** 语言切换:33+ 走系统 per-app locale(自动重建);31/32 存档 + recreate。 */

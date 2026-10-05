@@ -38,7 +38,10 @@ data class CollectionDetail(
 data class PhotoItem(
     val idx: Int,
     val thumbUrl: String,
+    /** 原图(/media/,可能是几 MB 的 JPEG)。 */
     val fullUrl: String,
+    /** 大图预览(/t/2400/,webp;灯箱默认用它,设置开「加载原图」才走 fullUrl)。 */
+    val previewUrl: String,
     val width: Int,
     val height: Int,
 )

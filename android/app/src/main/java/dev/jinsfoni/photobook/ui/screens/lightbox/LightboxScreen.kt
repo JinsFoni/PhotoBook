@@ -43,7 +43,6 @@ import me.saket.telephoto.zoomable.rememberZoomableImageState
 import dev.jinsfoni.photobook.ui.icons.DownloadIcon
 import dev.jinsfoni.photobook.ui.icons.HeartIcon
 import dev.jinsfoni.photobook.ui.icons.StrokeIcon
-import dev.jinsfoni.photobook.ui.models.PhotoItem
 import kotlinx.coroutines.delay
 
 /**
@@ -59,6 +58,7 @@ fun LightboxScreen(
     downloader: PhotoDownloader,
 ) {
     val state by vm.state.collectAsState()
+    val loadOriginal by vm.loadOriginal.collectAsState()
     LaunchedEffect(slug) { vm.load(slug) }
 
     val detail = state.detail
@@ -83,7 +83,10 @@ fun LightboxScreen(
         var chromeVisible by remember { mutableStateOf(true) }
 
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-            PhotoPage(photos[page], onToggleChrome = { chromeVisible = !chromeVisible })
+            // 设置开「加载原图」走 /media/ 原图,否则 2400px webp 预览
+            val photo = photos[page]
+            val url = if (loadOriginal) photo.fullUrl else photo.previewUrl
+            PhotoPage(url, onToggleChrome = { chromeVisible = !chromeVisible })
         }
         LaunchedEffect(pagerState.currentPage, chromeVisible) {
             if (chromeVisible) {
@@ -192,12 +195,12 @@ fun LightboxScreen(
 }
 
 @Composable
-private fun PhotoPage(photo: PhotoItem, onToggleChrome: () -> Unit) {
+private fun PhotoPage(url: String, onToggleChrome: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val zoomState = rememberZoomableImageState()
         ZoomableAsyncImage(
-            model = photo.fullUrl,
-            contentDescription = "Photo ${photo.idx + 1}",
+            model = url,
+            contentDescription = "Photo",
             state = zoomState,
             contentScale = ContentScale.Fit,
             onClick = { onToggleChrome() },

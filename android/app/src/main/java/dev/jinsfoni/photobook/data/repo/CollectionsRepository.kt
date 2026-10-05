@@ -77,6 +77,7 @@ class CollectionsRepository @Inject constructor(
                     idx = p.idx,
                     thumbUrl = MediaUrls.thumb(base, p.file, 600),
                     fullUrl = MediaUrls.original(base, p.file),
+                    previewUrl = MediaUrls.thumb(base, p.file, 2400),
                     width = p.w,
                     height = p.h,
                 )

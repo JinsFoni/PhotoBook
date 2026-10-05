@@ -121,6 +121,13 @@ fun SettingsScreen(
             onClick = { vm.setLiquidGlass(false) },
         )
 
+        SectionLabel(stringResource(R.string.section_lightbox))
+        ThemeRow(
+            label = stringResource(R.string.load_original),
+            selected = state.loadOriginal,
+            onClick = { vm.setLoadOriginal(!state.loadOriginal) },
+        )
+
         SectionLabel(stringResource(R.string.section_language))
         ThemeRow(
             label = stringResource(R.string.lang_simplified),

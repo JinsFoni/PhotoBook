@@ -36,6 +36,7 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
     private val activeProfileKey = stringPreferencesKey("active_profile")
     private val themeKey = stringPreferencesKey("theme")
     private val liquidGlassKey = booleanPreferencesKey("liquid_glass")
+    private val loadOriginalKey = booleanPreferencesKey("load_original")
     private val localeKey = stringPreferencesKey("locale")
 
     override val token: Flow<String?> = context.dataStore.data.map { prefs ->
@@ -70,6 +71,9 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
 
     override val liquidGlass: Flow<Boolean> =
         context.dataStore.data.map { prefs -> prefs[liquidGlassKey] ?: false }
+
+    override val loadOriginal: Flow<Boolean> =
+        context.dataStore.data.map { prefs -> prefs[loadOriginalKey] ?: false }
 
     override val locale: Flow<String> =
         context.dataStore.data.map { it[localeKey] ?: "" }
@@ -188,6 +192,10 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
 
     override suspend fun saveLiquidGlass(enabled: Boolean) {
         context.dataStore.edit { it[liquidGlassKey] = enabled }
+    }
+
+    override suspend fun saveLoadOriginal(enabled: Boolean) {
+        context.dataStore.edit { it[loadOriginalKey] = enabled }
     }
 
     override suspend fun saveLocale(tag: String) {

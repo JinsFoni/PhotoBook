@@ -59,6 +59,8 @@
     <string name="section_glass">導航欄玻璃</string>
     <string name="glass_liquid">液態玻璃</string>
     <string name="glass_thin">薄磨砂(默認)</string>
+    <string name="section_lightbox">查看大圖</string>
+    <string name="load_original">載入原圖(更清晰,更耗流量)</string>
     <string name="section_language">語言</string>
     <string name="lang_simplified">簡體中文</string>
     <string name="lang_traditional">繁體中文</string>

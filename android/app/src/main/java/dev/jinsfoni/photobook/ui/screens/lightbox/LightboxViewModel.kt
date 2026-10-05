@@ -3,14 +3,17 @@ package dev.jinsfoni.photobook.ui.screens.lightbox
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
 import dev.jinsfoni.photobook.data.remote.ApiException
 import dev.jinsfoni.photobook.data.repo.CollectionsRepository
 import dev.jinsfoni.photobook.data.repo.FavoritesRepository
 import dev.jinsfoni.photobook.ui.models.CollectionDetail
 import dev.jinsfoni.photobook.ui.models.Favorites
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -24,12 +27,17 @@ data class LightboxUiState(
 class LightboxViewModel @Inject constructor(
     private val repo: CollectionsRepository,
     private val favorites: FavoritesRepository,
+    session: SessionStoreApi,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LightboxUiState())
     val state: StateFlow<LightboxUiState> = _state.asStateFlow()
 
     private var slug: String? = null
+
+    /** 灯箱原图开关(设置页「查看大图 → 加载原图」;false = 2400px 预览图)。 */
+    val loadOriginal: StateFlow<Boolean> = session.loadOriginal
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     fun load(slug: String) {
         if (slug == this.slug && _state.value.detail != null) return

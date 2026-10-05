@@ -21,6 +21,9 @@ interface SessionStoreApi {
     /** 液态玻璃底栏开关(持久化)。 */
     val liquidGlass: Flow<Boolean>
 
+    /** 灯箱加载原图开关(false = 2400px webp 预览图,省流量加载快)。 */
+    val loadOriginal: Flow<Boolean>
+
     /** 语言标签("zh-CN"/"zh-TW";空 = 跟随系统)。 */
     val locale: Flow<String>
 
@@ -44,5 +47,6 @@ interface SessionStoreApi {
 
     suspend fun saveTheme(mode: ThemeMode)
     suspend fun saveLiquidGlass(enabled: Boolean)
+    suspend fun saveLoadOriginal(enabled: Boolean)
     suspend fun saveLocale(tag: String)
 }
