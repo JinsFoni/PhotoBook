@@ -121,7 +121,12 @@ FULLTEXT_RE = re.compile(
     r'<div[^>]*class="article-fulltext"[^>]*>(.*?)'
     r'(<div[^>]*class="(?:article-tags|bottom-articles))', re.S)
 IMG_RE = re.compile(r"https://i\d*\.buondua\.com/[^\"'\s\\]+?\.(?:jpe?g|png|webp)(?:\?[^\"'\s\\]*)?")
-SHORTLINK_RE = re.compile(r'href="(https?://(?:ouo\.io|ouo\.press)/[^"]+)"')
+SHORTLINK_RE = re.compile(
+    r'<a[^>]+href="(https?://(?:ouo\.io|ouo\.press)/[^"]+)"[^>]*>(.*?)</a>', re.S)
+# 锚文本里的网盘名: "👉 Download link: MediaFire" / "Terabox"。
+# 页面常见双备份(同一包 MediaFire + TeraBox 各一条链), 只取 MediaFire;
+# 极少部分 Terabox 链的锚文本也标着 MediaFire, 由 resolve_ouo 落地后兜底识别。
+ANCHOR_LABEL_RE = re.compile(r'Download link:\s*([A-Za-z]+)')
 
 # 文章自己的 tag 容器:
 #   <div class="article-tags"><div class="tags"><a href="/tag/x-123"><span>X</span></a>…
@@ -181,7 +186,18 @@ def parse_detail_page(url: str, existing_html: str | None = None,
     # 多候选原样保留,由 extract_archive 逐个尝试;单一密码则保持原文。
     if " or " in password and ("misskon.com" in password or "mrcong.com" in password):
         password = "misskon.com or mrcong.com"
-    shortlinks = list(dict.fromkeys(SHORTLINK_RE.findall(html)))
+    # 短链按锚文本过滤: 详情页可能同时挂 MediaFire 与 TeraBox 等多网盘
+    # (同一包的备份链, 不是分卷), 只保留锚文本标注 MediaFire 的。
+    # 极少数 Terabox 链错标 MediaFire → resolve_ouo 落地后仍会兜底识别报错。
+    shortlinks = []
+    seen: set[str] = set()
+    for link, anchor in SHORTLINK_RE.findall(html):
+        label = ANCHOR_LABEL_RE.search(re.sub(r"<[^>]+>", "", anchor))
+        if label and label.group(1).lower() != "mediafire":
+            continue
+        if link not in seen:
+            seen.add(link)
+            shortlinks.append(link)
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
                          password=password, shortlinks=shortlinks, tags=tags)
 
@@ -234,6 +250,8 @@ def _ouo_step(s, link: str, *, wait: float = 3.0) -> str | None:
     final = str(r3.url)
     if "mediafire.com/file/" in final:
         return final
+    if "mediafire.com/folder/" in final:
+        return final  # 分卷包发布方把所有卷放一个文件夹, 由调用方 API 展开
     # 落地到其他网盘(terabox 等): 短链活着, 只是托管不在 MediaFire。
     # 分类由 resolve_ouo 统一处理(抛 UnsupportedHostError / 记日志)。
     if "ouo.io/" not in final and "ouo.press/" not in final:
@@ -265,6 +283,8 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
                     break  # 被盾/页面异常 → 换新会话重试
                 if "mediafire.com/file/" in final and "mediafire.com/download" not in final:
                     return final
+                if "mediafire.com/folder/" in final:
+                    return final
                 if "ouo.io/" not in final and "ouo.press/" not in final:
                     # 落地到外部网盘: 已知平台抛错(带平台名), 完全未知域判短链坏
                     for frag, name in OTHER_HOSTS.items():
@@ -283,12 +303,53 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
 
 MF_DIRECT_RE = re.compile(r'href="(https://download[^"]+)"')
 MF_KEY_RE = re.compile(r"mediafire\.com/file/([a-z0-9]+)(?:/|$)", re.I)
+MF_FOLDER_RE = re.compile(r"mediafire\.com/folder/([a-z0-9]+)", re.I)
 
 
 def mediafire_direct_url(page_url: str) -> str | None:
     html = fetch_html(page_url)
     m = MF_DIRECT_RE.search(html)
     return m.group(1).replace("&amp;", "&") if m else None
+
+
+def mediafire_folder_files(folder_url: str) -> list[dict]:
+    """MediaFire 文件夹页 URL → 夹内全部文件(逐页取全)。
+
+    走公开 API folder/get_content.php, 返回项与 mediafire_info_from_url
+    同构: {quick_key, direct_url, size, sha256, filename}。分卷包发布方
+    (2025-11 起)常把所有卷放一个文件夹再挂短链, 文件页正则认不出。
+    直链用 file/get_info.php 返回的 download link, 无需再抓文件页。
+    """
+    key_m = MF_FOLDER_RE.search(folder_url)
+    if not key_m:
+        raise RuntimeError(f"无法从 URL 提取 folder_key: {folder_url}")
+    folder_key = key_m.group(1)
+    files: list[dict] = []
+    chunk = 1
+    while True:
+        api = cr.get("https://www.mediafire.com/api/folder/get_content.php",
+                     params={"folder_key": folder_key, "content_type": "files",
+                             "response_format": "json", "chunk": chunk},
+                     impersonate=UA_IMPERSONATE, timeout=30, proxy=_proxy())
+        fc = api.json()["response"].get("folder_content", {})
+        batch = fc.get("files") or []
+        for f in batch:
+            page = f.get("links", {}).get("normal_download") or ""
+            if not page:
+                continue
+            files.append({
+                "quick_key": f["quickkey"],
+                # normal_download 是文件页(非直链), 复用文件页直链提取
+                "direct_url": mediafire_direct_url(page) or "",
+                "size": int(f.get("size", 0)),
+                "sha256": (f.get("hash") or "").lower(),
+                "filename": f.get("filename", ""),
+            })
+        total_chunks = int(fc.get("chunks") or 1)
+        if chunk >= total_chunks or not batch:
+            break
+        chunk += 1
+    return files
 
 
 def mediafire_info_from_url(page_url: str) -> dict:

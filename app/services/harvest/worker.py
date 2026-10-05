@@ -224,6 +224,15 @@ def _run_job(job_id: int) -> None:
                 _finish(s, job, "failed", f"短链解析失败: {link}")
                 s.commit()
                 return
+            if net.MF_FOLDER_RE.search(direct_page):
+                # 落地是 MediaFire 文件夹(分卷包发布方把所有卷放一夹): API 展开逐卷
+                folder_files = net.mediafire_folder_files(direct_page)
+                if not folder_files:
+                    _finish(s, job, "failed", f"文件夹为空: {direct_page}")
+                    s.commit()
+                    return
+                infos.extend(folder_files)
+                continue
             info = net.mediafire_info_from_url(direct_page)
             if not info["direct_url"]:
                 _finish(s, job, "failed", f"未获取到直链: {info['filename']}")
