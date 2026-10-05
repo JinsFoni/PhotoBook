@@ -161,16 +161,17 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     onOpenPhoto = { s, idx -> nav.navigate("lightbox/$s/$idx") },
                 )
             }
-            // 灯箱是"浮层"语义:退出动画由 LightboxScreen 屏内自己编排
-            // (黑底/chrome 先撤 120ms → 只留图片单独溶解 240ms → 完后才 pop),
-            // 导航层 popExit 不再整体淡出,避免整页(黑底+顶底栏)被一起带入退场
+            // 灯箱是"浮层"语义:退出动画由 LightboxScreen 屏内自编排(黑底/chrome 先撤,
+            // 只留图片溶解)。pop 用 340ms "隐形"淡出占位:让本页在导航过渡期间保持挂载
+            // 340ms(屏内两段动画 120+240-20 错峰的总窗),几乎不变的 1→0.999 曲线
+            // 保证可见效果全部由屏内编排驱动,页面不会提前被清场
             composable(
                 "lightbox/{slug}/{idx}",
                 arguments = listOf(navArgument("slug") { }, navArgument("idx") { }),
                 enterTransition = { fadeIn(tween(200)) },
                 exitTransition = { ExitTransition.KeepUntilTransitionsFinished },
                 popEnterTransition = { EnterTransition.None },
-                popExitTransition = { ExitTransition.KeepUntilTransitionsFinished },
+                popExitTransition = { fadeOut(tween(340), targetAlpha = 0.999f) },
             ) { entry ->
                 val slug = entry.arguments?.getString("slug").orEmpty()
                 val idx = entry.arguments?.getString("idx")?.toIntOrNull() ?: 0

@@ -63,10 +63,11 @@ fun LightboxScreen(
     val loadOriginal by vm.loadOriginal.collectAsState()
     LaunchedEffect(slug) { vm.load(slug) }
 
-    // 退出动画在屏内自己编排(两段):backKey 按下后
-    //   1) 黑底与 chrome 立即撤场(120ms),详情页开始从下面露出;
-    //   2) 只留图片本身在最上层溶解(240ms),完后才真正 popBackStack。
-    // 这样被"带入"退场的只有图片,页面框架(黑底/顶底栏)不整页闪黑。
+    // 退出编排(与导航 pop 并行):onBackKey 立刻 popBackStack,让详情页马上进组合垫在
+    // 下面——否则黑底淡出后露出的是 NavHost 后面的深色底(黑洞),图片像在黑洞上溶解。
+    // 导航层 popExit 为 KeepUntilTransitionsFinished,本页在过渡期间保持挂载:
+    //   1) 黑底与 chrome 先撤(120ms);
+    //   2) 只留图片本身溶解(240ms,错峰 100ms),完场时页面恰好随导航过渡移除。
     val leaving = remember { androidx.compose.animation.core.MutableTransitionState(false) }
     val exitTransition = rememberTransition(leaving, label = "lb-exit")
     val backdropAlpha by exitTransition.animateFloat(
@@ -80,15 +81,13 @@ fun LightboxScreen(
     val onBackKey = {
         if (!leaving.currentState) {
             leaving.targetState = true
+            onBack()
         }
         Unit
     }
-    LaunchedEffect(leaving.targetState) {
-        if (leaving.targetState) {
-            delay(360) // 两段动画总时长(120ms 底 + 后续 240ms 图,含错峰)
-            onBack()
-        }
-    }
+    // 系统返回键/手势也要走上面的编排(否则只触发导航 pop,屏内动画全程不跑,
+    // 图片会以全亮状态叠在黑底上直接消失)
+    androidx.activity.compose.BackHandler(enabled = !leaving.currentState) { onBackKey() }
 
     val detail = state.detail
     Box(Modifier.fillMaxSize().background(Color(8, 9, 10, (backdropAlpha * 255).toInt()))) {
