@@ -106,9 +106,9 @@ fun MainShell(
                 liquidBackdrop = liquidSource.backdrop,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    // 先让出系统导航栏(手势区/三键区),再贴设计稿的 14/20dp 边距
+                    // 先让出系统导航栏(手势区/三键区),再贴设计稿的 22/20dp 边距
                     .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(horizontal = 14.dp)
+                    .padding(horizontal = 22.dp)
                     .padding(bottom = 20.dp),
             )
         }
