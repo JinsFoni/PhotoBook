@@ -57,16 +57,20 @@ internal const val LIQUID_LENS_SKSL: String = """
         float depth = circleMap(1.0 - -sdIn / uRefractionHeight) * uRefractionAmount;
         float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
         float2 grad = gradSd(c, halfSize, gradRadius);
-        float2 refracted = fragCoord + depth * grad;
+        // 向内采样(负号,Kyant0/BiliPai 同款):边缘外侧的内容被「压进」
+        // 边环 = 凸透镜折射;向外采样会越出玻璃层采到层外像素(蓝色描边 bug)
+        float2 refracted = clamp(fragCoord - depth * grad, float2(0.0), uSize - float2(1.0));
 
         if (uDispersion <= 0.0) return uContent.eval(refracted);
 
         // RGB 波长色散:偏移集中在边缘环带外侧(depth 已随边缘增大),
         // 内侧两通道收敛回主采样,不出浑浊彩边
         float2 disp = depth * grad * uDispersion;
-        half4 r = uContent.eval(refracted + disp);
+        float2 rC = clamp(refracted + disp, float2(0.0), uSize - float2(1.0));
+        float2 bC = clamp(refracted - disp, float2(0.0), uSize - float2(1.0));
+        half4 r = uContent.eval(rC);
         half4 g = uContent.eval(refracted);
-        half4 b = uContent.eval(refracted - disp);
+        half4 b = uContent.eval(bC);
         return half4(r.r, g.g, b.b, g.a);
     }
 """

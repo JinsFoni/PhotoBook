@@ -108,10 +108,10 @@ private fun Modifier.lensEffect(
         size.height,
     )
     shader.setFloatUniform("uRadius", cornerRadius.toPx())
-    // 边缘折射环带宽 5dp;折射深度 3.5dp;色散 0.8(BiliPai subtle ≈0.1×32dp,按比例缩放)
-    shader.setFloatUniform("uRefractionHeight", 5.dp.toPx())
-    shader.setFloatUniform("uRefractionAmount", 3.5.dp.toPx())
-    shader.setFloatUniform("uDispersion", 0.8f)
+    // 边缘折射环带宽 6dp;向内折射深度 6dp(压边越深透镜感越强);色散 0.15(细微,过强出彩虹描边)
+    shader.setFloatUniform("uRefractionHeight", 6.dp.toPx())
+    shader.setFloatUniform("uRefractionAmount", 6.dp.toPx())
+    shader.setFloatUniform("uDispersion", 0.15f)
     renderEffect = android.graphics.RenderEffect
         .createRuntimeShaderEffect(shader, "uContent")
         .asComposeRenderEffect()
