@@ -39,7 +39,10 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
+import dev.jinsfoni.photobook.core.design.LocalThemeMode
 import dev.jinsfoni.photobook.core.design.PhotoType
+import dev.jinsfoni.photobook.core.design.ThemeMode
+import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.CollectionCard
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
@@ -60,6 +63,8 @@ fun ExploreScreen(
 
     Box(Modifier.fillMaxSize()) {
         val feed = state.feed
+        // 虚化主题垫底:首张最新合集封面(设计稿 s1 用 cover-1.jpg 同源做法)
+        BlurBackdrop(feed?.latest?.firstOrNull()?.imageUrl ?: feed?.featured?.firstOrNull()?.imageUrl)
         when {
             state.loading && feed == null -> ExploreSkeleton()
             feed != null -> ExploreContent(
@@ -138,12 +143,16 @@ private fun ExploreContent(
         horizontalArrangement = Arrangement.spacedBy(13.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // 顶栏:词标 + 设置入口(词标与 hero 重叠区由 hero 纱保证可读性)
+        // 顶栏:词标 + 设置入口(词标与 hero 重叠区由 hero 纱保证可读性;
+        // blur 主题顶栏透明 —— 不透明 paper 底会把垫底虚化图整条盖死)
         item(span = { GridItemSpan(2) }) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .background(colors.paper)
+                    .then(
+                        if (LocalThemeMode.current == ThemeMode.BLUR) Modifier
+                        else Modifier.background(colors.paper)
+                    )
                     .statusBarsPadding()
                     .padding(top = 6.dp, bottom = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,

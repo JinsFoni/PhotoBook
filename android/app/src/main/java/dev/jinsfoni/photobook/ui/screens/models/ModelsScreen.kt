@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
+import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.ModelCard
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
@@ -49,6 +50,9 @@ fun ModelsScreen(
 
     LaunchedEffect(Unit) { vm.start() }
 
+    Box(Modifier.fillMaxSize()) {
+        // 虚化主题垫底:首位模特头像(设计稿 s5 用 cover-2.jpg 同源做法)
+        BlurBackdrop(state.items.firstOrNull()?.imageUrl)
     Column(Modifier.fillMaxSize()) {
         // appbar(背景延伸式)
         Row(
@@ -127,6 +131,7 @@ fun ModelsScreen(
                 }
             }
         }
+    }
     }
 }
 

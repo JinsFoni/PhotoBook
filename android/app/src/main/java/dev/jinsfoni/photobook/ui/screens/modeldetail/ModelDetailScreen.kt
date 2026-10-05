@@ -37,6 +37,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
+import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.FavoriteButton
 import dev.jinsfoni.photobook.ui.components.CollectionCard
 import dev.jinsfoni.photobook.ui.components.EmptyState
@@ -62,6 +63,9 @@ fun ModelDetailScreen(
 
     LaunchedEffect(Unit) { vm.load(slug) }
 
+    Box(Modifier.fillMaxSize()) {
+        // 虚化主题垫底:模特 hero(设计稿 s6 用 cover-1.jpg 同源做法)
+        BlurBackdrop(state.detail?.heroUrl)
     when {
         state.loading -> DetailSkeleton()
         state.detail != null -> ModelDetailContent(
@@ -82,6 +86,7 @@ fun ModelDetailScreen(
                 )
             }
         }
+    }
     }
 }
 

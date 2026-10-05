@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
+import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.CollectionCard
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
@@ -67,6 +68,9 @@ fun CollectionsScreen(
             }
     }
 
+    Box(Modifier.fillMaxSize()) {
+        // 虚化主题垫底:首张合集封面(设计稿 s2 用 cover-3.jpg 同源做法)
+        BlurBackdrop(state.items.firstOrNull()?.imageUrl)
     Column(Modifier.fillMaxSize()) {
         // appbar(背景延伸式:内容从状态栏下开始)
         Row(
@@ -163,6 +167,7 @@ fun CollectionsScreen(
                 }
             }
         }
+    }
     }
 }
 

@@ -44,6 +44,7 @@ import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
+import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.CollectionCard
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.ModelCard
@@ -71,6 +72,15 @@ fun FavoritesScreen(
     // 所有页面统一跟随全局主题(设置页切换),不再有页面级强制深/浅
     LaunchedEffect(Unit) { vm.refresh() }
 
+    Box(Modifier.fillMaxSize()) {
+        // 虚化主题垫底:随 Tab 取首张(照片段用缩略图,写真/模特段用卡片封面)
+        BlurBackdrop(
+            when (state.tab) {
+                FavTab.PHOTOS -> state.photos.firstOrNull()?.thumbUrl
+                FavTab.COLLECTIONS -> state.collections.firstOrNull()?.imageUrl
+                FavTab.MODELS -> state.models.firstOrNull()?.imageUrl
+            }
+        )
     Column(Modifier.fillMaxSize()) {
         // appbar(词标收藏;原型顶栏有 copy 图标作多选占位,V1 无批量操作已移除)
         Row(
@@ -201,6 +211,7 @@ fun FavoritesScreen(
                 )
             }
         }
+    }
     }
 }
 

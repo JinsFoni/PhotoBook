@@ -36,6 +36,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
+import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.CollectionCard
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.ModelCard
@@ -64,6 +65,9 @@ fun SearchScreen(
 
     LaunchedEffect(Unit) { focus.requestFocus() }
 
+    Box(Modifier.fillMaxSize()) {
+        // 虚化主题垫底:首个结果封面
+        BlurBackdrop(state.results?.models?.firstOrNull()?.imageUrl ?: state.results?.collections?.firstOrNull()?.imageUrl)
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         // 顶栏:返回 + 输入框
         Row(
@@ -203,6 +207,7 @@ fun SearchScreen(
                 }
             }
         }
+    }
     }
 }
 

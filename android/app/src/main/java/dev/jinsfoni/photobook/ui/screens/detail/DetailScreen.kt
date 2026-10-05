@@ -37,6 +37,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
+import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
 import dev.jinsfoni.photobook.ui.components.arrangeTwoColumnWall
@@ -61,6 +62,9 @@ fun DetailScreen(
 
     LaunchedEffect(slug) { vm.load(slug) }
 
+    Box(Modifier.fillMaxSize()) {
+        // 虚化主题垫底:本合集 hero(设计稿 s3 用 cover-5.jpg 同源做法)
+        BlurBackdrop(state.detail?.heroUrl ?: state.detail?.photos?.firstOrNull()?.thumbUrl)
     Column(Modifier.fillMaxSize()) {
         // appbar(背景延伸式)
         Row(
@@ -191,6 +195,7 @@ fun DetailScreen(
                 }
             }
         }
+    }
     }
 }
 
