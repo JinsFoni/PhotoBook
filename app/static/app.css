@@ -2032,7 +2032,8 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 @media (max-width: 760px) {
   .lightbox__foot { height: auto; padding-bottom: var(--s5); flex-direction: column; gap: var(--s3); }
   .lightbox__foot-actions { position: static; }
-  .lightbox__nav { width: 44px; height: 44px; }
+  /* 移动端触摸滑动即可切图, 不再显示左右箭头按钮 */
+  .lightbox__nav { display: none; }
   .lightbox__stage { padding: 0 var(--s3); }
 }
 
