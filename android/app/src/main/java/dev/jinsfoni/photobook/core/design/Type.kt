@@ -1,31 +1,24 @@
 package dev.jinsfoni.photobook.core.design
 
-import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import dev.jinsfoni.photobook.R
 
 /**
- * 字体对齐 web 设计稿(assets/app.css):
- *   --display: "Bodoni Moda", serif   → 标题衬线
- *   --ui: "Archivo", sans-serif       → 正文/UI
- * 中文无对应字形,回退系统字体(与 web 的字体栈行为一致)。
+ * 字体对齐 Android 设计稿(docs/android-design/ui/ui.css):
+ *   .serif: Georgia,"Songti SC","Noto Serif SC" → 标题衬线;
+ *           Georgia 是商业字体不能打包,用 Google 开源的度量兼容替代 Gelasio。
+ *   正文/UI:系统无衬线(设计稿 -apple-system/"PingFang SC")→ Archivo 对齐 web --ui。
+ * 中文无对应字形,回退系统字体(与设计稿的字体栈行为一致)。
  */
-// Bodoni Moda 是可变字体(opsz 6..96),资源里只带了 wght 400 一份;
-// 用 FontVariation 把光学尺寸固定到大字号的展示端(96),气质对齐 web 大标题。
-@OptIn(ExperimentalTextApi::class)
+// Gelasio 是静态字体,按设计稿正文/标题都是 400 常规;带 500/600 备 UI 加粗用。
 val PhotoSerif = FontFamily(
-    Font(
-        resId = R.font.bodoni_moda_regular,
-        variationSettings = FontVariation.Settings(
-            FontVariation.weight(400),
-            FontVariation.Setting("opsz", 96f),
-        ),
-    ),
+    Font(R.font.gelasio_regular, FontWeight.Normal),
+    Font(R.font.gelasio_medium, FontWeight.Medium),
+    Font(R.font.gelasio_semibold, FontWeight.SemiBold),
 )
 
 val PhotoSans = FontFamily(
