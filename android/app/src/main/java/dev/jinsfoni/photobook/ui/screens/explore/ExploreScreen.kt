@@ -165,10 +165,10 @@ private fun ExploreContent(
                 )
             }
         }
-        // hero 轮播(featured,跨两列)
+        // hero 轮播(最新入库前 4,跨两列;不按 featured 精选标记走)
         item(span = { GridItemSpan(2) }) {
             HeroCarousel(
-                items = feed.featured,
+                items = feed.latest.take(4),
                 onOpen = onOpenCollection,
             )
         }
@@ -240,7 +240,7 @@ private fun HeroCarousel(
                 )
                 Column(Modifier.align(Alignment.BottomStart).padding(22.dp)) {
                     Text(
-                        stringResource(R.string.featured_kicker),
+                        stringResource(R.string.latest_added),
                         style = PhotoType.tag.copy(letterSpacing = 2.5.sp),
                         color = Color.White.copy(alpha = 0.69f),
                     )
