@@ -93,6 +93,8 @@ private fun glassColorFilter(saturation: Float, brightness: Float) =
  * AGSL 折射透镜(液态玻璃模式):包在 hazeBlur 层之外,对本层已模糊内容
  * 做圆角矩形 SDF 边缘折射。uContent 只能采样本层,所以透镜必须挂在
  * clip → lens → hazeBlur 的顺序里(透镜在外,模糊在内)。
+ * 注意:透镜只能包「背板」,不能包画在背板之上的前景(药丸/图标)——
+ * 否则边缘折射环会把前景的高对比边复制进环带,读成一圈幽灵胶囊。
  * [shader] 为 null(低版本 / 关闭)时是空操作。
  */
 @RequiresApi(33)
@@ -176,46 +178,57 @@ fun GlassTabBar(
         modifier
             .height(TabHeight)
             .tabBarShadow()
-            .clip(TabShape)
-            .lensEffect(barLens, enabled = lensOn, cornerRadius = TabHeight / 2)
-            .clip(TabShape)
-            // 背板:薄磨砂 = 轻模糊;液态玻璃 = 重模糊磨砂,再由外层透镜折边
-            .hazeBlur(
-                HazeInput.Sources(hazeState),
-                HazeBlurStyle {
-                    if (liquid) {
-                        // 液态玻璃:6dp 中度模糊——保留内容轮廓让边缘折射可读
-                        // (12dp 重模糊会把压边糊成一圈纯色,只剩毛玻璃观感)
-                        blurRadius(6.dp)
-                        noiseFactor(0f)
-                        backgroundColor(colors.paper)
-                        colorEffects(
-                            listOf(
-                                HazeColorEffect.colorFilter(glassColorFilter(1.8f, 1.10f)),
-                                HazeColorEffect.tint(liquidBarTint),
-                            )
-                        )
-                    } else {
-                        // ui.css .tabbar: blur(3px) saturate(165%) brightness(1.08)
-                        // 薄磨砂:内容保持可辨,只有轻微软化 + 提亮
-                        blurRadius(3.dp)
-                        noiseFactor(0f)
-                        // 不透明 surface 垫底(HazeMaterials 同款):透明区域不再拉低效果层 alpha,
-                        // 同时挡住外阴影透过玻璃显形
-                        backgroundColor(colors.paper)
-                        colorEffects(
-                            listOf(
-                                HazeColorEffect.colorFilter(glassColorFilter(1.65f, 1.08f)),
-                                // tint 用 surface 色代替 CSS background:light 40% 白 / dark 48% 黑
-                                HazeColorEffect.tint(colors.barBg),
-                            )
-                        )
-                    }
-                    // 边缘保持硬裁切:形状羽化会让玻璃上下边界发虚、拖出灰带
-                    blurredEdgeTreatment(BlurredEdgeTreatment.Rectangle)
-                },
-            ),
+            .clip(TabShape),
     ) {
+        // 背板(独立子层):薄磨砂 = 轻模糊;液态玻璃 = 重模糊磨砂 + 透镜折边。
+        // 透镜/模糊必须只作用于这一子层——若挂在外层 Box 链上,RenderEffect
+        // 会把前景(药丸/图标)一起折进边缘环,读成一圈幽灵胶囊
+        Box(
+            Modifier
+                .matchParentSize()
+                .then(
+                    if (lensOn) {
+                        Modifier.lensEffect(barLens, enabled = true, cornerRadius = TabHeight / 2)
+                    } else {
+                        Modifier
+                    },
+                )
+                .hazeBlur(
+                    HazeInput.Sources(hazeState),
+                    HazeBlurStyle {
+                        if (liquid) {
+                            // 液态玻璃:6dp 中度模糊——保留内容轮廓让边缘折射可读
+                            // (12dp 重模糊会把压边糊成一圈纯色,只剩毛玻璃观感)
+                            blurRadius(6.dp)
+                            noiseFactor(0f)
+                            backgroundColor(colors.paper)
+                            colorEffects(
+                                listOf(
+                                    HazeColorEffect.colorFilter(glassColorFilter(1.8f, 1.10f)),
+                                    HazeColorEffect.tint(liquidBarTint),
+                                )
+                            )
+                        } else {
+                            // ui.css .tabbar: blur(3px) saturate(165%) brightness(1.08)
+                            // 薄磨砂:内容保持可辨,只有轻微软化 + 提亮
+                            blurRadius(3.dp)
+                            noiseFactor(0f)
+                            // 不透明 surface 垫底(HazeMaterials 同款):透明区域不再拉低效果层 alpha,
+                            // 同时挡住外阴影透过玻璃显形
+                            backgroundColor(colors.paper)
+                            colorEffects(
+                                listOf(
+                                    HazeColorEffect.colorFilter(glassColorFilter(1.65f, 1.08f)),
+                                    // tint 用 surface 色代替 CSS background:light 40% 白 / dark 48% 黑
+                                    HazeColorEffect.tint(colors.barBg),
+                                )
+                            )
+                        }
+                        // 边缘保持硬裁切:形状羽化会让玻璃上下边界发虚、拖出灰带
+                        blurredEdgeTreatment(BlurredEdgeTreatment.Rectangle)
+                    },
+                ),
+        )
         // 斜向流光(::after,115deg sheen)——暗色下左端泛白已整体去掉,仅浅色保留
         if (colors.ink.luminance() < 0.5f) {
             Box(
@@ -261,7 +274,6 @@ fun GlassTabBar(
                             // 收窄到 4dp 保留玻璃厚度感又不堆积成环
                             refraction = 4.dp,
                         )
-                        .clip(TabShape)
                         .hazeBlur(
                             HazeInput.Sources(hazeState),
                             HazeBlurStyle {
