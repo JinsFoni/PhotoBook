@@ -144,7 +144,7 @@ fun DetailScreen(
                                 horizontalArrangement = Arrangement.spacedBy(11.dp),
                                 modifier = Modifier.padding(top = 11.dp),
                             ) {
-                                Text(d.modelName, style = PhotoType.byline, color = colors.ink2)
+                                Text(d.modelName, style = PhotoType.bylineModel, color = colors.ink2)
                                 Text("${d.count} 张", style = PhotoType.caption, color = colors.ink3)
                             }
                             // TagRow

@@ -64,7 +64,7 @@ fun ModelsScreen(
         ) {
             Text(
                 stringResource(R.string.models_noun),
-                style = PhotoType.byline.copy(fontFamily = PhotoSerif, fontSize = 17.sp),
+                style = PhotoType.wordmark,
                 color = colors.ink,
             )
         }

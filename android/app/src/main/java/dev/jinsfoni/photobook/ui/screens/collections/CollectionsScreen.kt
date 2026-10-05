@@ -82,10 +82,7 @@ fun CollectionsScreen(
         ) {
             Text(
                 if (state.tag != null) "#${state.tag}" else stringResource(R.string.collections_noun),
-                style = PhotoType.byline.copy(
-                    fontFamily = dev.jinsfoni.photobook.core.design.PhotoSerif,
-                    fontSize = 17.sp,
-                ),
+                style = PhotoType.wordmark,
                 color = colors.ink,
             )
             Spacer(Modifier.weight(1f))

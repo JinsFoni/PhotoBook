@@ -69,10 +69,10 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(140.dp))
-            // wordmark:衬线 + 宽字距
+            // wordmark(原型 .login-mark .wm.serif 31px)
             Text(
-                "PHOTOBOOK",
-                style = PhotoType.heroTitle.copy(letterSpacing = 8.sp),
+                "Photo Collection",
+                style = PhotoType.heroTitle.copy(fontSize = 31.sp),
                 color = colors.ink,
                 textAlign = TextAlign.Center,
             )

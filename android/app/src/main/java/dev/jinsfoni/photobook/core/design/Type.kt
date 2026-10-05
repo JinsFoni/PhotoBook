@@ -56,12 +56,37 @@ object PhotoType {
         lineHeight = 26.sp,
     )
 
-    // 卡片题(card .t 15px)
+    // 卡片题(card .t 15px,.t.serif → 衬线)
     val cardTitle = TextStyle(
-        fontFamily = PhotoSans,
+        fontFamily = PhotoSerif,
         fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
         lineHeight = 20.sp,      // 1.3
+    )
+
+    // appbar 词标(.appbar .wordmark 18px,.wordmark.serif)
+    val wordmark = TextStyle(
+        fontFamily = PhotoSerif,
+        fontWeight = FontWeight.Normal,
+        fontSize = 18.sp,
+        lineHeight = 23.sp,
+        letterSpacing = 0.2.sp,
+    )
+
+    // 详情/模型 hero 榜下模特名(.byline .model 15px,.model.serif → 衬线)
+    val bylineModel = TextStyle(
+        fontFamily = PhotoSerif,
+        fontWeight = FontWeight.Normal,
+        fontSize = 15.sp,
+        lineHeight = 20.sp,
+    )
+
+    // byline 通用(返回箭头、seg 页签等 15px 无衬线场景)
+    val byline = TextStyle(
+        fontFamily = PhotoSans,
+        fontWeight = FontWeight.Normal,
+        fontSize = 15.sp,
+        lineHeight = 20.sp,
     )
 
     // 正文(基准 14px)
@@ -72,15 +97,7 @@ object PhotoType {
         lineHeight = 21.sp,      // 1.5
     )
 
-    // byline 模特名(.byline .model 15px)
-    val byline = TextStyle(
-        fontFamily = PhotoSans,
-        fontWeight = FontWeight.Normal,
-        fontSize = 15.sp,
-        lineHeight = 20.sp,
-    )
-
-    // 日期/弱化文字(.byline .date 12.5px、chip 12px)
+    // byline 日期等弱化文字(.byline .date 12.5px、chip 12px)
     val caption = TextStyle(
         fontFamily = PhotoSans,
         fontWeight = FontWeight.Normal,

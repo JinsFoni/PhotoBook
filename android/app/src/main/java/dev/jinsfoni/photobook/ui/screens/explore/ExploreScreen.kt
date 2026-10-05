@@ -160,7 +160,7 @@ private fun ExploreContent(
             ) {
                 Text(
                     "Photo Collection",
-                    style = PhotoType.cardTitle,
+                    style = PhotoType.wordmark,
                     color = colors.ink,
                 )
                 // 搜索入口:与图集页一致的描边放大镜(20dp,ink2)
