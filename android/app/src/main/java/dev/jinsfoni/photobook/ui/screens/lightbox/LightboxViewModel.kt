@@ -7,6 +7,7 @@ import dev.jinsfoni.photobook.data.remote.ApiException
 import dev.jinsfoni.photobook.data.repo.CollectionsRepository
 import dev.jinsfoni.photobook.data.repo.FavoritesRepository
 import dev.jinsfoni.photobook.ui.models.CollectionDetail
+import dev.jinsfoni.photobook.ui.models.Favorites
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,7 +18,6 @@ data class LightboxUiState(
     val loading: Boolean = true,
     val detail: CollectionDetail? = null,
     val error: String? = null,
-    val faved: Boolean = false,
 )
 
 @HiltViewModel
@@ -39,24 +39,24 @@ class LightboxViewModel @Inject constructor(
                 this@LightboxViewModel.slug = slug
                 _state.value = LightboxUiState(loading = false, detail = detail)
                 runCatching { favorites.refresh() }
-                    .onSuccess { f -> _state.value = _state.value.copy(faved = f.contains("collection", slug)) }
             } catch (e: ApiException) {
                 _state.value = LightboxUiState(loading = false, error = friendly(e))
             }
         }
     }
 
-    /** 当前 photo key 的收藏态(peek 缓存;未刷新过 → false)。 */
-    fun isPhotoFaved(key: String): Boolean = favorites.peek()?.contains("photo", key) ?: false
+    /**
+     * 收藏仓库状态流(可观察;null = 尚未拉取)。UI 按当前 photo key 从中
+     * 派生红心态 —— 必须订阅流而非读一次性快照,否则 toggle 后没有状态
+     * 变化驱动重组,红心看起来"点了没反应"。
+     */
+    val favoritesState: StateFlow<Favorites?> = favorites.state
 
-    /** 底栏收藏(按 photo key),乐观更新 + 失败回滚。 */
+    /** 底栏收藏(按 photo key),乐观更新 + 失败回滚都在仓库层。 */
     fun togglePhotoFavorite(key: String) {
-        val cur = isPhotoFaved(key)
-        _state.value = _state.value.copy(faved = !cur)
         viewModelScope.launch {
+            val cur = favorites.peek()?.contains("photo", key) ?: false
             runCatching { favorites.toggle("photo", key, added = !cur) }
-                .onSuccess { _state.value = _state.value.copy(faved = !cur) }
-                .onFailure { _state.value = _state.value.copy(faved = cur) }
         }
     }
 

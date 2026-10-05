@@ -108,6 +108,7 @@ fun LightboxScreen(
                 Modifier
                     .fillMaxWidth()
                     .height(92.dp)
+                    .pointerInput(Unit) { detectTapGestures { } }
                     .background(
                         Brush.verticalGradient(0f to Color(8, 9, 10, 128), 1f to Color(8, 9, 10, 0))
                     ),
@@ -145,11 +146,15 @@ fun LightboxScreen(
                 Modifier
                     .fillMaxWidth()
                     .height(110.dp)
+                    // 消费落空 tap:不透传给下面的图片(否则误触发 chrome 显隐)
+                    .pointerInput(Unit) { detectTapGestures { } }
                     .background(
                         Brush.verticalGradient(0f to Color(8, 9, 10, 0), 1f to Color(8, 9, 10, 132))
                     ),
             ) {
                 val cur = photos.getOrNull(pagerState.currentPage)
+                // 收藏态订阅仓库流(可观察),点击后红心立即变色
+                val favorites by vm.favoritesState.collectAsState()
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(56.dp),
                     modifier = Modifier
@@ -158,21 +163,26 @@ fun LightboxScreen(
                 ) {
                     if (cur != null) {
                         val key = "${detail.slug}:${cur.idx}"
-                        val faved = vm.isPhotoFaved(key)
+                        val faved = favorites?.contains("photo", key) ?: false
                         StrokeIcon(
                             HeartIcon,
                             size = 24.dp,
                             tint = if (faved) Color(0xFFE0455A) else Color(0xFFF7F7F5),
                             filled = faved,
-                            modifier = Modifier.clickableNoRipple { vm.togglePhotoFavorite(key) },
+                            // 24dp 图标太小,补 10dp 命中区(44dp 目标)
+                            modifier = Modifier
+                                .clickableNoRipple { vm.togglePhotoFavorite(key) }
+                                .padding(10.dp),
                         )
                         StrokeIcon(
                             DownloadIcon,
                             size = 24.dp,
                             tint = Color(0xFFF7F7F5),
-                            modifier = Modifier.clickableNoRipple {
-                                downloader.download(cur.fullUrl, "PhotoBook-${detail.slug}-${cur.idx}.jpg")
-                            },
+                            modifier = Modifier
+                                .clickableNoRipple {
+                                    downloader.download(cur.fullUrl, "PhotoBook-${detail.slug}-${cur.idx}.jpg")
+                                }
+                                .padding(10.dp),
                         )
                     }
                 }
