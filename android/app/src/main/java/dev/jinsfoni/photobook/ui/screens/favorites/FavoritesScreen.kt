@@ -36,13 +36,13 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoColors
+import dev.jinsfoni.photobook.core.design.PhotoSerif
 import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.CollectionCard
@@ -92,7 +92,7 @@ fun FavoritesScreen(
         ) {
             Text(
                 stringResource(R.string.favorites_noun),
-                style = PhotoType.byline.copy(fontFamily = FontFamily.Serif, fontSize = 17.sp),
+                style = PhotoType.byline.copy(fontFamily = PhotoSerif, fontSize = 17.sp),
                 color = colors.ink,
             )
             Spacer(Modifier.weight(1f))

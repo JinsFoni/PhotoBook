@@ -83,7 +83,7 @@ fun CollectionsScreen(
             Text(
                 if (state.tag != null) "#${state.tag}" else stringResource(R.string.collections_noun),
                 style = PhotoType.byline.copy(
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                    fontFamily = dev.jinsfoni.photobook.core.design.PhotoSerif,
                     fontSize = 17.sp,
                 ),
                 color = colors.ink,

@@ -22,11 +22,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
+import dev.jinsfoni.photobook.core.design.PhotoSerif
 import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.EmptyState
@@ -64,7 +64,7 @@ fun ModelsScreen(
         ) {
             Text(
                 stringResource(R.string.models_noun),
-                style = PhotoType.byline.copy(fontFamily = FontFamily.Serif, fontSize = 17.sp),
+                style = PhotoType.byline.copy(fontFamily = PhotoSerif, fontSize = 17.sp),
                 color = colors.ink,
             )
         }
