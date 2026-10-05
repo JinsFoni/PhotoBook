@@ -105,13 +105,8 @@ fun FavoritesScreen(
             }
         }
 
-        // 三段 Tab(原型 .seg:照片/写真/模特;内联计数;整行 1px 底线;选中 2px accent 下划线+计数变红)
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp)
-                .drawBehind { drawLine(colors.line, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx()) },
-        ) {
+        // 三段 Tab(原型 .seg:照片/写真/模特;内联计数;选中 2px accent 下划线)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
             FavTab.entries.forEachIndexed { i, tab ->
                 val selected = tab == state.tab
                 Column(
