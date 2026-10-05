@@ -51,10 +51,7 @@ fun CollectionsScreen(
     onOpenSearch: () -> Unit = {},
     vm: CollectionsViewModel = hiltViewModel(),
 ) {
-    // 强制 dark(离开由导航层恢复,S2 主题隔离)
-    val prevMode = dev.jinsfoni.photobook.core.design.ThemeState.mode
-    LaunchedEffect(Unit) { dev.jinsfoni.photobook.core.design.ThemeState.mode = dev.jinsfoni.photobook.core.design.ThemeMode.DARK }
-
+    // 强制 dark(深色画廊):主题覆盖由 MainShell 按 tab 统一包 ScopedTheme,这里不改全局
     val colors = LocalPhotoColors.current
     val state by vm.state.collectAsState()
     val gridState = rememberLazyGridState()

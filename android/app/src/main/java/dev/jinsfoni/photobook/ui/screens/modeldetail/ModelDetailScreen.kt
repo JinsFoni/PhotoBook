@@ -37,7 +37,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
-import dev.jinsfoni.photobook.core.design.ThemeState
+import dev.jinsfoni.photobook.core.design.ScopedTheme
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.ui.components.FavoriteButton
 import dev.jinsfoni.photobook.ui.components.CollectionCard
@@ -59,16 +59,14 @@ fun ModelDetailScreen(
     onOpenCollection: (String) -> Unit,
     vm: ModelDetailViewModel = hiltViewModel(),
 ) {
-    val colors = LocalPhotoColors.current
-    val state by vm.state.collectAsState()
+    // 强制 dark(媒体头部白字):页面级覆盖 + 自绘 paper 底,退出页面自动失效,不改全局主题
+    ScopedTheme(mode = ThemeMode.DARK) {
+        val colors = LocalPhotoColors.current
+        val state by vm.state.collectAsState()
 
-    LaunchedEffect(Unit) {
-        ThemeState.mode = ThemeMode.DARK
-        vm.load(slug)
-    }
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose { }
-    }
+        LaunchedEffect(Unit) { vm.load(slug) }
+
+        Column(Modifier.fillMaxSize().background(colors.paper)) {
 
     when {
         state.loading -> DetailSkeleton()
@@ -89,6 +87,8 @@ fun ModelDetailScreen(
                     modifier = Modifier.photoClickable { vm.load(slug) }.padding(8.dp),
                 )
             }
+        }
+    }
         }
     }
 }

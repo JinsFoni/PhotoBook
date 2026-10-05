@@ -68,12 +68,8 @@ fun FavoritesScreen(
     val colors = LocalPhotoColors.current
     val state by vm.state.collectAsState()
 
-    // S7 强制 dark(原型 theme:Dark;深色画廊模式,进入照片/模特详情由对方页自管)
-    LaunchedEffect(Unit) {
-        dev.jinsfoni.photobook.core.design.ThemeState.mode =
-            dev.jinsfoni.photobook.core.design.ThemeMode.DARK
-        vm.refresh()
-    }
+    // S7 深色画廊模式:主题覆盖由 MainShell 按 tab 统一包 ScopedTheme,这里不再改全局
+    LaunchedEffect(Unit) { vm.refresh() }
 
     Column(Modifier.fillMaxSize()) {
         // appbar(词标收藏;原型顶栏有 copy 图标作多选占位,V1 无批量操作已移除)

@@ -37,8 +37,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
+import dev.jinsfoni.photobook.core.design.ScopedTheme
 import dev.jinsfoni.photobook.core.design.ThemeMode
-import dev.jinsfoni.photobook.core.design.ThemeState
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
 import dev.jinsfoni.photobook.ui.components.arrangeTwoColumnWall
@@ -57,9 +57,26 @@ fun DetailScreen(
     onOpenPhoto: (slug: String, idx: Int) -> Unit,
     vm: DetailViewModel = hiltViewModel(),
 ) {
-    val prevMode = ThemeState.mode
-    LaunchedEffect(Unit) { ThemeState.mode = ThemeMode.LIGHT }
+    // 强制 light:页面级 ScopedTheme 覆盖 + 自绘 paper 底(覆盖只管本页,不改全局主题)
+    ScopedTheme(mode = ThemeMode.LIGHT) {
+        val colors = LocalPhotoColors.current
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(colors.paper),
+        ) {
+            DetailContent(slug, onBack, onOpenPhoto, vm)
+        }
+    }
+}
 
+@Composable
+private fun DetailContent(
+    slug: String,
+    onBack: () -> Unit,
+    onOpenPhoto: (slug: String, idx: Int) -> Unit,
+    vm: DetailViewModel,
+) {
     val colors = LocalPhotoColors.current
     val state by vm.state.collectAsState()
     val gridState = rememberLazyStaggeredGridState()
