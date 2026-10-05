@@ -83,21 +83,28 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
         null -> Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(8, 9, 10))) // 启动闪屏底色
         false -> LoginScreen(onLoggedIn = { /* token 落库 → loggedIn 翻 true 自动切壳 */ })
         true -> {
-            // 页面切换语义:页面是"卡片",前进 = 新页自右整幅滑入盖在旧页上(旧页不动);
-            // 返回 = 当前页向右整幅滑出,露出下面原位的上一页。280ms 单曲线。
+            // 页面切换语义:页面是"卡片",前进 = 新页整幅不透明自右滑入盖在旧页上(旧页不动);
+            // 返回 = 当前页整幅向右滑出,露出下面原位的上一页。280ms 单曲线。
+            // 两侧都不掺 fade:滑入掺 fadeIn 会半透明露底,滑出掺 fadeOut 会中途变花。
             NavHost(
                 navController = nav,
                 startDestination = "shell",
                 enterTransition = {
-                    slideInHorizontally(tween(280)) { it } + fadeIn(tween(180))
+                    slideInHorizontally(tween(280)) { it }
                 },
                 // 旧页保持原位:滑入的新页盖在上面,退出方不需要动(省一层重绘)
                 exitTransition = { ExitTransition.KeepUntilTransitionsFinished },
-                // 返回时上一页原地显现:不做位移动画,仅结束得比滑出稍晚
+                // 返回时上一页原地显现:不做任何动画,全程垫在滑出的页面下面
                 popEnterTransition = { EnterTransition.None },
                 popExitTransition = {
-                    slideOutHorizontally(tween(280)) { it } + fadeOut(tween(140))
+                    slideOutHorizontally(tween(280)) { it }
                 },
+                // targetSdk 37 手势返回默认走 predictive back,NavHost 用 predictivePop* 转场
+                // (系统默认 scaleOut+fadeIn)而完全绕过上面的 popExit——必须覆写成同款右滑,
+                // 手势预览和提交才都是"当前页右滑出、上一页原地不动"。
+                // 注:lambda 参数必须显式标 _:Int,用 { _, _ -> } 会让 NavHost 重载解析整体失败
+                predictivePopEnterTransition = { _: Int -> EnterTransition.None },
+                predictivePopExitTransition = { _: Int -> slideOutHorizontally(tween(280)) { it } },
             ) {
             composable("shell") {
                 val hazeState = rememberHazeState()
