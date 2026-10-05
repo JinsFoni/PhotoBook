@@ -43,8 +43,6 @@ import me.saket.telephoto.zoomable.rememberZoomableImageState
 import dev.jinsfoni.photobook.ui.icons.DownloadIcon
 import dev.jinsfoni.photobook.ui.icons.HeartIcon
 import dev.jinsfoni.photobook.ui.icons.StrokeIcon
-import dev.jinsfoni.photobook.ui.nav.LocalSharedScopes
-import dev.jinsfoni.photobook.ui.nav.photoSharedKey
 import kotlinx.coroutines.delay
 
 /**
@@ -88,17 +86,7 @@ fun LightboxScreen(
             // 设置开「加载原图」走 /media/ 原图,否则 2400px webp 预览
             val photo = photos[page]
             val url = if (loadOriginal) photo.fullUrl else photo.previewUrl
-            // 共享元素:当前页大图与详情页缩略图同 key —— 进入时从缩略图位置展开,返回时飞回
-            val scopes = LocalSharedScopes.current
-            val sharedModifier = if (scopes != null && page == pagerState.currentPage) {
-                with(scopes.sharedScope) {
-                    Modifier.sharedElement(
-                        rememberSharedContentState(photoSharedKey(slug, photo.idx)),
-                        animatedVisibilityScope = scopes.navScope,
-                    )
-                }
-            } else Modifier
-            PhotoPage(url, sharedModifier, onToggleChrome = { chromeVisible = !chromeVisible })
+            PhotoPage(url, onToggleChrome = { chromeVisible = !chromeVisible })
         }
         LaunchedEffect(pagerState.currentPage, chromeVisible) {
             if (chromeVisible) {
@@ -207,7 +195,7 @@ fun LightboxScreen(
 }
 
 @Composable
-private fun PhotoPage(url: String, sharedModifier: Modifier, onToggleChrome: () -> Unit) {
+private fun PhotoPage(url: String, onToggleChrome: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val zoomState = rememberZoomableImageState()
         ZoomableAsyncImage(
@@ -216,7 +204,7 @@ private fun PhotoPage(url: String, sharedModifier: Modifier, onToggleChrome: () 
             state = zoomState,
             contentScale = ContentScale.Fit,
             onClick = { onToggleChrome() },
-            modifier = sharedModifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize(),
         )
     }
 }

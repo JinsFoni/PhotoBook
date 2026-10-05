@@ -44,8 +44,6 @@ import dev.jinsfoni.photobook.ui.components.arrangeTwoColumnWall
 import dev.jinsfoni.photobook.ui.components.photoClickable
 import dev.jinsfoni.photobook.ui.icons.HeartIcon
 import dev.jinsfoni.photobook.ui.icons.StrokeIcon
-import dev.jinsfoni.photobook.ui.nav.LocalSharedScopes
-import dev.jinsfoni.photobook.ui.nav.photoSharedKey
 
 /**
  * S3 详情:crumb + 衬线标题 + byline + TagRow → 2 列瀑布照片墙;
@@ -178,16 +176,6 @@ fun DetailScreen(
                         val p = wall[i]
                         val landscape = p.width > 0 && p.height > 0 && p.width > p.height
                         val ratio = if (landscape) p.width.toFloat() / p.height.toFloat() else 2f / 3f
-                        // 共享元素:缩略图与灯箱大图共用 key,进出大图时从卡片位置飞入/飞回
-                        val scopes = LocalSharedScopes.current
-                        val sharedModifier = if (scopes != null) {
-                            with(scopes.sharedScope) {
-                                Modifier.sharedElement(
-                                    rememberSharedContentState(photoSharedKey(slug, p.idx)),
-                                    animatedVisibilityScope = scopes.navScope,
-                                )
-                            }
-                        } else Modifier
                         Box(
                             Modifier
                                 .fillMaxWidth()
@@ -200,7 +188,7 @@ fun DetailScreen(
                                 model = p.thumbUrl,
                                 contentDescription = "Photo ${p.idx + 1}",
                                 contentScale = ContentScale.Crop,
-                                modifier = sharedModifier.then(Modifier.fillMaxSize()),
+                                modifier = Modifier.fillMaxSize(),
                             )
                         }
                     }

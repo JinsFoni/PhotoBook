@@ -26,18 +26,12 @@ import dev.jinsfoni.photobook.ui.screens.settings.SettingsScreen
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.runtime.CompositionLocalProvider
-import dev.jinsfoni.photobook.ui.nav.LocalAppRootSharedScope
-import dev.jinsfoni.photobook.ui.nav.AppRootSharedScopeHolder
-import dev.jinsfoni.photobook.ui.nav.WithSharedScopes
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -91,27 +85,20 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
         true -> {
             // 页面切换语义:页面是"卡片",前进 = 新页自右整幅滑入盖在旧页上(旧页不动);
             // 返回 = 当前页向右整幅滑出,露出下面原位的上一页。280ms 单曲线。
-            // 共享元素(灯箱大图)由 SharedTransitionLayout 承载,能跨 NavHost 页面飞行。
-            @OptIn(ExperimentalSharedTransitionApi::class)
-            SharedTransitionLayout {
-                // SharedTransitionLayout 的 receiver 即 SharedTransitionScope,带下来供页面用
-                CompositionLocalProvider(
-                    LocalAppRootSharedScope provides AppRootSharedScopeHolder(this),
-                ) {
-                    NavHost(
-                    navController = nav,
-                    startDestination = "shell",
-                    enterTransition = {
-                        slideInHorizontally(tween(280)) { it } + fadeIn(tween(180))
-                    },
-                    // 旧页保持原位:滑入的新页盖在上面,退出方不需要动(省一层重绘)
-                    exitTransition = { ExitTransition.KeepUntilTransitionsFinished },
-                    // 返回时上一页原地显现:不做位移动画,仅结束得比滑出稍晚
-                    popEnterTransition = { EnterTransition.None },
-                    popExitTransition = {
-                        slideOutHorizontally(tween(280)) { it } + fadeOut(tween(140))
-                    },
-                ) {
+            NavHost(
+                navController = nav,
+                startDestination = "shell",
+                enterTransition = {
+                    slideInHorizontally(tween(280)) { it } + fadeIn(tween(180))
+                },
+                // 旧页保持原位:滑入的新页盖在上面,退出方不需要动(省一层重绘)
+                exitTransition = { ExitTransition.KeepUntilTransitionsFinished },
+                // 返回时上一页原地显现:不做位移动画,仅结束得比滑出稍晚
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = {
+                    slideOutHorizontally(tween(280)) { it } + fadeOut(tween(140))
+                },
+            ) {
             composable("shell") {
                 val hazeState = rememberHazeState()
                 MainShell(
@@ -168,32 +155,31 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                 arguments = listOf(navArgument("slug") { }),
             ) { entry ->
                 val slug = entry.arguments?.getString("slug").orEmpty()
-                WithSharedScopes {
-                    DetailScreen(
-                        slug = slug,
-                        onBack = { nav.popBackStack() },
-                        onOpenPhoto = { s, idx -> nav.navigate("lightbox/$s/$idx") },
-                    )
-                }
+                DetailScreen(
+                    slug = slug,
+                    onBack = { nav.popBackStack() },
+                    onOpenPhoto = { s, idx -> nav.navigate("lightbox/$s/$idx") },
+                )
             }
+            // 灯箱走全幅淡入淡出:黑底天然遮盖式,滑盖动画反而多余;复写 NavHost 默认过渡
             composable(
                 "lightbox/{slug}/{idx}",
                 arguments = listOf(navArgument("slug") { }, navArgument("idx") { }),
+                enterTransition = { fadeIn(tween(200)) },
+                exitTransition = { fadeOut(tween(200)) },
+                popEnterTransition = { fadeIn(tween(200)) },
+                popExitTransition = { fadeOut(tween(200)) },
             ) { entry ->
                 val slug = entry.arguments?.getString("slug").orEmpty()
                 val idx = entry.arguments?.getString("idx")?.toIntOrNull() ?: 0
-                WithSharedScopes {
-                    LightboxScreen(
-                        slug = slug,
-                        initialIdx = idx,
-                        onBack = { nav.popBackStack() },
-                        downloader = downloader,
-                    )
-                }
-            }
-                }
-            }
+                LightboxScreen(
+                    slug = slug,
+                    initialIdx = idx,
+                    onBack = { nav.popBackStack() },
+                    downloader = downloader,
+                )
             }
         }
     }
+}
 }
