@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.1.0
+// @version      1.1.1
 // @description  在 buondua.com 卡片右下角与详情页标签行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -152,6 +152,13 @@
     return m ? m[1] : null;
   }
 
+  // 详情页判定: 必须真的有详情 DOM。tag 筛选页 URL 也是 -<数字> 结尾
+  // (那是标签 id), 不能凭 URL 尾号当详情页, 否则会兜底抓到第一张卡片的
+  // 封面并把它的徽标覆盖成标签 id 的状态。
+  function isDetailPage() {
+    return Boolean(document.querySelector(".article-tags, .post-image"));
+  }
+
   function ensureHost(card) {
     // .item-thumb 需要 position:relative 才能挂绝对定位按钮
     const host = card.querySelector(".item-thumb");
@@ -214,7 +221,7 @@
     lastQuery = Date.now();
     const cards = cardNodes();
     const serials = new Set(cards.map(c => c.dataset.id));
-    const ds = serialFromLocation();
+    const ds = isDetailPage() ? serialFromLocation() : null;
     if (ds) serials.add(ds);
     if (!serials.size) return;
     api("GET", "/api/ext/status?serials=" + Array.from(serials).join(","), null,
