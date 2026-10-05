@@ -25,9 +25,16 @@ import dev.jinsfoni.photobook.ui.screens.search.SearchScreen
 import dev.jinsfoni.photobook.ui.screens.settings.SettingsScreen
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -78,12 +85,29 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
     when (loggedIn) {
         null -> Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(8, 9, 10))) // 启动闪屏底色
         false -> LoginScreen(onLoggedIn = { /* token 落库 → loggedIn 翻 true 自动切壳 */ })
-        true -> NavHost(
-            navController = nav,
-            startDestination = "shell",
-            enterTransition = { fadeIn(tween(220)) },
-            exitTransition = { fadeOut(tween(180)) },
-        ) {
+        true -> {
+            // 共享轴 X(design.md §7):前进 = 新页自右滑入、旧页左推 30dp 渐隐;返回镜像。
+            // 280ms 标准曲线;滑距用 30dp 而非全宽,保留底层页作空间锚(编辑感,避免通用 Material 感)。
+            val density = LocalDensity.current
+            val shiftX = with(density) { 30.dp.roundToPx() }
+            val spec = tween<IntOffset>(280, easing = FastOutSlowInEasing)
+            val fadeSpec = tween<Float>(280, easing = LinearEasing)
+            NavHost(
+                navController = nav,
+                startDestination = "shell",
+                enterTransition = {
+                    slideInHorizontally(spec) { it } + fadeIn(fadeSpec)
+                },
+                exitTransition = {
+                    slideOutHorizontally(spec) { -shiftX } + fadeOut(fadeSpec)
+                },
+                popEnterTransition = {
+                    slideInHorizontally(spec) { -shiftX } + fadeIn(fadeSpec)
+                },
+                popExitTransition = {
+                    slideOutHorizontally(spec) { it } + fadeOut(fadeSpec)
+                },
+            ) {
             composable("shell") {
                 val hazeState = rememberHazeState()
                 MainShell(
@@ -158,6 +182,7 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     onBack = { nav.popBackStack() },
                     downloader = downloader,
                 )
+            }
             }
         }
     }
