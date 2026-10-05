@@ -2,6 +2,7 @@ package dev.jinsfoni.photobook.data.prefs
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -34,6 +35,7 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
     private val profilesKey = stringPreferencesKey("profiles")
     private val activeProfileKey = stringPreferencesKey("active_profile")
     private val themeKey = stringPreferencesKey("theme")
+    private val liquidGlassKey = booleanPreferencesKey("liquid_glass")
     private val localeKey = stringPreferencesKey("locale")
 
     override val token: Flow<String?> = context.dataStore.data.map { prefs ->
@@ -65,6 +67,9 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
             else -> ThemeMode.LIGHT
         }
     }
+
+    override val liquidGlass: Flow<Boolean> =
+        context.dataStore.data.map { prefs -> prefs[liquidGlassKey] ?: false }
 
     override val locale: Flow<String> =
         context.dataStore.data.map { it[localeKey] ?: "" }
@@ -179,6 +184,10 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
 
     override suspend fun saveTheme(mode: ThemeMode) {
         context.dataStore.edit { it[themeKey] = mode.name }
+    }
+
+    override suspend fun saveLiquidGlass(enabled: Boolean) {
+        context.dataStore.edit { it[liquidGlassKey] = enabled }
     }
 
     override suspend fun saveLocale(tag: String) {

@@ -56,6 +56,9 @@
     <string name="theme_light">淺色</string>
     <string name="theme_dark">深色</string>
     <string name="theme_blur">虛化</string>
+    <string name="section_glass">導航欄玻璃</string>
+    <string name="glass_liquid">液態玻璃</string>
+    <string name="glass_thin">薄磨砂(默認)</string>
     <string name="section_language">語言</string>
     <string name="lang_simplified">簡體中文</string>
     <string name="lang_traditional">繁體中文</string>

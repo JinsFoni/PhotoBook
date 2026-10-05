@@ -18,6 +18,9 @@ interface SessionStoreApi {
     /** 主题三态(light/dark/blur)。 */
     val theme: Flow<ThemeMode>
 
+    /** 液态玻璃底栏开关(持久化)。 */
+    val liquidGlass: Flow<Boolean>
+
     /** 语言标签("zh-CN"/"zh-TW";空 = 跟随系统)。 */
     val locale: Flow<String>
 
@@ -40,5 +43,6 @@ interface SessionStoreApi {
     suspend fun removeProfile(id: String)
 
     suspend fun saveTheme(mode: ThemeMode)
+    suspend fun saveLiquidGlass(enabled: Boolean)
     suspend fun saveLocale(tag: String)
 }

@@ -109,6 +109,18 @@ fun SettingsScreen(
             onClick = { vm.setTheme(ThemeMode.BLUR) },
         )
 
+        SectionLabel(stringResource(R.string.section_glass))
+        ThemeRow(
+            label = stringResource(R.string.glass_liquid),
+            selected = state.liquidGlass,
+            onClick = { vm.setLiquidGlass(true) },
+        )
+        ThemeRow(
+            label = stringResource(R.string.glass_thin),
+            selected = !state.liquidGlass,
+            onClick = { vm.setLiquidGlass(false) },
+        )
+
         SectionLabel(stringResource(R.string.section_language))
         ThemeRow(
             label = stringResource(R.string.lang_simplified),

@@ -21,6 +21,9 @@ val LocalThemeMode = staticCompositionLocalOf { ThemeMode.LIGHT }
 /** 主题宿主:内存态驱动重组;启动从 DataStore 灌入,变更写回(见 AppRoot/MainShell)。 */
 object ThemeState {
     var mode by mutableStateOf(ThemeMode.LIGHT)
+
+    /** 液态玻璃底栏开关:false = 现有薄磨砂;true = AGSL 折射液态玻璃(参考 iOS 26)。 */
+    var liquidGlass by mutableStateOf(false)
 }
 
 fun PhotoColors.forMode(mode: ThemeMode): PhotoColors = when (mode) {

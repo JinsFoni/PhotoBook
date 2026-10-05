@@ -38,7 +38,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import android.graphics.RuntimeShader
+import android.os.Build
+import androidx.annotation.RequiresApi
+import androidx.compose.ui.graphics.RenderEffect
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.unit.dp
+import dev.jinsfoni.photobook.core.design.ThemeState
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
@@ -84,15 +90,50 @@ private fun glassColorFilter(saturation: Float, brightness: Float) =
     )
 
 /**
- * 液态玻璃底栏(iOS 26 风格,参数对齐 ui.css):
+ * AGSL 折射透镜(液态玻璃模式):包在 hazeBlur 层之外,对本层已模糊内容
+ * 做圆角矩形 SDF 边缘折射。uContent 只能采样本层,所以透镜必须挂在
+ * clip → lens → hazeBlur 的顺序里(透镜在外,模糊在内)。
+ * [shader] 为 null(低版本 / 关闭)时是空操作。
+ */
+@RequiresApi(33)
+private fun Modifier.lensEffect(
+    shader: RuntimeShader?,
+    enabled: Boolean,
+    cornerRadius: androidx.compose.ui.unit.Dp,
+): Modifier = if (shader == null || !enabled) this else this.graphicsLayer {
+    val size = size
+    shader.setFloatUniform(
+        "uSize",
+        size.width,
+        size.height,
+    )
+    shader.setFloatUniform("uRadius", cornerRadius.toPx())
+    // 边缘折射环带宽 5dp;折射深度 3.5dp;色散 0.8(BiliPai subtle ≈0.1×32dp,按比例缩放)
+    shader.setFloatUniform("uRefractionHeight", 5.dp.toPx())
+    shader.setFloatUniform("uRefractionAmount", 3.5.dp.toPx())
+    shader.setFloatUniform("uDispersion", 0.8f)
+    renderEffect = android.graphics.RenderEffect
+        .createRuntimeShaderEffect(shader, "uContent")
+        .asComposeRenderEffect()
+}
+
+/**
+ * 玻璃底栏,两种材质由 ThemeState.liquidGlass 切换:
+ *
+ * 薄磨砂(默认,关)= 旧版:
  * 1. 玻璃背板:整条 hazeBlur(页面),blur 3dp + saturate 165% + brightness 1.08 薄玻璃
  *    ——不能用重模糊:bar 紧邻的亮色内容会被晕成横贯全宽的亮带;
  * 2. 选中药丸:blur 2dp + saturate 180% + brightness 1.14 凸透镜片(--pill 垫色),
  *    位置追逐 [position](MainShell 传 pager 小数进度)→ 拖页时「液体跟随」,弹簧产生
  *    Gooey 拉伸(移动越快越扁宽,到位回弹);API 31/32 退回纯色药丸。
- *    注意:AGSL RuntimeShader 透镜不可挂在这里——实测(API 36)其合成层会被
- *    拉成整条 bar 宽度,在药丸中线拖出横贯亮带,与折射/高光参数无关;
- * 3. 顶部/底部 1px 高光暗边 + 内晕 = InsetHighlight;外阴影 = tabBarShadow。
+ *
+ * 液态玻璃(开,参考 iOS 26 / BiliPai):背板换成重模糊磨砂(12dp),
+ * 整条 bar 与选中药丸各自包一层 AGSL 折射透镜(LiquidLensShader:圆角矩形 SDF,
+ * 只在边缘一圈按 SDF 梯度偏移采样 = 边缘折射环,中心 1:1 零畸变;RGB 波长色散)。
+ * 注意 AGSL 只能采样本层内容,透镜必须包在 hazeBlur 层之外(uContent = 已模糊背板)。
+ * API < 33 无 RuntimeShader,开关只退化为更重的磨砂。
+ *
+ * 共通:顶部/底部 1px 高光暗边 = InsetHighlight;外阴影 = tabBarShadow;
  * 选中态 = accent 图标 + 600 字重;按压 scale .94 spring。
  */
 @Composable
@@ -104,9 +145,13 @@ fun GlassTabBar(
     position: Float = selected.ordinal.toFloat(),
 ) {
     val colors = LocalPhotoColors.current
+    val liquid = ThemeState.liquidGlass
     // API 33+ 用玻璃药丸层;31/32 由 TabItem 画纯色药丸
-    // (AGSL 透镜已弃用:RuntimeShaderEffect 合成层 bug,见类注释)
     val hasGlassPill = rememberLensShader() != null
+    // 液态玻璃透镜:API 33+ 才有 RuntimeShader;开关关闭时不挂
+    val lensOn = liquid && hasGlassPill
+    val barLens = remember { if (Build.VERSION.SDK_INT >= 33) RuntimeShader(LIQUID_LENS_SKSL) else null }
+    val pillLens = remember { if (Build.VERSION.SDK_INT >= 33) RuntimeShader(LIQUID_LENS_SKSL) else null }
 
     // 药丸追逐 pager 小数进度:spring 追赶 = 液体黏滞感
     val pillX by animateFloatAsState(
@@ -122,25 +167,39 @@ fun GlassTabBar(
             .height(TabHeight)
             .tabBarShadow()
             .clip(TabShape)
-            // 背板 = 纯净重模糊玻璃,不套 AGSL:整条宽 bar 的边缘透镜会退化成
-            // 上下两条横贯全宽的带状伪影(镜面弧 + 内容拖拽);液态透镜放在药丸上
+            .lensEffect(barLens, enabled = lensOn, cornerRadius = TabHeight / 2)
+            .clip(TabShape)
+            // 背板:薄磨砂 = 轻模糊;液态玻璃 = 重模糊磨砂,再由外层透镜折边
             .hazeBlur(
                 HazeInput.Sources(hazeState),
                 HazeBlurStyle {
-                    // ui.css .tabbar: blur(3px) saturate(165%) brightness(1.08)
-                    // 薄磨砂:内容保持可辨,只有轻微软化 + 提亮
-                    blurRadius(3.dp)
-                    noiseFactor(0f)
-                    // 不透明 surface 垫底(HazeMaterials 同款):透明区域不再拉低效果层 alpha,
-                    // 同时挡住外阴影透过玻璃显形
-                    backgroundColor(colors.paper)
-                    colorEffects(
-                        listOf(
-                            HazeColorEffect.colorFilter(glassColorFilter(1.65f, 1.08f)),
-                            // tint 用 surface 色代替 CSS background:light 40% 白 / dark 48% 黑
-                            HazeColorEffect.tint(colors.barBg),
+                    if (liquid) {
+                        // 液态玻璃:厚玻璃,内容柔化成色块,亮度提一点保持通透
+                        blurRadius(12.dp)
+                        noiseFactor(0f)
+                        backgroundColor(colors.paper)
+                        colorEffects(
+                            listOf(
+                                HazeColorEffect.colorFilter(glassColorFilter(1.8f, 1.10f)),
+                                HazeColorEffect.tint(colors.barBg),
+                            )
                         )
-                    )
+                    } else {
+                        // ui.css .tabbar: blur(3px) saturate(165%) brightness(1.08)
+                        // 薄磨砂:内容保持可辨,只有轻微软化 + 提亮
+                        blurRadius(3.dp)
+                        noiseFactor(0f)
+                        // 不透明 surface 垫底(HazeMaterials 同款):透明区域不再拉低效果层 alpha,
+                        // 同时挡住外阴影透过玻璃显形
+                        backgroundColor(colors.paper)
+                        colorEffects(
+                            listOf(
+                                HazeColorEffect.colorFilter(glassColorFilter(1.65f, 1.08f)),
+                                // tint 用 surface 色代替 CSS background:light 40% 白 / dark 48% 黑
+                                HazeColorEffect.tint(colors.barBg),
+                            )
+                        )
+                    }
                     // 边缘保持硬裁切:形状羽化会让玻璃上下边界发虚、拖出灰带
                     blurredEdgeTreatment(BlurredEdgeTreatment.Rectangle)
                 },
@@ -166,7 +225,7 @@ fun GlassTabBar(
         // inset 高光/暗边/内晕
         InsetHighlight()
 
-        // 选中药丸(液体玻璃片):blur 2dp 凸透镜观感;31/32 由 TabItem 画纯色药丸
+        // 选中药丸(液体玻璃片);31/32 由 TabItem 画纯色药丸
         if (hasGlassPill) {
             BoxWithConstraints(Modifier.matchParentSize()) {
                 // 内容区 = 整条 - ShellPad,槽宽 = 内容区/4;药丸宽 = 槽宽 - 6dp
@@ -183,19 +242,30 @@ fun GlassTabBar(
                             scaleY = 1f - (stretch - 1f) * 0.55f
                         }
                         .clip(TabShape)
+                        .lensEffect(pillLens, enabled = lensOn, cornerRadius = (TabHeight - ShellPad * 2) / 2)
+                        .clip(TabShape)
                         .hazeBlur(
                             HazeInput.Sources(hazeState),
                             HazeBlurStyle {
-                                // ui.css .tab.active: blur(2px) saturate(180%) brightness(1.14)
-                                // 药丸比背板更清透更亮 = 前后景深差(凸透镜片);
-                                // 中性玻璃(不用 accent 粉),与 iOS 26 原生一致
-                                blurRadius(2.dp)
-                                colorEffects(
-                                    listOf(
-                                        HazeColorEffect.colorFilter(glassColorFilter(1.8f, 1.14f)),
-                                        HazeColorEffect.tint(colors.barBg),
+                                if (liquid) {
+                                    // 药丸比背板更清透更亮 = 前后景深差(凸透镜片)
+                                    blurRadius(6.dp)
+                                    colorEffects(
+                                        listOf(
+                                            HazeColorEffect.colorFilter(glassColorFilter(1.9f, 1.18f)),
+                                            HazeColorEffect.tint(colors.barBg),
+                                        )
                                     )
-                                )
+                                } else {
+                                    // ui.css .tab.active: blur(2px) saturate(180%) brightness(1.14)
+                                    blurRadius(2.dp)
+                                    colorEffects(
+                                        listOf(
+                                            HazeColorEffect.colorFilter(glassColorFilter(1.8f, 1.14f)),
+                                            HazeColorEffect.tint(colors.barBg),
+                                        )
+                                    )
+                                }
                                 noiseFactor(0f)
                                 backgroundColor(colors.paper)
                                 blurredEdgeTreatment(BlurredEdgeTreatment.Rectangle)

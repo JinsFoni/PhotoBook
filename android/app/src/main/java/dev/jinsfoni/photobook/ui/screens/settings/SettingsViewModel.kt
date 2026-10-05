@@ -23,6 +23,8 @@ data class SettingsUiState(
     val profiles: List<ServerProfile> = emptyList(),
     val activeProfileId: String? = null,
     val theme: ThemeMode = ThemeMode.LIGHT,
+    /** 液态玻璃底栏开关(false = 薄磨砂)。 */
+    val liquidGlass: Boolean = false,
     /** 当前语言标签("" = 跟随系统);API 33+ 以系统 per-app locale 为准。 */
     val locale: String = "",
 )
@@ -67,13 +69,20 @@ class SettingsViewModel(
     private val systemLocale = MutableStateFlow(localeCtl.currentTags().orEmpty())
 
     val state = combine(
-        session.profiles, session.activeProfileId, session.theme, session.locale, systemLocale,
-    ) { profiles, activeId, theme, dataStoreLocale, sysLocale ->
+        session.profiles,
+        session.activeProfileId,
+        session.theme,
+        session.liquidGlass,
+        session.locale,
+        systemLocale,
+    ) { values ->
+        @Suppress("UNCHECKED_CAST")
         SettingsUiState(
-            profiles = profiles,
-            activeProfileId = activeId ?: profiles.firstOrNull()?.id,
-            theme = theme,
-            locale = sysLocale.ifBlank { dataStoreLocale },
+            profiles = values[0] as List<ServerProfile>,
+            activeProfileId = (values[1] as String?) ?: (values[0] as List<ServerProfile>).firstOrNull()?.id,
+            theme = values[2] as ThemeMode,
+            liquidGlass = values[3] as Boolean,
+            locale = (values[5] as String).ifBlank { values[4] as String },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -90,6 +99,12 @@ class SettingsViewModel(
     fun setTheme(mode: ThemeMode) {
         ThemeState.mode = mode
         viewModelScope.launch { session.saveTheme(mode) }
+    }
+
+    /** 液态玻璃底栏开关:内存态即时生效,同时落库。 */
+    fun setLiquidGlass(enabled: Boolean) {
+        ThemeState.liquidGlass = enabled
+        viewModelScope.launch { session.saveLiquidGlass(enabled) }
     }
 
     /** 语言切换:33+ 走系统 per-app locale(自动重建);31/32 存档 + recreate。 */
