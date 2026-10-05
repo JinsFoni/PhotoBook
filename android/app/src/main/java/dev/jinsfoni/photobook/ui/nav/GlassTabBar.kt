@@ -100,6 +100,7 @@ private fun Modifier.lensEffect(
     shader: RuntimeShader?,
     enabled: Boolean,
     cornerRadius: androidx.compose.ui.unit.Dp,
+    refraction: androidx.compose.ui.unit.Dp = 7.dp,
 ): Modifier = if (shader == null || !enabled) this else this.graphicsLayer {
     val size = size
     shader.setFloatUniform(
@@ -108,11 +109,11 @@ private fun Modifier.lensEffect(
         size.height,
     )
     shader.setFloatUniform("uRadius", cornerRadius.toPx())
-    // 边缘折射环带宽 7dp;向内折射深度 7dp;色散 0.15(细微,过强出彩虹描边);
-    // 安全边距 15dp = 环带宽 7dp + 背板模糊 6dp 再留余量:折射采样完全跳过
+    // 边缘折射环带宽 = refraction;向内折射深度 = refraction;色散 0.15(细微,过强出
+    // 彩虹描边);安全边距 15dp = 环带宽 + 背板模糊 6dp 再留余量:折射采样完全跳过
     // 被模糊晕染的最外圈,否则页面内容(白卡/暖色照片)会被压成彩色描边
-    shader.setFloatUniform("uRefractionHeight", 7.dp.toPx())
-    shader.setFloatUniform("uRefractionAmount", 7.dp.toPx())
+    shader.setFloatUniform("uRefractionHeight", refraction.toPx())
+    shader.setFloatUniform("uRefractionAmount", refraction.toPx())
     shader.setFloatUniform("uDispersion", 0.15f)
     shader.setFloatUniform("uEdgeInset", 15.dp.toPx())
     renderEffect = android.graphics.RenderEffect
@@ -149,6 +150,12 @@ fun GlassTabBar(
 ) {
     val colors = LocalPhotoColors.current
     val liquid = ThemeState.liquidGlass
+    val darkTheme = colors.ink.luminance() > 0.5f
+    // 液态玻璃基底 tint:barBg(40/48% alpha)是薄磨砂的量,重模糊下暖色照片会
+    // 透成棕色涂鸦;iOS 深色液态玻璃基底接近不透明。深色 ≈70% paper2,浅色 ≈60% 白;
+    // 药丸比背板浅一档 = 前后景深差(凸透镜片)
+    val liquidBarTint = if (darkTheme) Color(0xB916181B) else Color(0x99FFFFFF)
+    val liquidPillTint = if (darkTheme) Color(0xA61E2124) else Color(0xA6FFFFFF)
     // API 33+ 用玻璃药丸层;31/32 由 TabItem 画纯色药丸
     val hasGlassPill = rememberLensShader() != null
     // 液态玻璃透镜:API 33+ 才有 RuntimeShader;开关关闭时不挂
@@ -185,7 +192,7 @@ fun GlassTabBar(
                         colorEffects(
                             listOf(
                                 HazeColorEffect.colorFilter(glassColorFilter(1.8f, 1.10f)),
-                                HazeColorEffect.tint(colors.barBg),
+                                HazeColorEffect.tint(liquidBarTint),
                             )
                         )
                     } else {
@@ -246,7 +253,14 @@ fun GlassTabBar(
                             scaleY = 1f - (stretch - 1f) * 0.55f
                         }
                         .clip(TabShape)
-                        .lensEffect(pillLens, enabled = lensOn, cornerRadius = (TabHeight - ShellPad * 2) / 2)
+                        .lensEffect(
+                            pillLens,
+                            enabled = lensOn,
+                            cornerRadius = (TabHeight - ShellPad * 2) / 2,
+                            // 药丸小、正压在亮色照片上:折射 7dp 会把亮色压成一圈白环,
+                            // 收窄到 4dp 保留玻璃厚度感又不堆积成环
+                            refraction = 4.dp,
+                        )
                         .clip(TabShape)
                         .hazeBlur(
                             HazeInput.Sources(hazeState),
@@ -257,7 +271,7 @@ fun GlassTabBar(
                                     colorEffects(
                                         listOf(
                                             HazeColorEffect.colorFilter(glassColorFilter(1.9f, 1.18f)),
-                                            HazeColorEffect.tint(colors.barBg),
+                                            HazeColorEffect.tint(liquidPillTint),
                                         )
                                     )
                                 } else {
