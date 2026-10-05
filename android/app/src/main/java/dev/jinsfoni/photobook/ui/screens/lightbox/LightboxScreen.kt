@@ -42,6 +42,9 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
 import me.saket.telephoto.zoomable.rememberZoomableImageState
+import dev.jinsfoni.photobook.core.design.LocalThemeMode
+import dev.jinsfoni.photobook.core.design.ThemeMode
+import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.icons.DownloadIcon
 import dev.jinsfoni.photobook.ui.icons.HeartIcon
 import dev.jinsfoni.photobook.ui.icons.StrokeIcon
@@ -90,7 +93,23 @@ fun LightboxScreen(
     androidx.activity.compose.BackHandler(enabled = !leaving.currentState) { onBackKey() }
 
     val detail = state.detail
-    Box(Modifier.fillMaxSize().background(Color(8, 9, 10, (backdropAlpha * 255).toInt()))) {
+
+    // 虚化主题:黑底换成虚化垫底,与详情页同一张 hero 图——开合灯箱时两层背景
+    // 完全一致,转场无缝;其他主题保持全出血纯黑。退出编排里虚化层随
+    // backdropAlpha 淡出,图片本身仍走 imageAlpha 错峰溶解,分层不变。
+    val blurTheme = LocalThemeMode.current == ThemeMode.BLUR
+    Box(Modifier.fillMaxSize()) {
+        if (blurTheme) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = backdropAlpha }) {
+                BlurBackdrop(state.detail?.heroUrl ?: state.detail?.photos?.firstOrNull()?.thumbUrl)
+            }
+        } else {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color(8, 9, 10, (backdropAlpha * 255).toInt()))
+            )
+        }
         if (detail == null) {
             if (state.error != null) {
                 Text(
@@ -103,12 +122,12 @@ fun LightboxScreen(
             return@Box
         }
 
+        var chromeVisible by remember { mutableStateOf(true) }
+
         val photos = detail.photos
         val pagerState = rememberPagerState(
             initialPage = initialIdx.coerceIn(0, (photos.size - 1).coerceAtLeast(0)),
         ) { photos.size }
-
-        var chromeVisible by remember { mutableStateOf(true) }
 
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             // 设置开「加载原图」走 /media/ 原图,否则 2400px webp 预览
