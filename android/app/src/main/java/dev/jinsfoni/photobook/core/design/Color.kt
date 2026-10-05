@@ -77,7 +77,7 @@ fun darkColors(): PhotoColors = PhotoColors(
     glassHi = Color(0x3DFFFFFF),    // rgba(255,255,255,.24)
     glassLo = Color(0x0DFFFFFF),    // rgba(255,255,255,.05)
     glassGlow = Color(0x0DFFFFFF),
-    sheenA = Color(0x1CFFFFFF),     // rgba(255,255,255,.11)
+    sheenA = Color(0x0FFFFFFF),     // rgba(255,255,255,.06) 暗背景上左端泛白,减半
     sheenB = Color(0x08FFFFFF),     // rgba(255,255,255,.03)
 )
 
@@ -98,6 +98,6 @@ fun blurColors(): PhotoColors = PhotoColors(
     glassHi = Color(0x4DFFFFFF),    // rgba(255,255,255,.30)
     glassLo = Color(0x0FFFFFFF),    // rgba(255,255,255,.06)
     glassGlow = Color(0x0FFFFFFF),
-    sheenA = Color(0x21FFFFFF),     // rgba(255,255,255,.13)
+    sheenA = Color(0x10FFFFFF),     // rgba(255,255,255,.06) 暗背景上左端泛白,减半
     sheenB = Color(0x0AFFFFFF),     // rgba(255,255,255,.04)
 )
