@@ -101,7 +101,8 @@ private fun ModelDetailContent(
     val colors = LocalPhotoColors.current
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        modifier = Modifier.fillMaxSize(),
+        // 转场时新旧两页同屏叠加,页面根布局必须不透明,否则滑动时缝隙里透出下层页
+        modifier = Modifier.fillMaxSize().background(colors.paper),
         contentPadding = PaddingValues(bottom = 48.dp),
         horizontalArrangement = Arrangement.spacedBy(13.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),

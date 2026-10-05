@@ -60,7 +60,8 @@ fun LoginScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    // 转场时新旧两页同屏叠加,页面根布局必须不透明,否则滑动时缝隙里透出下层页
+    Box(Modifier.fillMaxSize().background(colors.paper)) {
         Column(
             Modifier
                 .fillMaxSize()

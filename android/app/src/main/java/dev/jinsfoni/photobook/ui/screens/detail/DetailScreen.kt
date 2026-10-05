@@ -62,7 +62,8 @@ fun DetailScreen(
 
     LaunchedEffect(slug) { vm.load(slug) }
 
-    Box(Modifier.fillMaxSize()) {
+    // 转场时新旧两页同屏叠加,页面根布局必须不透明,否则滑动时缝隙里透出下层页
+    Box(Modifier.fillMaxSize().background(colors.paper)) {
         // 虚化主题垫底:本合集 hero(设计稿 s3 用 cover-5.jpg 同源做法)
         BlurBackdrop(state.detail?.heroUrl ?: state.detail?.photos?.firstOrNull()?.thumbUrl)
     Column(Modifier.fillMaxSize()) {

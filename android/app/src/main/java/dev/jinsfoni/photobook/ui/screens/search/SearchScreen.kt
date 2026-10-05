@@ -1,5 +1,6 @@
 package dev.jinsfoni.photobook.ui.screens.search
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.res.stringResource
 import dev.jinsfoni.photobook.R
@@ -65,7 +66,8 @@ fun SearchScreen(
 
     LaunchedEffect(Unit) { focus.requestFocus() }
 
-    Box(Modifier.fillMaxSize()) {
+    // 转场时新旧两页同屏叠加,页面根布局必须不透明,否则滑动时缝隙里透出下层页
+    Box(Modifier.fillMaxSize().background(colors.paper)) {
         // 虚化主题垫底:首个结果封面
         BlurBackdrop(state.results?.models?.firstOrNull()?.imageUrl ?: state.results?.collections?.firstOrNull()?.imageUrl)
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
