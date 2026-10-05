@@ -168,7 +168,7 @@ fun FavoritesScreen(
                 FavTab.MODELS -> LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
+                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
                     horizontalArrangement = Arrangement.spacedBy(11.dp),
                     verticalArrangement = Arrangement.spacedBy(11.dp),
                 ) {
@@ -185,7 +185,7 @@ fun FavoritesScreen(
                 FavTab.COLLECTIONS -> LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
+                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
                     horizontalArrangement = Arrangement.spacedBy(11.dp),
                     verticalArrangement = Arrangement.spacedBy(11.dp),
                 ) {
@@ -226,7 +226,7 @@ private fun PhotosMasonry(
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Fixed(2),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
         horizontalArrangement = Arrangement.spacedBy(11.dp),
         verticalItemSpacing = 11.dp,
     ) {
