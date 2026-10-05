@@ -161,14 +161,15 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     onOpenPhoto = { s, idx -> nav.navigate("lightbox/$s/$idx") },
                 )
             }
-            // 灯箱走全幅淡入淡出:黑底天然遮盖式,滑盖动画反而多余;复写 NavHost 默认过渡
+            // 灯箱是"浮层"语义:黑底整幅溶解盖住/揭开详情页,下层始终全亮不参与交叉淡化,
+            // 避免两层半透明叠加发闷;复写 NavHost 默认过渡
             composable(
                 "lightbox/{slug}/{idx}",
                 arguments = listOf(navArgument("slug") { }, navArgument("idx") { }),
                 enterTransition = { fadeIn(tween(200)) },
-                exitTransition = { fadeOut(tween(200)) },
-                popEnterTransition = { fadeIn(tween(200)) },
-                popExitTransition = { fadeOut(tween(200)) },
+                exitTransition = { ExitTransition.KeepUntilTransitionsFinished },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { fadeOut(tween(220)) },
             ) { entry ->
                 val slug = entry.arguments?.getString("slug").orEmpty()
                 val idx = entry.arguments?.getString("idx")?.toIntOrNull() ?: 0
