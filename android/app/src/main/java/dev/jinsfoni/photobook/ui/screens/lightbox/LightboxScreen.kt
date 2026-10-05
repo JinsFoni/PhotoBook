@@ -1,7 +1,8 @@
 package dev.jinsfoni.photobook.ui.screens.lightbox
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
@@ -61,8 +63,35 @@ fun LightboxScreen(
     val loadOriginal by vm.loadOriginal.collectAsState()
     LaunchedEffect(slug) { vm.load(slug) }
 
+    // 退出动画在屏内自己编排(两段):backKey 按下后
+    //   1) 黑底与 chrome 立即撤场(120ms),详情页开始从下面露出;
+    //   2) 只留图片本身在最上层溶解(240ms),完后才真正 popBackStack。
+    // 这样被"带入"退场的只有图片,页面框架(黑底/顶底栏)不整页闪黑。
+    val leaving = remember { androidx.compose.animation.core.MutableTransitionState(false) }
+    val exitTransition = rememberTransition(leaving, label = "lb-exit")
+    val backdropAlpha by exitTransition.animateFloat(
+        transitionSpec = { tween(durationMillis = 120) },
+        label = "backdrop",
+    ) { if (it) 0f else 1f }
+    val imageAlpha by exitTransition.animateFloat(
+        transitionSpec = { tween(durationMillis = 240, delayMillis = 100) },
+        label = "image",
+    ) { if (it) 0f else 1f }
+    val onBackKey = {
+        if (!leaving.currentState) {
+            leaving.targetState = true
+        }
+        Unit
+    }
+    LaunchedEffect(leaving.targetState) {
+        if (leaving.targetState) {
+            delay(360) // 两段动画总时长(120ms 底 + 后续 240ms 图,含错峰)
+            onBack()
+        }
+    }
+
     val detail = state.detail
-    Box(Modifier.fillMaxSize().background(Color(8, 9, 10))) {
+    Box(Modifier.fillMaxSize().background(Color(8, 9, 10, (backdropAlpha * 255).toInt()))) {
         if (detail == null) {
             if (state.error != null) {
                 Text(
@@ -86,7 +115,7 @@ fun LightboxScreen(
             // 设置开「加载原图」走 /media/ 原图,否则 2400px webp 预览
             val photo = photos[page]
             val url = if (loadOriginal) photo.fullUrl else photo.previewUrl
-            PhotoPage(url, onToggleChrome = { chromeVisible = !chromeVisible })
+            PhotoPage(url, imageAlpha, onToggleChrome = { chromeVisible = !chromeVisible })
         }
         LaunchedEffect(pagerState.currentPage, chromeVisible) {
             if (chromeVisible) {
@@ -94,15 +123,10 @@ fun LightboxScreen(
                 chromeVisible = false
             }
         }
-        val chromeAlpha by animateFloatAsState(
-            targetValue = if (chromeVisible) 1f else 0f,
-            animationSpec = tween(180),
-            label = "chrome",
-        )
 
 
         AnimatedVisibility(
-            visible = chromeVisible,
+            visible = chromeVisible && !leaving.targetState,
             enter = fadeIn(tween(180)),
             exit = fadeOut(tween(180)),
             modifier = Modifier.align(Alignment.TopCenter),
@@ -123,7 +147,7 @@ fun LightboxScreen(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .statusBarsPadding()
-                        .clickableNoRipple { onBack() }
+                        .clickableNoRipple { onBackKey() }
                         .padding(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
                 )
                 Text(
@@ -140,7 +164,7 @@ fun LightboxScreen(
         }
 
         AnimatedVisibility(
-            visible = chromeVisible,
+            visible = chromeVisible && !leaving.targetState,
             enter = fadeIn(tween(180)),
             exit = fadeOut(tween(180)),
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -195,7 +219,7 @@ fun LightboxScreen(
 }
 
 @Composable
-private fun PhotoPage(url: String, onToggleChrome: () -> Unit) {
+private fun PhotoPage(url: String, imageAlpha: Float, onToggleChrome: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val zoomState = rememberZoomableImageState()
         ZoomableAsyncImage(
@@ -204,7 +228,7 @@ private fun PhotoPage(url: String, onToggleChrome: () -> Unit) {
             state = zoomState,
             contentScale = ContentScale.Fit,
             onClick = { onToggleChrome() },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = imageAlpha },
         )
     }
 }

@@ -161,15 +161,16 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     onOpenPhoto = { s, idx -> nav.navigate("lightbox/$s/$idx") },
                 )
             }
-            // 灯箱是"浮层"语义:黑底整幅溶解盖住/揭开详情页,下层始终全亮不参与交叉淡化,
-            // 避免两层半透明叠加发闷;复写 NavHost 默认过渡
+            // 灯箱是"浮层"语义:退出动画由 LightboxScreen 屏内自己编排
+            // (黑底/chrome 先撤 120ms → 只留图片单独溶解 240ms → 完后才 pop),
+            // 导航层 popExit 不再整体淡出,避免整页(黑底+顶底栏)被一起带入退场
             composable(
                 "lightbox/{slug}/{idx}",
                 arguments = listOf(navArgument("slug") { }, navArgument("idx") { }),
                 enterTransition = { fadeIn(tween(200)) },
                 exitTransition = { ExitTransition.KeepUntilTransitionsFinished },
                 popEnterTransition = { EnterTransition.None },
-                popExitTransition = { fadeOut(tween(220)) },
+                popExitTransition = { ExitTransition.KeepUntilTransitionsFinished },
             ) { entry ->
                 val slug = entry.arguments?.getString("slug").orEmpty()
                 val idx = entry.arguments?.getString("idx")?.toIntOrNull() ?: 0
