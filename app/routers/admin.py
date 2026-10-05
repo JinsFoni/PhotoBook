@@ -155,7 +155,7 @@ async def dashboard(request: Request, s: Session = Depends(get_db)):
 
 # ---- Models CRUD ----------------------------------------------------------------
 
-ADMIN_PAGE_SIZE = 50  # 模特/写真集列表每页条数
+ADMIN_PAGE_SIZE = 20  # 模特/写真集列表每页条数
 
 
 @router.get("/models")
@@ -173,6 +173,22 @@ async def admin_models(request: Request, s: Session = Depends(get_db),
         "col_counts": counts, "error": request.query_params.get("error", ""),
         "q": q, "cur_page": page, "total_pages": total_pages, "total_count": total,
     })
+
+
+@router.get("/api/models")
+async def admin_models_api(s: Session = Depends(get_db), q: str = "", page: int = 1):
+    """模特列表翻页端点:前端拦截翻页链接 fetch 后原地重绘,不整页刷新。"""
+    q = q.strip()[:100]
+    query = _search_q(Model, q, Model.name, Model.slug, Model.stage_name)
+    models, page, total_pages, total = _paged_items(
+        s, query, page, ADMIN_PAGE_SIZE, Model.name)
+    counts = dict(s.execute(
+        select(Collection.model_id, func.count(Collection.id))
+        .group_by(Collection.model_id)).all())
+    return {"models": [{"id": m.id, "name": m.name, "slug": m.slug,
+                        "stageName": m.stage_name or "",
+                        "collections": counts.get(m.id, 0)} for m in models],
+            "page": page, "totalPages": total_pages, "total": total}
 
 
 @router.get("/models/new")
@@ -277,7 +293,18 @@ async def admin_collections(request: Request, s: Session = Depends(get_db),
     })
 
 
-@router.get("/collections/new")
+@router.get("/api/collections")
+async def admin_collections_api(s: Session = Depends(get_db), q: str = "", page: int = 1):
+    """写真集列表翻页端点:前端拦截翻页链接 fetch 后原地重绘,不整页刷新。"""
+    q = q.strip()[:100]
+    query = _search_q(Collection, q, Collection.title, Collection.slug)
+    cols, page, total_pages, total = _paged_items(
+        s, query, page, ADMIN_PAGE_SIZE, desc(Collection.id))
+    return {"collections": [{"id": c.id, "title": c.title or "", "slug": c.slug,
+                             "model": c.model.name if c.model else "",
+                             "publishedAt": str(c.published_at or ""),
+                             "status": c.status} for c in cols],
+            "page": page, "totalPages": total_pages, "total": total}
 async def admin_collection_new(request: Request, s: Session = Depends(get_db)):
     models = s.scalars(select(Model).order_by(Model.name)).all()
     return templates.TemplateResponse(request, "admin/collection_form.html", {
