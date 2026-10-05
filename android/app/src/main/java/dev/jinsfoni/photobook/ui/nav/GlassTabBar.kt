@@ -37,6 +37,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
@@ -145,21 +146,23 @@ fun GlassTabBar(
                 },
             ),
     ) {
-        // 斜向流光(::after,115deg sheen)
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.linearGradient(
-                        0f to colors.sheenA,
-                        0.30f to Color.Transparent,
-                        0.68f to Color.Transparent,
-                        1f to colors.sheenB,
-                        start = Offset.Zero,
-                        end = Offset(1000f, 466f), // ≈115°
+        // 斜向流光(::after,115deg sheen)——暗色下左端泛白已整体去掉,仅浅色保留
+        if (colors.ink.luminance() < 0.5f) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            0f to colors.sheenA,
+                            0.30f to Color.Transparent,
+                            0.68f to Color.Transparent,
+                            1f to colors.sheenB,
+                            start = Offset.Zero,
+                            end = Offset(1000f, 466f), // ≈115°
+                        )
                     )
-                )
-        )
+            )
+        }
         // inset 高光/暗边/内晕
         InsetHighlight()
 
