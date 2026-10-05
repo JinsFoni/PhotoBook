@@ -74,7 +74,7 @@ fun PhotoTab.label(): String = when (this) {
     PhotoTab.FAVORITES -> stringResource(R.string.favorites_noun)
 }
 
-private val TabHeight = 64.dp
+private val TabHeight = 58.dp
 private val TabShape = RoundedCornerShape(999.dp)
 private val ShellPad = 6.dp
 
@@ -298,7 +298,7 @@ private fun Modifier.liquidGlassSurface(
                 chromaticAberration = 0.4f,
             )
         } else {
-            // 壳体透镜:64dp 高 bar 用 8dp(过强会让上下折射边在中线相撞出虾线)
+            // 壳体透镜:58dp 高 bar 用 8dp(过强会让上下折射边在中线相撞出虾线)
             lens(
                 refractionHeight = 8.dp.toPx(),
                 refractionAmount = 8.dp.toPx(),
