@@ -41,7 +41,7 @@ import dev.jinsfoni.photobook.ui.components.photoClickable
 import dev.jinsfoni.photobook.ui.nav.LocalGlassBarBottomInset
 
 /**
- * S2 写真列表:强制 dark 主题、2 列卡流、筛选行(标签 chips + 排序 + 计数)、
+ * S2 写真列表:2 列卡流、筛选行(标签 chips + 排序 + 计数)、
  * 滚动分页(20/页)。进入时由导航传入 tag(点 S1 标签)。
  */
 @Composable
@@ -51,7 +51,7 @@ fun CollectionsScreen(
     onOpenSearch: () -> Unit = {},
     vm: CollectionsViewModel = hiltViewModel(),
 ) {
-    // 强制 dark(深色画廊):主题覆盖由 MainShell 按 tab 统一包 ScopedTheme,这里不改全局
+    // 所有页面统一跟随全局主题(设置页切换),不再有页面级强制深/浅
     val colors = LocalPhotoColors.current
     val state by vm.state.collectAsState()
     val gridState = rememberLazyGridState()

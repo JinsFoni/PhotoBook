@@ -68,7 +68,7 @@ fun FavoritesScreen(
     val colors = LocalPhotoColors.current
     val state by vm.state.collectAsState()
 
-    // S7 深色画廊模式:主题覆盖由 MainShell 按 tab 统一包 ScopedTheme,这里不再改全局
+    // 所有页面统一跟随全局主题(设置页切换),不再有页面级强制深/浅
     LaunchedEffect(Unit) { vm.refresh() }
 
     Column(Modifier.fillMaxSize()) {

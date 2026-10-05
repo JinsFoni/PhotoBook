@@ -5,7 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -25,27 +24,6 @@ object ThemeState {
 
     /** 液态玻璃底栏开关:false = 现有薄磨砂;true = BiliPai 同款液态玻璃(API 33+)。 */
     var liquidGlass by mutableStateOf(false)
-}
-
-/**
- * 页面级主题覆盖:只影响包裹范围内的 LocalPhotoColors/LocalThemeMode,
- * 不改写 ThemeState.mode(全局态只归设置页管)。离开组合自动失效,无需恢复。
- * mode = null 时原样放行(跟随全局/上层)。
- */
-@Composable
-fun ScopedTheme(mode: ThemeMode?, content: @Composable () -> Unit) {
-    if (mode == null) {
-        content()
-        return
-    }
-    val outer = LocalPhotoColors.current
-    val colors = remember(mode, outer) { outer.forMode(mode) }
-    CompositionLocalProvider(
-        LocalPhotoColors provides colors,
-        LocalThemeMode provides mode,
-    ) {
-        content()
-    }
 }
 
 fun PhotoColors.forMode(mode: ThemeMode): PhotoColors = when (mode) {

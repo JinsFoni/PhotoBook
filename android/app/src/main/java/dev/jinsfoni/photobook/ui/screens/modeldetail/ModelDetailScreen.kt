@@ -37,8 +37,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
-import dev.jinsfoni.photobook.core.design.ScopedTheme
-import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.ui.components.FavoriteButton
 import dev.jinsfoni.photobook.ui.components.CollectionCard
 import dev.jinsfoni.photobook.ui.components.EmptyState
@@ -50,7 +48,7 @@ import dev.jinsfoni.photobook.ui.icons.StrokeIcon
 
 /**
  * S6 模特详情:顶部 2:3 hero(沉浸 + 渐隐纱 + 返回)→ 刊头(名/stage/bio/meta)
- * → 「写真 N」2 列卡。强制 dark(媒体头部白字),离开恢复。
+ * → 「写真 N」2 列卡。跟随全局主题。
  */
 @Composable
 fun ModelDetailScreen(
@@ -59,14 +57,10 @@ fun ModelDetailScreen(
     onOpenCollection: (String) -> Unit,
     vm: ModelDetailViewModel = hiltViewModel(),
 ) {
-    // 强制 dark(媒体头部白字):页面级覆盖 + 自绘 paper 底,退出页面自动失效,不改全局主题
-    ScopedTheme(mode = ThemeMode.DARK) {
-        val colors = LocalPhotoColors.current
-        val state by vm.state.collectAsState()
+    val colors = LocalPhotoColors.current
+    val state by vm.state.collectAsState()
 
-        LaunchedEffect(Unit) { vm.load(slug) }
-
-        Column(Modifier.fillMaxSize().background(colors.paper)) {
+    LaunchedEffect(Unit) { vm.load(slug) }
 
     when {
         state.loading -> DetailSkeleton()
@@ -87,8 +81,6 @@ fun ModelDetailScreen(
                     modifier = Modifier.photoClickable { vm.load(slug) }.padding(8.dp),
                 )
             }
-        }
-    }
         }
     }
 }

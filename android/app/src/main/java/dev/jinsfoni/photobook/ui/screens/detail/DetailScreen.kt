@@ -37,8 +37,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
-import dev.jinsfoni.photobook.core.design.ScopedTheme
-import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
 import dev.jinsfoni.photobook.ui.components.arrangeTwoColumnWall
@@ -47,7 +45,7 @@ import dev.jinsfoni.photobook.ui.icons.HeartIcon
 import dev.jinsfoni.photobook.ui.icons.StrokeIcon
 
 /**
- * S3 详情(强制 light):crumb + 衬线标题 + byline + TagRow → 2 列瀑布照片墙;
+ * S3 详情:crumb + 衬线标题 + byline + TagRow → 2 列瀑布照片墙;
  * 底部玻璃条(收藏心形 + 页码,下载 M1 简化由 S4 承担)。
  */
 @Composable
@@ -56,26 +54,6 @@ fun DetailScreen(
     onBack: () -> Unit,
     onOpenPhoto: (slug: String, idx: Int) -> Unit,
     vm: DetailViewModel = hiltViewModel(),
-) {
-    // 强制 light:页面级 ScopedTheme 覆盖 + 自绘 paper 底(覆盖只管本页,不改全局主题)
-    ScopedTheme(mode = ThemeMode.LIGHT) {
-        val colors = LocalPhotoColors.current
-        Column(
-            Modifier
-                .fillMaxSize()
-                .background(colors.paper),
-        ) {
-            DetailContent(slug, onBack, onOpenPhoto, vm)
-        }
-    }
-}
-
-@Composable
-private fun DetailContent(
-    slug: String,
-    onBack: () -> Unit,
-    onOpenPhoto: (slug: String, idx: Int) -> Unit,
-    vm: DetailViewModel,
 ) {
     val colors = LocalPhotoColors.current
     val state by vm.state.collectAsState()
