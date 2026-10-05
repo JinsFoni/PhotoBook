@@ -25,9 +25,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -93,15 +95,32 @@ fun LightboxScreen(
     androidx.activity.compose.BackHandler(enabled = !leaving.currentState) { onBackKey() }
 
     val detail = state.detail
+    // pagerState 提前创建:虚化垫底需要读 targetPage 跟随翻页;
+    // photos 异步到达后先把位置跳到打开时指定的那页(pageCount 由 lambda 动态取)
+    val pagerState = rememberPagerState(initialPage = 0) { detail?.photos?.size ?: 0 }
+    LaunchedEffect(detail?.photos) {
+        val size = detail?.photos?.size ?: return@LaunchedEffect
+        if (size > 0) pagerState.scrollToPage(initialIdx.coerceIn(0, size - 1))
+    }
 
-    // 虚化主题:黑底换成虚化垫底,与详情页同一张 hero 图——开合灯箱时两层背景
-    // 完全一致,转场无缝;其他主题保持全出血纯黑。退出编排里虚化层随
-    // backdropAlpha 淡出,图片本身仍走 imageAlpha 错峰溶解,分层不变。
+    // 虚化主题:黑底换成虚化垫底;其他主题保持全出血纯黑。垫底代表图跟随
+    // 当前页:翻页越过半程即切到该页缩略图,和图片对应。首帧数据未到时退回
+    // hero(与详情页同图,开合转场无缝)。退出编排里虚化层随 backdropAlpha
+    // 淡出,图片本身仍走 imageAlpha 错峰溶解,分层不变。
     val blurTheme = LocalThemeMode.current == ThemeMode.BLUR
+    // 垫底代表图跟随当前页:翻页越过半程即切到该页缩略图,和图片对应
+    var backdropIdx by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(Unit) {
+        snapshotFlow { pagerState.targetPage }.collect { backdropIdx = it }
+    }
     Box(Modifier.fillMaxSize()) {
         if (blurTheme) {
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = backdropAlpha }) {
-                BlurBackdrop(state.detail?.heroUrl ?: state.detail?.photos?.firstOrNull()?.thumbUrl)
+                val photos = detail?.photos
+                BlurBackdrop(
+                    photos?.getOrNull(backdropIdx)?.thumbUrl
+                        ?: state.detail?.heroUrl,
+                )
             }
         } else {
             Box(
@@ -125,9 +144,6 @@ fun LightboxScreen(
         var chromeVisible by remember { mutableStateOf(true) }
 
         val photos = detail.photos
-        val pagerState = rememberPagerState(
-            initialPage = initialIdx.coerceIn(0, (photos.size - 1).coerceAtLeast(0)),
-        ) { photos.size }
 
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             // 设置开「加载原图」走 /media/ 原图,否则 2400px webp 预览
