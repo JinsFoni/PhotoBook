@@ -590,19 +590,28 @@ table { border-collapse: collapse; }
   inset: 0;
   z-index: 95;
   background: var(--panel-solid);
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   opacity: 0;
   visibility: hidden;
   transition: opacity var(--t-ui) var(--ease), visibility var(--t-ui);
 }
 .search[data-open="true"] { opacity: 1; visibility: visible; }
+/* 打开即程序化聚焦输入框, input 命中全局 :focus-visible 的 accent 描边, 压掉 */
+.search :focus-visible { outline: none; }
+/* blur 主题: 不透明 panel-solid 会盖住整页虚化垫底层, 换半透磨砂与全站一致 */
+html[data-theme="blur"] .search {
+  background: rgba(16, 17, 20, 0.72);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  /* 独立合成层: 避免 Safari 滚动时 backdrop 每帧重模糊下层内容的抖动 */
+  transform: translateZ(0);
+}
 
 .search__bar {
   border-bottom: 1px solid var(--line);
-  position: sticky;
-  top: 0;
-  background: var(--panel-solid);
-  z-index: 2;
+  flex: none;
 }
 .search__bar-inner {
   height: var(--header-h);
@@ -626,7 +635,14 @@ table { border-collapse: collapse; }
 }
 .search__input::placeholder { color: var(--ink-3); }
 
-.search__body { padding-block: var(--s7) var(--s10); }
+/* 结果区自己滚(栏不动): 内容从栏下方开始, 不会钻到栏底, 栏无需叠任何
+   底色/磨砂 —— 之前 sticky 栏叠在浮层磨砂上, 双层叠加压出色带 */
+.search__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-block: var(--s7) var(--s10);
+}
 
 .search__group + .search__group { margin-top: var(--s8); }
 .search__group-title {
@@ -2022,6 +2038,8 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lightbox__nav--prev { left: var(--s4); }
 .lightbox__nav--next { right: var(--s4); }
 .lightbox__nav svg { width: 22px; height: 22px; }
+/* 键盘切图时箭头按钮会被聚焦, 压掉全局 :focus-visible 的 accent 描边 */
+.lightbox :focus-visible { outline: none; }
 
 .lightbox__foot {
   flex: none;
@@ -2046,6 +2064,10 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   align-items: center;
   gap: var(--s3);
 }
+/* 灯箱下载按钮去边框(透明保占位, 免得与相邻图标基线错位; hover 也不回显);
+   文字已去掉只剩图标, padding 也一并收掉与收藏图标对齐 */
+.lightbox__foot-actions .btn--ghost,
+.lightbox__foot-actions .btn--ghost:hover { border-color: transparent; padding-inline: var(--s2); }
 @media (max-width: 760px) {
   .lightbox__foot { height: auto; padding-bottom: var(--s5); flex-direction: column; gap: var(--s3); }
   .lightbox__foot-actions { position: static; }
