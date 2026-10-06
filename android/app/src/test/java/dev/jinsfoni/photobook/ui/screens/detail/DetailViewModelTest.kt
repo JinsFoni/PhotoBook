@@ -87,10 +87,10 @@ class DetailViewModelTest {
         waitUntil { vm.state.value.detail != null }
         val d = vm.state.value.detail!!
         assertEquals("TA", d.title)
-        // coverThumb 已带 t/900x 前缀 → 直拼,不得再包 /t/600/
+        // coverThumb 已带 t/900x 前缀 → 直拼,不得再包 /t/900/
         assertEquals("http://localhost:8000/t/900x/a/cover.webp", d.heroUrl)
         assertEquals(1, d.photos.size)
-        assertEquals("http://localhost:8000/t/600/a/p0.jpg.webp", d.photos[0].thumbUrl)
+        assertEquals("http://localhost:8000/t/900/a/p0.jpg.webp", d.photos[0].thumbUrl)
         assertNull(vm.state.value.error)
     }
 

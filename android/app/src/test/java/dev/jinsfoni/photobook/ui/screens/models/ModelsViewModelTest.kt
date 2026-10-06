@@ -80,7 +80,7 @@ class ModelsViewModelTest {
         waitUntil { vm.state.value.items.isNotEmpty() }
         val m = vm.state.value.items[0]
         assertEquals("Aki", m.name)
-        assertEquals("http://localhost:8000/t/600x900/media/models/aki/avatar.jpg.webp", m.imageUrl)
+        assertEquals("http://localhost:8000/t/900x1350/media/models/aki/avatar.jpg.webp", m.imageUrl)
         assertNull(vm.state.value.error)
     }
 
