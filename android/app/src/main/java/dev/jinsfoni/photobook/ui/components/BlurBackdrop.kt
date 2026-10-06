@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -28,11 +29,13 @@ import dev.jinsfoni.photobook.core.design.ThemeMode
  * 虚化主题垫底层(ui.css .blur-canvas):真实代表图 blur(42px)+saturate(1.12)+scale(1.35),
  * 上面压深色纱(rgba(8,9,10,.78)→.66)保证前景对比。非虚化主题不渲染任何东西;
  * 图片 URL 由各屏自备(当前数据的代表图),无图时退回纯 paper 基色。
+ * clipToBounds 必须挂:图放大 1.35 把模糊光晕推出屏外,但溢出部分在 Pager 横滑 /
+ * NavHost 滑动转场时会铺到相邻页上(单页静止时被屏幕裁掉看不见)。
  */
 @Composable
 fun BlurBackdrop(imageUrl: String?, modifier: Modifier = Modifier) {
     if (LocalThemeMode.current != ThemeMode.BLUR) return
-    Box(modifier.fillMaxSize()) {
+    Box(modifier.fillMaxSize().clipToBounds()) {
         if (imageUrl != null) {
             // 换图淡入,对齐 web 的 0.55s opacity 过渡
             var alpha by remember(imageUrl) { mutableFloatStateOf(0f) }
