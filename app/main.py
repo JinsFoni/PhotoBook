@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
@@ -56,6 +56,9 @@ app = FastAPI(title="Photo Collection", lifespan=lifespan)
 # 4) 鉴权拦截。
 
 PUBLIC_PATHS = ("/login", "/logout", "/healthz", "/language")
+
+# PWA 基础设施未登录也放行(SW 注册/更新发生在任意页面, 不能被 302 到登录页)
+_PUBLIC_PREFIXES = ("/sw.js", "/manifest.webmanifest")
 
 
 def _resolve_lang(s, request: Request, user) -> str:
@@ -115,7 +118,8 @@ async def auth_wall(request: Request, call_next):
     set_language(lang)
     request.state.lang = lang
 
-    if any(path == p or path.startswith(p + "/") for p in PUBLIC_PATHS):
+    if any(path == p or path.startswith(p + "/") for p in PUBLIC_PATHS) \
+            or any(path == p or path.startswith(p) for p in _PUBLIC_PREFIXES):
         return await call_next(request)
 
     request.state.user = user
@@ -358,3 +362,24 @@ def thumb(spec: str, request: Request):
 # 静态资源(design 系统的 css/js)
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+# ---- PWA ---------------------------------------------------------------------
+# SW 文件必须在根 scope(/sw.js), 放 /static/ 下 scope 就只剩 /static/;
+# 认证墙早退名单里也要放行, 否则未登录时被 302 到 /login 拿到的是 HTML。
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    return FileResponse(
+        static_dir / "sw.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def webmanifest():
+    return FileResponse(
+        static_dir / "manifest.webmanifest",
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "no-cache"},
+    )

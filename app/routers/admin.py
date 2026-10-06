@@ -7,7 +7,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, unquote as _unquote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -128,6 +128,19 @@ def _back_qs(status: str, page: int) -> str:
 templates.env.globals["_back_qs"] = _back_qs
 
 
+def _back_qsp(q: str, page: int) -> str:
+    """模特/写真集列表操作表单的回跳查询串(保持搜索词与页码;默认值则省略)。"""
+    params: dict[str, str] = {}
+    if q:
+        params["q"] = q
+    if page > 1:
+        params["page"] = str(page)
+    return ("?" + quote(urlencode(params))) if params else ""
+
+
+templates.env.globals["_back_qsp"] = _back_qsp
+
+
 # ---- Dashboard ----------------------------------------------------------------
 
 @router.get("", response_class=HTMLResponse)
@@ -172,12 +185,18 @@ async def admin_models(request: Request, s: Session = Depends(get_db),
         "page": "admin", "models": models,
         "col_counts": counts, "error": request.query_params.get("error", ""),
         "q": q, "cur_page": page, "total_pages": total_pages, "total_count": total,
+        "flash": request.query_params.get("flash", ""),
     })
 
 
 @router.get("/api/models")
 async def admin_models_api(s: Session = Depends(get_db), q: str = "", page: int = 1):
     """模特列表翻页端点:前端拦截翻页链接 fetch 后原地重绘,不整页刷新。"""
+    return _models_list_payload(s, q, page)
+
+
+def _models_list_payload(s: Session, q: str, page: int) -> dict:
+    """模特列表分页 payload(翻页 API 与删除后 AJAX 重绘共用, 保证口径一致)。"""
     q = q.strip()[:100]
     query = _search_q(Model, q, Model.name, Model.slug, Model.stage_name)
     models, page, total_pages, total = _paged_items(
@@ -257,8 +276,10 @@ async def admin_model_update(request: Request, model_id: int, s: Session = Depen
 
 
 @router.post("/models/{model_id}/delete")
-async def admin_model_delete(model_id: int, s: Session = Depends(get_db)):
+async def admin_model_delete(request: Request, model_id: int, s: Session = Depends(get_db),
+                             back: str = Form("")):
     m = s.get(Model, model_id)
+    flash = ""
     if m:
         # 该模特名下所有写真集一并删除(DB + 磁盘: 照片/缩略图/收藏);
         # ORM 无级联(DB 层 model_id SET NULL 只会留下无主写真集), 显式删
@@ -273,7 +294,9 @@ async def admin_model_delete(model_id: int, s: Session = Depends(get_db)):
         for slug, filenames in victims:
             media.purge_collection_files(slug, filenames)
         tagging.prune_empty_tags(s)
-    return RedirectResponse("/admin/models", 303)
+        flash = t("模特已删除: {n}", n=m.name)
+    return _list_action_response(request, s, _models_list_payload,
+                                 "/admin/models", back, flash)
 
 
 # ---- Collections CRUD ------------------------------------------------------------
@@ -290,12 +313,18 @@ async def admin_collections(request: Request, s: Session = Depends(get_db),
         "page": "admin", "collections": cols, "models": models,
         "error": request.query_params.get("error", ""),
         "q": q, "cur_page": page, "total_pages": total_pages, "total_count": total,
+        "flash": request.query_params.get("flash", ""),
     })
 
 
 @router.get("/api/collections")
 async def admin_collections_api(s: Session = Depends(get_db), q: str = "", page: int = 1):
     """写真集列表翻页端点:前端拦截翻页链接 fetch 后原地重绘,不整页刷新。"""
+    return _collections_list_payload(s, q, page)
+
+
+def _collections_list_payload(s: Session, q: str, page: int) -> dict:
+    """写真集列表分页 payload(翻页 API 与删除后 AJAX 重绘共用, 保证口径一致)。"""
     q = q.strip()[:100]
     query = _search_q(Collection, q, Collection.title, Collection.slug)
     cols, page, total_pages, total = _paged_items(
@@ -362,8 +391,10 @@ async def admin_collection_update(request: Request, col_id: int, s: Session = De
 
 
 @router.post("/collections/{col_id}/delete")
-async def admin_collection_delete(col_id: int, s: Session = Depends(get_db)):
+async def admin_collection_delete(request: Request, col_id: int, s: Session = Depends(get_db),
+                                  back: str = Form("")):
     c = s.get(Collection, col_id)
+    flash = ""
     if c:
         slug, filenames = c.slug, [p.filename for p in c.photos]
         model_id = c.model_id
@@ -376,7 +407,9 @@ async def admin_collection_delete(col_id: int, s: Session = Depends(get_db)):
         s.commit()
         media.purge_collection_files(slug, filenames)
         tagging.prune_empty_tags(s)
-    return RedirectResponse("/admin/collections", 303)
+        flash = t("写真集已删除: {t}", t=c.title or slug)
+    return _list_action_response(request, s, _collections_list_payload,
+                                 "/admin/collections", back, flash)
 
 
 # ---- Tags ----------------------------------------------------------------------
@@ -583,6 +616,31 @@ async def admin_harvest_import(s: Session = Depends(get_db)):
 
 def _is_ajax(request: Request) -> bool:
     return request.headers.get("x-requested-with") == "fetch"
+
+
+def _list_action_response(request: Request, s: Session, payload_fn,
+                          list_path: str, back: str, flash: str):
+    """模特/写真集列表操作(删除)的统一响应, 与任务队列 _action_response 同模式:
+
+    AJAX 请求返回列表 payload(前端原地重绘, 不整页刷新);
+    普通表单提交保持 303 重定向(无 JS 环境兼容)。
+    back 仅接受 ?q=<词>&page=<n> / 子集的白名单形态, 不匹配则回第 1 页。
+    """
+    if _is_ajax(request):
+        m = re.fullmatch(r"\?q=([^&]*)(?:&page=(\d+))?|\?page=(\d+)", back or "")
+        q = ""
+        page = 1
+        if m:
+            q = _unquote(m.group(1) or "") if m.group(1) is not None else ""
+            page = int(m.group(2) or m.group(3) or 1)
+        payload = payload_fn(s, q, page)
+        if flash:
+            payload["flash"] = flash
+        return payload
+    target = list_path + (back if back.startswith("?") else "")
+    if flash:
+        target += ("&" if back else "?") + "flash=" + quote(flash)
+    return RedirectResponse(target, 303)
 
 
 def _action_response(request: Request, s: Session, status: str, page: int,

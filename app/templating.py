@@ -140,6 +140,12 @@ def blur_src_json(request: Request) -> str:
     return json.dumps({"src": src, "fp": _blur_fingerprint(src)}, ensure_ascii=False)
 
 
+def is_pwa(request: Request) -> bool:
+    """PWA 注册开关, 环境变量 PWA_ENABLED 可关(Docker 部署不需要时)。"""
+    from .config import settings
+    return settings.pwa_enabled
+
+
 templates.env.globals["media"] = media_url
 templates.env.globals["media_orig"] = media_orig
 from .services.avatar import avatar_data_uri as _avatar_uri  # noqa: E402
@@ -148,6 +154,7 @@ templates.env.globals["app_name"] = "Photo Collection"
 templates.env.globals["boot_json"] = boot_json
 templates.env.globals["asset_ver"] = ASSET_VER
 templates.env.globals["blur_src_json"] = blur_src_json
+templates.env.globals["is_pwa"] = is_pwa
 templates.env.globals["t"] = i18n.translate
 from .db import local_dt as _local_dt  # noqa: E402
 templates.env.globals["local_time"] = lambda dt: (
