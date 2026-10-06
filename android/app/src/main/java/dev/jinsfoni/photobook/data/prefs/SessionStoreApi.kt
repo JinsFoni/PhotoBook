@@ -33,6 +33,9 @@ interface SessionStoreApi {
     suspend fun currentToken(): String
 
     suspend fun saveSession(token: String, username: String)
+
+    /** 服务端滑动续期:替换活动档案的 token(不涉及 username)。 */
+    suspend fun renewToken(token: String)
     suspend fun clearSession()
     suspend fun saveBaseUrl(url: String)
 

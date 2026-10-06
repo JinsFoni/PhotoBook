@@ -95,6 +95,19 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         }
     }
 
+    override suspend fun renewToken(token: String) {
+        if (token.isBlank()) return
+        context.dataStore.edit { prefs ->
+            prefs[tokenKey] = token
+            // 同步进活动档案
+            val list = loadProfiles(prefs).toMutableList()
+            val activeId = prefs[activeProfileKey] ?: list.firstOrNull()?.id
+            val idx = list.indexOfFirst { it.id == activeId }
+            if (idx >= 0) list[idx] = list[idx].copy(token = token)
+            prefs[profilesKey] = json.encodeToString(list)
+        }
+    }
+
     override suspend fun clearSession() {
         context.dataStore.edit { prefs ->
             prefs.remove(tokenKey)

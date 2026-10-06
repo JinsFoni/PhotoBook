@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     harvest_session_secret: str = "change-me"
 
     # ---- 会话 -------------------------------------------------------------
-    session_ttl_hours: int = 24 * 14
+    session_ttl_hours: int = 24 * 180
 
     # ---- PWA ---------------------------------------------------------------
     # manifest + service worker(可安装/离线兜底页); 局域网部署不需要时置 false

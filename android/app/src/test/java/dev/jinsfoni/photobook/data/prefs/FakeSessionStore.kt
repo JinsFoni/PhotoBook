@@ -55,6 +55,13 @@ open class FakeSessionStore : SessionStoreApi {
         updateProfile(id) { it.copy(token = "", username = "") }
     }
 
+    override suspend fun renewToken(token: String) {
+        if (token.isBlank()) return
+        tokenFlow.value = token
+        val id = activeIdFlow.value ?: profilesFlow.value.firstOrNull()?.id ?: return
+        updateProfile(id) { it.copy(token = token) }
+    }
+
     override suspend fun saveBaseUrl(url: String) {
         val id = activeIdFlow.value ?: profilesFlow.value.firstOrNull()?.id ?: return
         updateProfile(id) { it.copy(baseUrl = url.trimEnd('/')) }

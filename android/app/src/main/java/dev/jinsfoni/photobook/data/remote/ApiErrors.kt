@@ -15,7 +15,13 @@ import retrofit2.HttpException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** 读 DataStore token,注入 Bearer(无 token 不加头)。 */
+/** 服务端滑动续期响应头:新 token,客户端须持久化替换。 */
+const val RENEW_HEADER = "X-Renewed-Token"
+
+/**
+ * 读 DataStore token,注入 Bearer(无 token 不加头);
+ * 响应带 X-Renewed-Token(服务端滑动续期)时持久化新 token。
+ */
 @Singleton
 class AuthInterceptor @Inject constructor(private val session: SessionStore) : Interceptor {
 
@@ -28,7 +34,11 @@ class AuthInterceptor @Inject constructor(private val session: SessionStore) : I
                 .header("Authorization", "Bearer $token")
                 .build()
         }
-        return chain.proceed(request)
+        val response = chain.proceed(request)
+        response.header(RENEW_HEADER)?.takeIf { it.isNotBlank() }?.let { renewed ->
+            runBlocking { session.renewToken(renewed) }
+        }
+        return response
     }
 }
 

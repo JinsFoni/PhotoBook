@@ -91,6 +91,45 @@ def test_me_bad_token(client):
     assert r.status_code == 401
 
 
+def test_session_no_renew_on_fresh_token(client, token, mobile_user_name):
+    """新签 token 剩余寿命 > 一半:不续期,无响应头,旧 token 继续有效。"""
+    r = client.get("/api/mobile/auth/me", headers=_auth(token))
+    assert r.status_code == 200
+    assert mobile_api.RENEW_HEADER not in r.headers
+    # 旧 token 仍有效
+    assert client.get("/api/mobile/auth/me", headers=_auth(token)).status_code == 200
+
+
+def test_session_sliding_renew(client, mobile_user_name):
+    """剩余寿命不足一半:响应头带新 token,旧 token 作废,新 token 可用。"""
+    from datetime import datetime, timedelta, timezone
+
+    from app.auth import create_session
+    from app.config import settings
+    from app.database import SessionLocal
+    from app.db import Session as DbSession, User
+    from sqlalchemy import select
+
+    s = SessionLocal()
+    try:
+        user = s.scalar(select(User).where(User.username == mobile_user_name))
+        sid = create_session(s, user.id)
+        # 把过期时间改到剩命不足一半
+        old = s.get(DbSession, sid)
+        old.expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.session_ttl_hours / 2 - 1)
+        s.commit()
+    finally:
+        s.close()
+
+    r = client.get("/api/mobile/auth/me", headers=_auth(sid))
+    assert r.status_code == 200
+    renewed = r.headers.get(mobile_api.RENEW_HEADER)
+    assert renewed and renewed != sid
+    # 旧 token 已作废;新 token 可用
+    assert client.get("/api/mobile/auth/me", headers=_auth(sid)).status_code == 401
+    assert client.get("/api/mobile/auth/me", headers=_auth(renewed)).status_code == 200
+
+
 # ---- discover(匿名可读)----
 
 def test_discover_shape(client):

@@ -9,9 +9,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -20,10 +20,13 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from ..auth import create_session, verify_password
+from ..config import settings
 from ..db import Collection, Favorite, Model, Photo, Session as DbSession, Tag, User
 from ..database import get_db
 
 router = APIRouter(prefix="/api/mobile")
+
+RENEW_HEADER = "X-Renewed-Token"    # 滑动续期:响应头携带新 token,客户端持久化替换
 
 THUMB_W_CARD = 600    # 列表卡片 /t/600/
 THUMB_W_HERO = 900    # 详情头图 /t/900x/
@@ -60,7 +63,7 @@ async def mobile_validation_error_handler(request: Request, exc: RequestValidati
 
 # ---- Bearer 鉴权 -------------------------------------------------------------
 
-def _bearer_user(s: Session, authorization: str | None) -> User | None:
+def _bearer_user(s: Session, authorization: str | None, request: Request | None = None) -> User | None:
     if not authorization or not authorization.lower().startswith("bearer "):
         return None
     token = authorization[7:].strip()
@@ -76,13 +79,25 @@ def _bearer_user(s: Session, authorization: str | None) -> User | None:
         s.delete(sess)
         s.commit()
         return None
+    # 滑动续期:剩余寿命不足一半时签发新会话,旧会话作废,
+    # 新 token 经响应头 X-Renewed-Token 下发(中间件落响应头)。
+    half_life = timedelta(hours=settings.session_ttl_hours / 2)
+    if request is not None and expires - datetime.now(timezone.utc) < half_life:
+        new_token = create_session(s, sess.user_id)
+        s.delete(sess)
+        s.commit()
+        request.state.renewed_token = new_token
     return s.get(User, sess.user_id)
 
 
 def mobile_user(s: Session = Depends(get_db),
-                authorization: str | None = Header(default=None)) -> User | None:
-    """可选鉴权:读接口匿名可用,收藏写接口用 require_mobile_user。"""
-    return _bearer_user(s, authorization)
+                authorization: str | None = Header(default=None),
+                request: Request = None) -> User | None:
+    """可选鉴权:读接口匿名可用,收藏写接口用 require_mobile_user。
+
+    FastAPI 注入 request(用于滑动续期留 state);直接调用时可为 None。
+    """
+    return _bearer_user(s, authorization, request)
 
 
 def require_mobile_user(user: User | None = Depends(mobile_user)) -> User:

@@ -334,6 +334,16 @@ app.include_router(admin.router)
 app.include_router(ext_api.router)
 app.include_router(mobile_api.router)
 
+
+@app.middleware("http")
+async def mobile_renewed_token(request: Request, call_next):
+    """滑动续期下发:鉴权依赖在 request.state.renewed_token 留新 token 时落响应头。"""
+    response = await call_next(request)
+    renewed = getattr(request.state, "renewed_token", None)
+    if renewed and request.url.path.startswith("/api/mobile/"):
+        response.headers[mobile_api.RENEW_HEADER] = renewed
+    return response
+
 # 移动端统一错误体(注意:须在 include_router 前注册才对路由生效,这里同模块内完成)
 app.add_exception_handler(mobile_api.ApiError, mobile_api.api_error_handler)
 app.add_exception_handler(RequestValidationError, mobile_api.mobile_validation_error_handler)
