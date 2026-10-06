@@ -231,7 +231,7 @@ private fun HeroCarousel(
                     .photoClickable { onOpen(item.slug) },
             ) {
                 AsyncImage(
-                    // 全屏宽轮播用原图,600 宽卡片缩略图拉伸会糊
+                    // 全屏宽轮播用 2400 档,900 卡片缩略图拉伸会糊
                     model = item.heroUrl ?: item.imageUrl,
                     contentDescription = item.title,
                     contentScale = ContentScale.Crop,

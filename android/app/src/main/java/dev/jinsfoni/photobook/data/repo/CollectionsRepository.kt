@@ -38,7 +38,7 @@ class CollectionsRepository @Inject constructor(
                     slug = m.slug,
                     title = m.name,
                     modelName = m.stage,
-                    imageUrl = m.avatar?.let { MediaUrls.thumb(base, it, 600) },
+                    imageUrl = m.avatar?.let { MediaUrls.thumb(base, it, 900) },
                     count = m.count,
                     tags = m.tags,
                 )
@@ -75,7 +75,7 @@ class CollectionsRepository @Inject constructor(
             photos = dto.photos.map { p ->
                 dev.jinsfoni.photobook.ui.models.PhotoItem(
                     idx = p.idx,
-                    thumbUrl = MediaUrls.thumb(base, p.file, 600),
+                    thumbUrl = MediaUrls.thumb(base, p.file, 900),
                     fullUrl = MediaUrls.original(base, p.file),
                     previewUrl = MediaUrls.thumb(base, p.file, 2400),
                     width = p.w,
@@ -89,9 +89,9 @@ class CollectionsRepository @Inject constructor(
         slug = slug,
         title = title,
         modelName = model_name,
-        // coverThumb 服务端已是 "t/600/x.webp" 前缀 rel,直拼即可
+        // coverThumb 服务端已是 "t/900/x.webp" 前缀 rel,直拼即可(与 web 网格同档)
         imageUrl = coverThumb?.let { MediaUrls.fromPrefixed(base, it) },
-        // hero 轮播全屏宽,600 缩略图会糊 → /t/2400/ 档(同灯箱 previewUrl)
+        // hero 轮播全屏宽,900 缩略图拉伸会糊 → /t/2400/ 档(同灯箱 previewUrl)
         heroUrl = cover?.let { MediaUrls.thumb(base, it, 2400) },
         count = count,
         tags = tags,
@@ -101,7 +101,7 @@ class CollectionsRepository @Inject constructor(
         slug = slug,
         title = title,
         modelName = model_name,
-        // S2 列表卡的 coverThumb 同为 "t/600/…webp" 前缀 rel,直拼(origin 根)
+        // S2 列表卡的 coverThumb 同为 "t/900/…webp" 前缀 rel,直拼(origin 根)
         imageUrl = coverThumb?.let { MediaUrls.fromPrefixed(base, it) },
         heroUrl = cover?.let { MediaUrls.thumb(base, it, 2400) },
         count = count,

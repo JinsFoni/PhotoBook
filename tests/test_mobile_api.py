@@ -313,7 +313,7 @@ def test_favorites_resolve_roundtrip(client, token):
     assert [c["slug"] for c in data["collections"]] == [slug]
     assert data["photos"][0]["key"] == f"{slug}:{idx}"
     assert data["photos"][0]["file"] == detail["photos"][0]["file"]
-    assert data["photos"][0]["thumb"].startswith("t/600/")
+    assert data["photos"][0]["thumb"].startswith("t/900/")
     client.post("/api/mobile/favorites", headers=h,
                 json={"type": "collection", "key": slug, "added": False})
     client.post("/api/mobile/favorites", headers=h,

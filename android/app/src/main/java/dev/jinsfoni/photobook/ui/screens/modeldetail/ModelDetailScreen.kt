@@ -27,8 +27,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,7 +67,9 @@ fun ModelDetailScreen(
 
     LaunchedEffect(Unit) { vm.load(slug) }
 
-    Box(Modifier.fillMaxSize()) {
+    // 转场时新旧两页同屏叠加,页面根布局必须不透明,否则滑动时缝隙里透出下层页;
+    // 底色必须在根 Box 上——挂到网格会盖住 BlurBackdrop(底色先铺,虚化层垫其上)
+    Box(Modifier.fillMaxSize().background(colors.paper)) {
         // 虚化主题垫底:模特 hero(设计稿 s6 用 cover-1.jpg 同源做法)
         BlurBackdrop(state.detail?.heroUrl)
     when {
@@ -101,8 +107,8 @@ private fun ModelDetailContent(
     val colors = LocalPhotoColors.current
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        // 转场时新旧两页同屏叠加,页面根布局必须不透明,否则滑动时缝隙里透出下层页
-        modifier = Modifier.fillMaxSize().background(colors.paper),
+        // 透明:让根 Box 的虚化垫底透出来(同 DetailScreen 结构)
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 48.dp),
         horizontalArrangement = Arrangement.spacedBy(13.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -118,17 +124,31 @@ private fun ModelDetailContent(
                     model = d.heroUrl,
                     contentDescription = d.name,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        // 底部 alpha 渐隐(DstIn):锐利图淡入背后同源虚化垫底,
+                        // 融合无缝;Offscreen 先把图收进离屏层,渐隐只作用本图
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    0f to Color.Black,
+                                    0.66f to Color.Black,
+                                    1f to Color.Transparent,
+                                ),
+                                blendMode = BlendMode.DstIn,
+                            )
+                        },
                 )
-                // 底部渐隐纱 → 融入 paper
+                // 顶部压暗纱(状态栏/返回钮可读);底部交给 alpha 渐隐融合,不再落实色
                 Box(
                     Modifier
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
-                                0f to Color(0, 0, 0, 60),
-                                0.55f to Color(0, 0, 0, 0),
-                                1f to colors.paper,
+                                0f to Color(0, 0, 0, 90),
+                                0.35f to Color(0, 0, 0, 0),
                             )
                         ),
                 )

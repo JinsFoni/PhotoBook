@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/mobile")
 
 RENEW_HEADER = "X-Renewed-Token"    # 滑动续期:响应头携带新 token,客户端持久化替换
 
-THUMB_W_CARD = 600    # 列表卡片 /t/600/
+THUMB_W_CARD = 900    # 列表卡片 /t/900/(与 web 端网格页同档,共用 HTTP 缓存)
 THUMB_W_HERO = 900    # 详情头图 /t/900x/
 
 
