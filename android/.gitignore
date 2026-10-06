@@ -7,3 +7,5 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+# CI 从 Secrets 解出的正式签名 keystore,绝不入库
+app/release.keystore

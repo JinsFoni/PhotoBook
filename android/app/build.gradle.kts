@@ -21,10 +21,29 @@ android {
         versionName = "0.1.0"
     }
 
+    // 正式签名只在 CI 上存在(storeFile 由 workflow 从 Secrets 解出);
+    // 本地无该文件,自动回落 debug 签名,保持本地构建习惯不变
+    signingConfigs {
+        create("release") {
+            val ksFile = file("release.keystore")
+            if (ksFile.exists()) {
+                storeFile = ksFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             // V1 不配 proguard 规则(计划中的记录在案偏差)
             isMinifyEnabled = false
+            signingConfig = if (signingConfigs.getByName("release").storeFile != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 
