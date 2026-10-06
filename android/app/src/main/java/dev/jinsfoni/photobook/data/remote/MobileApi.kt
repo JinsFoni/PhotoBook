@@ -15,6 +15,7 @@ import dev.jinsfoni.photobook.data.remote.dto.ModelsPageDto
 import dev.jinsfoni.photobook.data.remote.dto.SearchResultDto
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -23,10 +24,15 @@ import retrofit2.http.Query
 interface MobileApi {
 
     @POST("auth/login")
-    suspend fun login(@Body body: LoginRequestDto): LoginResponseDto
+    suspend fun login(
+        @Body body: LoginRequestDto,
+        @Header(HostSelectionInterceptor.HEADER_TARGET_BASE) targetBase: String? = null,
+    ): LoginResponseDto
 
     @GET("auth/me")
-    suspend fun me(): MeDto
+    suspend fun me(
+        @Header(HostSelectionInterceptor.HEADER_TARGET_BASE) targetBase: String? = null,
+    ): MeDto
 
     @GET("discover")
     suspend fun discover(): DiscoverDto

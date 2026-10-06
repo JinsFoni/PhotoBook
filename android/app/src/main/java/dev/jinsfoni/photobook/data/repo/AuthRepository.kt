@@ -36,10 +36,13 @@ class AuthRepository @Inject constructor(
 
     /** S9 添加服务器:登录到新地址并落档激活;失败抛 ApiException。 */
     suspend fun addServer(baseUrl: String, username: String, password: String): MeDto {
-        val token = safeCall { api.login(LoginRequestDto(username, password)) }.token
+        // 活动档案仍是旧服务器,登录/me 必须用请求级头直连新地址
+        val token = safeCall {
+            api.login(LoginRequestDto(username, password), targetBase = baseUrl)
+        }.token
         session.addProfile(baseUrl, token, username)
         return try {
-            safeCall { api.me() }
+            safeCall { api.me(targetBase = baseUrl) }
         } catch (e: ApiException) {
             MeDto(username = username, role = "user")
         }

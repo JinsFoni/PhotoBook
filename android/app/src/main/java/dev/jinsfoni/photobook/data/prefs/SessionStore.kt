@@ -125,7 +125,7 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         token: String,
         username: String,
     ): ServerProfile {
-        val normalized = baseUrl.trimEnd('/')
+        val normalized = withApiPrefix(baseUrl).trimEnd('/')
         var created = ServerProfile(id = UUID.randomUUID().toString(), baseUrl = normalized)
         context.dataStore.edit { prefs ->
             val list = loadProfiles(prefs).toMutableList()
