@@ -84,10 +84,11 @@ class LoginViewModel @Inject constructor(
         }
     }
 
-    /** 地址归一:补 scheme、去尾斜杠;API 前缀由 NetworkModule 拦截层处理(host 根约定)。 */
+    /** 地址归一:补 scheme;统一落成仓库约定的 baseUrl 形态(含 /api/mobile/ 前缀)。 */
     private fun normalizeBaseUrl(raw: String): String {
         var v = raw.trim().trimEnd('/')
         if (!v.startsWith("http://") && !v.startsWith("https://")) v = "http://$v"
-        return v
+        if (!v.endsWith("/api/mobile")) v = "$v/api/mobile"
+        return "$v/"
     }
 }

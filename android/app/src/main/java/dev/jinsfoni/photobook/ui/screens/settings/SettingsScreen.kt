@@ -34,6 +34,7 @@ import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.data.prefs.ServerProfile
+import dev.jinsfoni.photobook.data.prefs.SessionStore
 import dev.jinsfoni.photobook.ui.components.photoClickable
 
 /**
@@ -215,7 +216,7 @@ private fun ServerRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                profile.baseUrl.removePrefix("http://").removePrefix("https://"),
+                SessionStore.displayUrl(profile.baseUrl),
                 style = PhotoType.micro,
                 color = colors.ink3,
                 maxLines = 1,

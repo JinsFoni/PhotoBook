@@ -213,7 +213,7 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
             val parsed = runCatching {
                 json.decodeFromString<List<ServerProfile>>(raw)
             }.getOrDefault(emptyList())
-            if (parsed.isNotEmpty()) return parsed
+            if (parsed.isNotEmpty()) return parsed.map { it.copy(baseUrl = withApiPrefix(it.baseUrl)) }
         }
         val legacyToken = prefs[tokenKey]
         val url = prefs[baseUrlKey]
@@ -222,7 +222,7 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         return listOf(
             ServerProfile(
                 id = "legacy",
-                baseUrl = url,
+                baseUrl = withApiPrefix(url),
                 username = prefs[usernameKey].orEmpty(),
                 token = legacyToken.orEmpty(),
             ),
@@ -239,5 +239,21 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         /** 模拟器宿主回环;真机改局域网 IP(S9 设置页可改)。 */
         // baseUrl 约定含 API 前缀(如 http://host:8000/api/mobile/),Retrofit 相对路径直接拼在后面
         const val DEFAULT_BASE_URL = "http://192.168.0.102:8000/api/mobile/"
+
+        const val API_PREFIX = "/api/mobile"
+
+        /** 存量档案自愈:缺 API 前缀的地址(旧版本只存 host 根)读取时补齐。 */
+        fun withApiPrefix(url: String): String {
+            val v = url.trimEnd('/')
+            if (v.endsWith(API_PREFIX)) return "$v/"
+            return "$v$API_PREFIX/"
+        }
+
+        /** 设置页/登录展示用:剥掉 scheme 与 API 前缀,只留 host[:port]。 */
+        fun displayUrl(url: String): String = url
+            .removePrefix("https://")
+            .removePrefix("http://")
+            .removeSuffix("/")
+            .removeSuffix(API_PREFIX)
     }
 }
