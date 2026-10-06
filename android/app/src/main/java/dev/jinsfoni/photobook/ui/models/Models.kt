@@ -19,6 +19,8 @@ data class CollectionCard(
     val title: String,
     val modelName: String,
     val imageUrl: String?,
+    /** 大图场景(发现页 hero 轮播)用的原图 URL;小卡只看 imageUrl。 */
+    val heroUrl: String? = null,
     val count: Int,
     val tags: List<String>,
 )
