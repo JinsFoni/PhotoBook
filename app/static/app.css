@@ -2022,6 +2022,8 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lightbox__nav--prev { left: var(--s4); }
 .lightbox__nav--next { right: var(--s4); }
 .lightbox__nav svg { width: 22px; height: 22px; }
+/* 键盘切图时箭头按钮会被聚焦, 压掉全局 :focus-visible 的 accent 描边 */
+.lightbox :focus-visible { outline: none; }
 
 .lightbox__foot {
   flex: none;
@@ -2046,6 +2048,10 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   align-items: center;
   gap: var(--s3);
 }
+/* 灯箱下载按钮去边框(透明保占位, 免得与相邻图标基线错位; hover 也不回显);
+   文字已去掉只剩图标, padding 也一并收掉与收藏图标对齐 */
+.lightbox__foot-actions .btn--ghost,
+.lightbox__foot-actions .btn--ghost:hover { border-color: transparent; padding-inline: var(--s2); }
 @media (max-width: 760px) {
   .lightbox__foot { height: auto; padding-bottom: var(--s5); flex-direction: column; gap: var(--s3); }
   .lightbox__foot-actions { position: static; }

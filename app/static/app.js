@@ -617,9 +617,9 @@ window.PC = (function () {
       '<div class="lightbox__foot-actions">' +
       '<button class="icon-btn" type="button" data-lb-fullscreen aria-pressed="false" title="' + t("Fullscreen") + '">' + icon("expand") + "</button>" +
       '<button class="icon-btn" type="button" data-lb-bg aria-pressed="' + (lbBg === "blur" ? "true" : "false") + '" title="' + t("Backdrop: blurred cover") + '">' + icon(lbBg === "blur" ? "blur" : "moon") + "</button>" +
-      '<button class="fav fav--labelled" type="button" data-fav="photo" data-fav-key="" aria-pressed="false" title="' + t("Favourite photo") + '">' +
-      icon("heart") + '<span data-fav-label>' + t("Save") + '</span><span class="sr">' + t("Add to favourites") + "</span></button>" +
-      '<a class="btn btn--ghost btn--sm" data-lb-download download>' + icon("download") + "<span>" + t("Download") + "</span></a>" +
+      '<button class="fav" type="button" data-fav="photo" data-fav-key="" aria-pressed="false" title="' + t("Favourite photo") + '">' +
+      icon("heart") + '<span class="sr">' + t("Add to favourites") + "</span></button>" +
+      '<a class="btn btn--ghost btn--sm" data-lb-download download>' + icon("download") + '<span class="sr">' + t("Download") + "</span></a>" +
       "</div></div>" +
       '<div class="lightbox__progress"><i data-lb-progress></i></div>';
     document.body.appendChild(el);
