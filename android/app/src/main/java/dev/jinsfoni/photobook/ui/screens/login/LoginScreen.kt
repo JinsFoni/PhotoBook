@@ -48,6 +48,8 @@ fun LoginScreen(
 ) {
     val colors = LocalPhotoColors.current
     val state by vm.state.collectAsState()
+    // 首次登录(带地址输入但从设置页进入的不算):文案仍用「登录」
+    val firstRunMode = state.addServerMode && onBack == null
 
     LaunchedEffect(startInAddServerMode) {
         if (startInAddServerMode) vm.startAddServer()
@@ -55,7 +57,8 @@ fun LoginScreen(
     LaunchedEffect(Unit) {
         vm.events.collect { e ->
             if (e is LoginEvent.Success) {
-                if (state.addServerMode) onBack?.invoke() else onLoggedIn()
+                // S9 添加服务器带回设置页;首次登录(无 onBack)进主界面
+                if (state.addServerMode && onBack != null) onBack() else onLoggedIn()
             }
         }
     }
@@ -77,7 +80,11 @@ fun LoginScreen(
                 textAlign = TextAlign.Center,
             )
             Text(
-                if (state.addServerMode) stringResource(R.string.connect_subtitle) else stringResource(R.string.login_subtitle),
+                when {
+                    firstRunMode -> stringResource(R.string.login_subtitle)
+                    state.addServerMode -> stringResource(R.string.connect_subtitle)
+                    else -> stringResource(R.string.login_subtitle)
+                },
                 style = PhotoType.caption,
                 color = colors.ink3,
                 modifier = Modifier.padding(top = 10.dp),
@@ -131,7 +138,11 @@ fun LoginScreen(
                     .padding(horizontal = 28.dp)
                     .height(46.dp),
             ) {
-                Text(if (state.addServerMode) stringResource(R.string.connect) else stringResource(R.string.login), style = PhotoType.body)
+                Text(
+                    if (state.addServerMode && !firstRunMode) stringResource(R.string.connect)
+                    else stringResource(R.string.login),
+                    style = PhotoType.body,
+                )
             }
 
             Text(

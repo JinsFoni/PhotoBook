@@ -3,6 +3,8 @@ package dev.jinsfoni.photobook.ui.screens.login
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.jinsfoni.photobook.data.prefs.SessionStore
+import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
 import dev.jinsfoni.photobook.data.remote.ApiException
 import dev.jinsfoni.photobook.data.remote.safeCall
 import dev.jinsfoni.photobook.data.repo.AuthRepository
@@ -12,14 +14,16 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class LoginUiState(
     val username: String = "",
     val password: String = "",
-    /** S9 添加服务器模式:多一个服务器地址输入;登录成功不切壳,回设置页。 */
+    /** 首次使用(无任何服务器档案)或 S9 添加服务器:显示地址输入。 */
     val addServerMode: Boolean = false,
+    /** 地址输入预填:首次用默认地址,添加服务器为空。 */
     val baseUrl: String = "",
     val loading: Boolean = false,
     val error: String? = null,
@@ -33,6 +37,7 @@ sealed interface LoginEvent {
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val auth: AuthRepository,
+    private val session: SessionStoreApi,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LoginUiState())
@@ -41,13 +46,27 @@ class LoginViewModel @Inject constructor(
     private val _events = MutableSharedFlow<LoginEvent>(extraBufferCapacity = 1)
     val events: SharedFlow<LoginEvent> = _events.asSharedFlow()
 
+    init {
+        // 首次使用(无任何服务器档案):登录页直接带地址输入,预填默认地址。
+        // 避免"装好 app 只能连编译期写死的服务器"——地址由用户填,登录走 addServer 落档。
+        viewModelScope.launch {
+            if (session.profiles.first().isEmpty()) {
+                _state.value = _state.value.copy(
+                    addServerMode = true,
+                    baseUrl = SessionStore.DEFAULT_BASE_URL,
+                )
+            }
+        }
+    }
+
     fun onUsername(v: String) { _state.value = _state.value.copy(username = v, error = null) }
     fun onPassword(v: String) { _state.value = _state.value.copy(password = v, error = null) }
     fun onBaseUrl(v: String) { _state.value = _state.value.copy(baseUrl = v, error = null) }
 
     /** 进入 S9「添加服务器」模式(带地址输入)。 */
     fun startAddServer() {
-        _state.value = LoginUiState(addServerMode = true)
+        if (_state.value.addServerMode) return
+        _state.value = _state.value.copy(addServerMode = true)
     }
 
     fun submit() {

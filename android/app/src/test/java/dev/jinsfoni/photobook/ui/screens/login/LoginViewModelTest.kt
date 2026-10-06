@@ -37,6 +37,7 @@ class LoginViewModelTest {
 
     private lateinit var server: MockWebServer
     private lateinit var vm: LoginViewModel
+    private lateinit var api: MobileApi
     private val dispatcher = StandardTestDispatcher()
 
     @Before
@@ -45,7 +46,7 @@ class LoginViewModelTest {
         server = MockWebServer()
         server.start()
         val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
-        val api = Retrofit.Builder()
+        api = Retrofit.Builder()
             .baseUrl(server.url("/"))
             .client(OkHttpClient())
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
@@ -53,8 +54,9 @@ class LoginViewModelTest {
             .create(MobileApi::class.java)
         // 真实 SessionStore 需要 Context;这里用临时目录包装最小实现不可行(DataStore 要求 Context),
         // 改用仅记录调用的桩:AuthRepository 只依赖 saveSession/clearSession/token 流。
-        val repo = AuthRepository(api, FakeSessionStore())
-        vm = LoginViewModel(repo)
+        val store = FakeSessionStore()
+        val repo = AuthRepository(api, store)
+        vm = LoginViewModel(repo, store)
     }
 
     @After
@@ -68,6 +70,25 @@ class LoginViewModelTest {
         vm.submit()
         assertEquals("请输入用户名和密码", vm.state.value.error)
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `first run shows address input prefilled with default`() = runTest(dispatcher.scheduler) {
+        // FakeSessionStore 无档案 = 首次使用:init 应进入地址模式并预填默认地址
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.state.value.addServerMode)
+        assertEquals(dev.jinsfoni.photobook.data.prefs.SessionStore.DEFAULT_BASE_URL, vm.state.value.baseUrl)
+    }
+
+    @Test
+    fun `existing profile does not show address input`() = runTest(dispatcher.scheduler) {
+        // 已有档案(老用户):普通登录页,无地址输入
+        val store = FakeSessionStore()
+        store.addProfile("http://10.0.0.5:8000/api/mobile/", "tk", "demo")
+        val repo = AuthRepository(api, store)
+        val vm2 = LoginViewModel(repo, store)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertFalse(vm2.state.value.addServerMode)
     }
 
     /** 真实 IO(OkHttp 线程)+ 虚拟 Main 调度:轮询并持续推进虚拟时间。 */
