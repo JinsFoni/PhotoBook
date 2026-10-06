@@ -60,7 +60,7 @@ object ApiErrors {
     }
 }
 
-/** 统一包一层:HttpException → ApiException;IO/未知 → NETWORK。 */
+/** 统一包一层:HttpException → ApiException;响应体非法(如网关吐 HTML)/IO → NETWORK/SERVER。 */
 /** 网络异常消息(纯 JVM 层,不能 stringResource;ViewModel 显示时映射 R.string.network_unreachable)。 */
 const val NETWORK_MSG = "网络不可达"
 
@@ -70,6 +70,9 @@ suspend fun <T> safeCall(block: suspend () -> T): T = try {
     val body = e.response()?.errorBody()?.string()
     throw ApiErrors.parseErrorBody(body, e.code())
         ?: ApiException(ApiException.SERVER, "HTTP ${e.code()}", e.code(), e)
+} catch (e: kotlinx.serialization.SerializationException) {
+    // 响应非 JSON(如网关/反代返回 HTML 错误页):HTTP 200 但 body 解析不了,归为服务端错误
+    throw ApiException(ApiException.SERVER, "响应格式错误", cause = e)
 } catch (e: java.io.IOException) {
     throw ApiException(ApiException.NETWORK, NETWORK_MSG, cause = e)
 }
