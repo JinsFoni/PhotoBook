@@ -2,6 +2,9 @@ package dev.jinsfoni.photobook.ui.screens.lightbox
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import coil3.ImageLoader
+import coil3.request.ImageRequest
+import coil3.request.allowHardware
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
 import dev.jinsfoni.photobook.data.remote.ApiException
@@ -28,6 +31,7 @@ class LightboxViewModel @Inject constructor(
     private val repo: CollectionsRepository,
     private val favorites: FavoritesRepository,
     session: SessionStoreApi,
+    private val imageLoader: ImageLoader,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LightboxUiState())
@@ -49,6 +53,27 @@ class LightboxViewModel @Inject constructor(
                 runCatching { favorites.refresh() }
             } catch (e: ApiException) {
                 _state.value = LightboxUiState(loading = false, error = friendly(e))
+            }
+        }
+    }
+
+    /**
+     * 预取 around 及相邻 ±1 页的缩略图进内存缓存:虚化垫底(600px)翻到才
+     * 下载是「黑 → 虚化」的主因;前景预览图(2400px)一并预取,翻页即显。
+     * 磁盘缓存已落,重复进灯箱不回源。
+     */
+    fun preload(idx: Int) {
+        val detail = _state.value.detail ?: return
+        val context = dev.jinsfoni.photobook.PhotoBookApp.instance
+        for (i in (idx - 1)..(idx + 1)) {
+            val p = detail.photos.getOrNull(i) ?: continue
+            for (url in arrayOf(p.thumbUrl, p.previewUrl)) {
+                imageLoader.enqueue(
+                    ImageRequest.Builder(context)
+                        .data(url)
+                        .allowHardware(false)
+                        .build()
+                )
             }
         }
     }

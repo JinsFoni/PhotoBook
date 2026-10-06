@@ -51,6 +51,7 @@ import dev.jinsfoni.photobook.ui.icons.DownloadIcon
 import dev.jinsfoni.photobook.ui.icons.HeartIcon
 import dev.jinsfoni.photobook.ui.icons.StrokeIcon
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 
 /**
  * S4 灯箱:全出血黑屏、HorizontalPager 翻页、单击 chrome 显隐(6s 自动隐)、
@@ -101,6 +102,12 @@ fun LightboxScreen(
     LaunchedEffect(detail?.photos) {
         val size = detail?.photos?.size ?: return@LaunchedEffect
         if (size > 0) pagerState.scrollToPage(initialIdx.coerceIn(0, size - 1))
+        // 首页起手就预取当前 ±1 页(缩略图+预览图进缓存),翻页不再从黑等图
+        vm.preload(pagerState.currentPage)
+    }
+    // 翻页越过半程即预取目标页相邻:背向滑也可无虚化等待
+    LaunchedEffect(Unit) {
+        snapshotFlow { pagerState.targetPage }.drop(1).collect { vm.preload(it) }
     }
 
     // 虚化主题:黑底换成虚化垫底;其他主题保持全出血纯黑。垫底代表图跟随

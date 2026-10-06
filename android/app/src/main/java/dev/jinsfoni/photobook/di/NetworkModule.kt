@@ -19,6 +19,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
+import okio.Path.Companion.toPath
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -65,13 +66,31 @@ object NetworkModule {
     fun provideMobileApi(retrofit: Retrofit): MobileApi =
         retrofit.create(MobileApi::class.java)
 
-    /** Coil 与网络层共用 OkHttp(缓存/拦截一致)。 */
+    /**
+     * Coil 与网络层共用 OkHttp(缓存/拦截一致)。
+     * 内存缓存(默认 25% 堆)+ 磁盘缓存(2% 磁盘,上限 512MB):没有磁盘缓存时
+     * 虚化垫底/缩略图每次进页都要重新走网络,翻页时背景会从黑渐变。
+     */
     @Provides
     @Singleton
     fun provideImageLoader(client: OkHttpClient): ImageLoader =
         ImageLoader.Builder(dev.jinsfoni.photobook.PhotoBookApp.instance)
             .components {
                 add(OkHttpNetworkFetcherFactory(callFactory = { client }))
+            }
+            .memoryCache {
+                coil3.memory.MemoryCache.Builder()
+                    .maxSizePercent(dev.jinsfoni.photobook.PhotoBookApp.instance, 0.25)
+                    .build()
+            }
+            .diskCache {
+                coil3.disk.DiskCache.Builder()
+                    .directory(
+                        dev.jinsfoni.photobook.PhotoBookApp.instance.cacheDir
+                            .resolve("image_cache").absolutePath.toPath()
+                    )
+                    .maxSizeBytes(512L * 1024 * 1024)
+                    .build()
             }
             .build()
 }
