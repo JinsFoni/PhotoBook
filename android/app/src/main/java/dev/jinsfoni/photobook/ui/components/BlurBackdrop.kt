@@ -9,9 +9,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
@@ -23,23 +26,47 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import dev.jinsfoni.photobook.core.design.LocalThemeMode
 import dev.jinsfoni.photobook.core.design.ThemeMode
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+private const val FADE_MS = 620
+private const val KB_MS = 1400
+
+/** Ken Burns 起手幅度:web 1.2→1.0(相对 20%);Android 常态 1.35(把 blur 边缘光晕推出屏),等比放大 1.62。 */
+private const val KB_FROM = 1.62f
+private const val KB_TO = 1.35f
+
+/**
+ * 常驻双缓冲槽位(web 灯箱 data-lb-bd="a"/"b" 的移植):a/b 交替前后台。
+ * 可见层的 model 永不变更——换图只发生在隐藏槽的 AsyncImage 上,Coil 换请求
+ * 清画布的时刻不可见,黑帧/闪烁不可能出现。
+ * ready:本槽当前 url 已解码(SUCCESS);zIndex:交叉期间新层 2 / 旧层 1,平时 0。
+ */
+private class Slot {
+    var url by mutableStateOf<String?>(null)
+    var ready by mutableStateOf(false)
+    var zIndex by mutableFloatStateOf(0f)
+    val alpha = Animatable(0f)
+    val scale = Animatable(KB_TO)
+}
 
 /**
  * 虚化垫底单层:真实代表图 saturate(1.12)+scale+blur(42px),由调用方叠纱。
- * scale 常态 1.35:把 blur 的边缘光晕推出屏外(clipToBounds 裁掉溢出)。
+ * alpha 为 0 时摘掉 blur(隐藏槽常驻组合,RenderEffect 的逐帧采样不能白付)。
  */
 @Composable
 private fun BlurredLayer(
     model: Any?,
     alpha: Float,
     scale: Float,
+    zIndex: Float,
     onState: ((AsyncImagePainter.State) -> Unit)? = null,
 ) {
     AsyncImage(
@@ -53,21 +80,23 @@ private fun BlurredLayer(
         onState = onState,
         modifier = Modifier
             .fillMaxSize()
+            .zIndex(zIndex)
             .graphicsLayer {
                 this.alpha = alpha
                 scaleX = scale
                 scaleY = scale
             }
-            .blur(42.dp),
+            .then(if (alpha > 0f) Modifier.blur(42.dp) else Modifier),
     )
 }
 
-/** 深色纱(.blur-canvas::after),统一压暗保证前景对比。 */
+/** 深色纱(.blur-canvas::after),统一压暗保证前景对比;zIndex 必须压过交叉中的两层(zIndex 1/2)。 */
 @Composable
 private fun Scrim() {
     Box(
         Modifier
             .fillMaxSize()
+            .zIndex(3f)
             .background(
                 Brush.verticalGradient(
                     0f to Color(8, 9, 10, 199),
@@ -83,13 +112,13 @@ private fun Scrim() {
  * clipToBounds 必须挂:图放大把模糊光晕推出屏外,但溢出部分在 Pager 横滑 /
  * NavHost 滑动转场时会铺到相邻页上(单页静止时被屏幕裁掉看不见)。
  *
- * 切图 = 双缓冲交叉淡入 + Ken Burns(对齐 web .lightbox__backdrop):
- * - 换图时旧图垫底不动,新图加载成功(SUCCESS)后才开始 620ms 淡入,
- *   同时 scale 1.5→1.35 缓落 1400ms;旧层镜像回涨 1.35→1.5(压在新层
- *   之下,交叉期可见,淡出不可见故无需 opacity 动画)。
- * - 换图瞬间旧氛围始终铺在屏上,预取命中时新图近乎瞬时就绪;
- *   未就绪前维持旧画面,不露黑。
- * - 翻回已展示过的图直接揭示(同图幂等,不重播动效)。
+ * 切图 = 常驻双缓冲 + 回弹动效(对齐 web .lightbox__backdrop):
+ * - 两个常驻槽位 a/b,可见层的 model 永不变更,换图只发生在隐藏槽上,
+ *   因此旧氛围从换图瞬间到新图揭示完毕始终铺满全屏,不可能闪黑。
+ * - 新图就绪(SUCCESS)后揭示:新层置顶 620ms 淡入 + Ken Burns 缓落
+ *   1.62→1.35(1400ms),旧层镜像回涨 1.35→1.62(web 撤层回涨的移植)。
+ * - 翻回已展示过的图:图层还在(ready 未清),立即重播揭示,不等加载。
+ * - 连翻时未揭示就再换:后台槽无声撤下再换内容,前台不受影响。
  */
 @Composable
 fun BlurBackdrop(imageUrl: String?, modifier: Modifier = Modifier) {
@@ -103,50 +132,61 @@ fun BlurBackdrop(imageUrl: String?, modifier: Modifier = Modifier) {
 
 @Composable
 private fun BackdropLayers(imageUrl: String) {
-    // 已完整展示过的图(连翻时 previous 保持为最后一张成功展示的图)
-    var shown by remember { mutableStateOf<String?>(null) }
-    // 旧图:新层完全不透明前持续垫底,之后移除
-    var previous by remember { mutableStateOf<String?>(null) }
-    // 本轮目标图是否已就绪(SUCCESS):就绪前新层整体隐藏
-    var loaded by remember(imageUrl) { mutableStateOf(false) }
-    // 最近一次完成揭示动效的 URL:翻回去时直接揭示,不重播
-    var revealed by remember { mutableStateOf<String?>(null) }
+    val slots = remember { listOf(Slot(), Slot()) }
+    var front by remember { mutableIntStateOf(0) }
 
-    val alpha = remember(imageUrl) { Animatable(0f) }
-    val scale = remember(imageUrl) { Animatable(1.5f) }
-    val prevScale = remember(imageUrl) { Animatable(1.35f) }
-
-    LaunchedEffect(imageUrl, loaded) {
-        if (!loaded) return@LaunchedEffect
-        if (imageUrl == revealed) {
-            alpha.snapTo(1f)
-            scale.snapTo(1.35f)
-            previous = null
+    LaunchedEffect(imageUrl) {
+        val current = slots[front]
+        if (current.url == imageUrl) {
+            // 同图幂等(web: front.dataset.src === src 直接返回)。发生在这条
+            // 路径的只能是"换走又翻回来、且上一轮揭示没走完":另一槽可能还
+            // 压在交叉半路,无声撤下;前台复位满不透明。
+            val other = slots[1 - front]
+            other.alpha.snapTo(0f)
+            other.zIndex = 0f
+            current.alpha.snapTo(1f)
+            current.scale.snapTo(KB_TO)
             return@LaunchedEffect
         }
-        // 离场层回涨与新层缓落互为镜像(web 撤层回涨 1.2 的移植)
-        launch { prevScale.animateTo(1.5f, tween(1400, easing = LinearOutSlowInEasing)) }
-        launch { scale.animateTo(1.35f, tween(1400, easing = LinearOutSlowInEasing)) }
-        alpha.animateTo(1f, tween(620, easing = LinearOutSlowInEasing))
-        revealed = imageUrl
-        previous = null
+        val target = slots[1 - front]
+        if (target.url != imageUrl) {
+            // 后台槽可能还带上一轮交叉的残影:先无声撤下再换内容(此刻前台层
+            // 铺满全屏,屏幕上没有任何变化)。ready 必须先于 url 归位,否则
+            // 旧图遗留的 ready 会让揭示抢在新图解码之前。
+            target.alpha.snapTo(0f)
+            target.zIndex = 0f
+            target.ready = false
+            target.url = imageUrl
+        }
+        // 等新图解码(SUCCESS);命中内存缓存时立即通过,未就绪前旧图持续垫底
+        snapshotFlow { target.ready && target.url == imageUrl }.first { it }
+        // 揭示(web reveal()):新层置顶淡入 + Ken Burns 缓落,旧层镜像回涨。
+        // 旧层全程满不透明垫底,交叉只发生在两层虚化图之间。
+        target.zIndex = 2f
+        current.zIndex = 1f
+        target.scale.snapTo(KB_FROM)
+        target.alpha.snapTo(0f)
+        launch { current.scale.animateTo(KB_FROM, tween(KB_MS, easing = LinearOutSlowInEasing)) }
+        launch { target.scale.animateTo(KB_TO, tween(KB_MS, easing = LinearOutSlowInEasing)) }
+        target.alpha.animateTo(1f, tween(FADE_MS, easing = LinearOutSlowInEasing))
+        // 淡入完成:角色交换,旧层压底归零(在新层之下,不可见)
+        front = 1 - front
+        current.alpha.snapTo(0f)
+        current.zIndex = 0f
     }
 
-    previous?.let { prev ->
-        BlurredLayer(model = prev, alpha = 1f, scale = prevScale.value)
+    Box(modifier = Modifier.fillMaxSize()) {
+        slots.forEach { slot ->
+            BlurredLayer(
+                model = slot.url,
+                alpha = slot.alpha.value,
+                scale = slot.scale.value,
+                zIndex = slot.zIndex,
+                onState = { st ->
+                    if (st is AsyncImagePainter.State.Success) slot.ready = true
+                },
+            )
+        }
+        Scrim()
     }
-    BlurredLayer(
-        model = imageUrl,
-        alpha = if (loaded) alpha.value else 0f,
-        scale = scale.value,
-        onState = { st ->
-            if (st is AsyncImagePainter.State.Success) {
-                // 新图就位:当前展示图转为旧图垫底(web 双缓冲的 front/back 交替)
-                if (shown != null && shown != imageUrl) previous = shown
-                shown = imageUrl
-                loaded = true
-            }
-        },
-    )
-    Scrim()
 }
