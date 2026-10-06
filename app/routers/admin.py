@@ -115,13 +115,15 @@ def _conf_value(s: Session, key: str, dflt: str) -> str:
 
 
 def _back_qs(status: str, page: int) -> str:
-    """操作后回跳列表的查询串(保持筛选与页码;默认值则省略)。"""
+    """操作后回跳列表的查询串(保持筛选与页码;默认值则省略)。
+    只做一次 urlencode —— 再叠 quote 会把 &/= 也编进值里,
+    _back_params 的白名单正则解析不出 status/page, AJAX 操作会静默回落第 1 页。"""
     params: dict[str, str] = {}
     if status in JOB_STATUS_GROUPS:
         params["status"] = status
     if page > 1:
         params["page"] = str(page)
-    return ("?" + quote(urlencode(params))) if params else ""
+    return ("?" + urlencode(params)) if params else ""
 
 
 # 模板全局:操作表单的回跳查询串(在定义后挂载,避免与 templating 循环导入)
@@ -634,7 +636,10 @@ def _list_action_response(request: Request, s: Session, payload_fn,
         q = ""
         page = 1
         if m:
-            q = _unquote(m.group(1) or "") if m.group(1) is not None else ""
+            # q 里的空格有两种来源: 服务端 _back_qsp 的 urlencode 编成 "+",
+            # 前端 encodeURIComponent 编成 "%20" —— 先归一成 %20 再解码,
+            # 否则带空格的搜索词会查不到任何条目, AJAX 重绘成空列表。
+            q = _unquote((m.group(1) or "").replace("+", "%20")) if m.group(1) is not None else ""
             page = int(m.group(2) or m.group(3) or 1)
         payload = payload_fn(s, q, page)
         if flash:

@@ -219,6 +219,9 @@
 
   function render(jobs, running, preheat, pg) {
     pg = pg || {};
+    /* 先同步页码再重建 tbody: 操作表单的 back 用 curPage 拼出,
+       若后置则新行拿到的是上一页的页码, 删除/重试后 AJAX 重绘会跳回上一页 */
+    if (pg.page) curPage = pg.page;
     if (!jobs.length) {
       tbody.innerHTML = '<tr><td colspan="9" style="padding:var(--s6);color:var(--ink-3)" class="t-small">' +
         (curStatus ? PC.t("该状态下没有任务") : PC.t("队列为空 — 提交 URL 或立即扫描。")) + '</td></tr>';
@@ -272,7 +275,6 @@
       }
     }
     if (pg.page) {
-      curPage = pg.page;
       var pi = document.querySelector("[data-page-info]");
       if (pi) pi.textContent = PC.t("第 {p} / {total} 页", { p: pg.page, total: pg.totalPages });
       var ti = document.querySelector("[data-total-info]");
