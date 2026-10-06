@@ -17,8 +17,9 @@ android {
         applicationId = "dev.jinsfoni.photobook"
         minSdk = 31
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        // 版本号默认 0.1.0(本地开发态);release 构建由 CI 从发布 tag 注入
+        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("versionName") as String?) ?: "0.1.0"
     }
 
     // 正式签名只在 CI 上存在(storeFile 由 workflow 从 Secrets 解出);

@@ -32,9 +32,26 @@ jobs:
         with:
           cache-read-only: false
 
+      # 版本号从发布 tag 注入:versionName 去掉 v 前缀;versionCode = major*10000 + minor*100 + patch
+      - name: Derive version from tag
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          name="${TAG#v}"
+          major=$(echo "$name" | cut -d. -f1)
+          minor=$(echo "$name" | cut -d. -f2)
+          patch=$(echo "$name" | cut -d. -f3)
+          code=$((major * 10000 + minor * 100 + patch))
+          echo "versionName=$name" >> "$GITHUB_OUTPUT"
+          echo "versionCode=$code" >> "$GITHUB_OUTPUT"
+
       # 构建前跑单元测试,失败则中止发版构建
       - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest
+        run: >
+          ./gradlew :app:testDebugUnitTest
+          -PversionName=${{ steps.version.outputs.versionName }}
+          -PversionCode=${{ steps.version.outputs.versionCode }}
 
       # 有 keystore 才解出;gradle 检测到 app/release.keystore 即走正式签名
       - name: Decode release keystore
@@ -53,7 +70,10 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease
+        run: >
+          ./gradlew :app:assembleRelease
+          -PversionName=${{ steps.version.outputs.versionName }}
+          -PversionCode=${{ steps.version.outputs.versionCode }}
 
       - name: Rename APK with tag
         run: |
