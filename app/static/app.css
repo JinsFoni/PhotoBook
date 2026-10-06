@@ -590,7 +590,9 @@ table { border-collapse: collapse; }
   inset: 0;
   z-index: 95;
   background: var(--panel-solid);
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   opacity: 0;
   visibility: hidden;
   transition: opacity var(--t-ui) var(--ease), visibility var(--t-ui);
@@ -606,20 +608,10 @@ html[data-theme="blur"] .search {
   /* 独立合成层: 避免 Safari 滚动时 backdrop 每帧重模糊下层内容的抖动 */
   transform: translateZ(0);
 }
-html[data-theme="blur"] .search__bar {
-  /* sticky 栏不再叠一层实底(叠在浮层半透明底上会压出色条), 只对
-     滚到栏下的结果做磨砂, 与浮层表面保持同一张半透霜面 */
-  background: transparent;
-  backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
-}
 
 .search__bar {
   border-bottom: 1px solid var(--line);
-  position: sticky;
-  top: 0;
-  background: var(--panel-solid);
-  z-index: 2;
+  flex: none;
 }
 .search__bar-inner {
   height: var(--header-h);
@@ -643,7 +635,14 @@ html[data-theme="blur"] .search__bar {
 }
 .search__input::placeholder { color: var(--ink-3); }
 
-.search__body { padding-block: var(--s7) var(--s10); }
+/* 结果区自己滚(栏不动): 内容从栏下方开始, 不会钻到栏底, 栏无需叠任何
+   底色/磨砂 —— 之前 sticky 栏叠在浮层磨砂上, 双层叠加压出色带 */
+.search__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-block: var(--s7) var(--s10);
+}
 
 .search__group + .search__group { margin-top: var(--s8); }
 .search__group-title {
