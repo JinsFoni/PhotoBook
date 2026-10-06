@@ -234,6 +234,8 @@ private fun ModelDetailContent(
                 }
             }
         }
+        // 卡片随列贴边加 18dp 页边距(与收藏/写真集一致);不能挂到 grid contentPadding 上——
+        // hero 跨两列要全出血,会一起被内缩。i%2 即列号,Fixed(2) 逐行铺位恒成立。
         items(d.collections.size) { i ->
             val c = d.collections[i]
             CollectionCard(
@@ -241,6 +243,10 @@ private fun ModelDetailContent(
                 subtitle = "${c.modelName} · ${c.count} 张",
                 imageUrl = c.imageUrl,
                 onClick = { onOpenCollection(c.slug) },
+                modifier = Modifier.padding(
+                    start = if (i % 2 == 0) 18.dp else 0.dp,
+                    end = if (i % 2 == 1) 18.dp else 0.dp,
+                ),
             )
         }
     }
