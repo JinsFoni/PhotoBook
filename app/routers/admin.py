@@ -129,13 +129,15 @@ templates.env.globals["_back_qs"] = _back_qs
 
 
 def _back_qsp(q: str, page: int) -> str:
-    """模特/写真集列表操作表单的回跳查询串(保持搜索词与页码;默认值则省略)。"""
+    """模特/写真集列表操作表单的回跳查询串(保持搜索词与页码;默认值则省略)。
+    只做一次 urlencode —— 再叠 quote 会把 &/= 也编进值里,
+    _list_action_response 的白名单正则解析不出 q/page, AJAX 删除会静默回落第 1 页。"""
     params: dict[str, str] = {}
     if q:
         params["q"] = q
     if page > 1:
         params["page"] = str(page)
-    return ("?" + quote(urlencode(params))) if params else ""
+    return ("?" + urlencode(params)) if params else ""
 
 
 templates.env.globals["_back_qsp"] = _back_qsp
@@ -625,6 +627,7 @@ def _list_action_response(request: Request, s: Session, payload_fn,
     AJAX 请求返回列表 payload(前端原地重绘, 不整页刷新);
     普通表单提交保持 303 重定向(无 JS 环境兼容)。
     back 仅接受 ?q=<词>&page=<n> / 子集的白名单形态, 不匹配则回第 1 页。
+    注意匹配用的 q 已是原始编码(percent-encoded)形态, 深层解码交给 payload_fn。
     """
     if _is_ajax(request):
         m = re.fullmatch(r"\?q=([^&]*)(?:&page=(\d+))?|\?page=(\d+)", back or "")

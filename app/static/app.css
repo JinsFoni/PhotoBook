@@ -596,6 +596,23 @@ table { border-collapse: collapse; }
   transition: opacity var(--t-ui) var(--ease), visibility var(--t-ui);
 }
 .search[data-open="true"] { opacity: 1; visibility: visible; }
+/* 打开即程序化聚焦输入框, input 命中全局 :focus-visible 的 accent 描边, 压掉 */
+.search :focus-visible { outline: none; }
+/* blur 主题: 不透明 panel-solid 会盖住整页虚化垫底层, 换半透磨砂与全站一致 */
+html[data-theme="blur"] .search {
+  background: rgba(16, 17, 20, 0.72);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  /* 独立合成层: 避免 Safari 滚动时 backdrop 每帧重模糊下层内容的抖动 */
+  transform: translateZ(0);
+}
+html[data-theme="blur"] .search__bar {
+  /* sticky 栏不再叠一层实底(叠在浮层半透明底上会压出色条), 只对
+     滚到栏下的结果做磨砂, 与浮层表面保持同一张半透霜面 */
+  background: transparent;
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+}
 
 .search__bar {
   border-bottom: 1px solid var(--line);
