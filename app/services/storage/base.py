@@ -53,5 +53,7 @@ BACKENDS: dict[str, type] = {}
 try:
     from . import imgbed as _imgbed
     BACKENDS["imgbed"] = _imgbed.ImgBedBackend
+    from . import webdav as _webdav
+    BACKENDS["webdav"] = _webdav.WebDavBackend
 except Exception:  # pragma: no cover — 依赖缺失不应拖垮主程序
-    log.exception("imgbed backend load failed")
+    log.exception("storage backend load failed")

@@ -212,10 +212,12 @@ class Storage(Base):
     __tablename__ = "storages"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
-    type: Mapped[str] = mapped_column(String(20), default="imgbed")  # imgbed | (预留 s3/r2)
+    type: Mapped[str] = mapped_column(String(20), default="imgbed")  # imgbed | webdav | (预留 s3/r2)
     root_dir: Mapped[str] = mapped_column(String(200), default="")   # 远端根目录,如 /PhotoBook
-    api_url: Mapped[str] = mapped_column(String(300), default="")    # 如 https://imgbed.example.com
-    token: Mapped[str] = mapped_column(String(300), default="")
+    api_url: Mapped[str] = mapped_column(String(300), default="")    # imgbed: 站点地址; webdav: 服务地址(如 http://host:5244,不含 /dav)
+    token: Mapped[str] = mapped_column(String(300), default="")      # imgbed: API Key; webdav: 密码
+    username: Mapped[str] = mapped_column(String(120), default="")   # webdav 用户名(imgbed 不用)
+    priority: Mapped[int] = mapped_column(Integer, default=0)        # 直链优先级,越大越优先(本地缺失时按此排序回源/302)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

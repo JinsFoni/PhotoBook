@@ -230,14 +230,28 @@ def _run_job(job_id: int) -> None:
 
 
 def _delete_local_originals(s, st, photos: list[Photo], job: UploadJob) -> None:
-    """全部上传成功后删本地原图。
+    """全部上传成功后尝试删本地原图。
 
-    只删缩略图缓存(900/2400)已在盘的: 缓存缺失的图保留本地,否则缩略图
-    永远无法再生成(灯箱/下载已由 serve_media 302 兜底,不受影响)。
-    缓存缺失即失败判定过严会永不删盘,这里选择保留 + error 提示。
+    只删满足两个条件的:
+    1. 该照片已上传到所有启用的存储(否则排队中的其他存储 job 会拿不到本地文件);
+    2. 缩略图缓存(900/2400)已在盘(否则缩略图永远无法再生)。
+    不满足的保留本地并在 job.error 里提示。
     """
+    from ...database import SessionLocal
+    enabled_ids = s.scalars(select(Storage.id).where(Storage.enabled == True)).all()  # noqa: E712
+    photo_ids = [p.id for p in photos]
+    # photo_id -> 已上传的存储数
+    counts: dict[int, int] = {}
+    for pid, in s.query(PhotoUpload.photo_id).filter(
+            PhotoUpload.storage_id.in_(enabled_ids or [0]),
+            PhotoUpload.photo_id.in_(photo_ids or [0])).all():
+        counts[pid] = counts.get(pid, 0) + 1
+
     kept = 0
     for p in photos:
+        if counts.get(p.id, 0) < len(enabled_ids):
+            kept += 1
+            continue
         if not media.thumb_cache_ready(p.filename):
             kept += 1
             continue
@@ -247,7 +261,9 @@ def _delete_local_originals(s, st, photos: list[Photo], job: UploadJob) -> None:
             kept += 1
     media.cleanup_empty_dirs(photos[0].filename if photos else "")
     if kept:
-        job.error = f"完成,但 {kept} 张因缩略图缓存缺失保留本地原图"
+        job.error = (f"完成,{kept} 张保留本地原图"
+                     f"(还有其他存储队列未完成,或缩略图缓存缺失)")
+        log.info("upload done with %d kept: %s -> %s", kept, job.collection_id, st.name)
 
 
 # ---- 供 serve_media / 删除联动使用的查询辅助 ---------------------------------

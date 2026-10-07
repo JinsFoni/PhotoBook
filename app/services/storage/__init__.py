@@ -12,10 +12,21 @@ log = logging.getLogger("pb.storage")
 
 
 def remote_redirect(rel: str) -> str | None:
-    """本地缺失的原图在任一启用存储上的公开 URL(serve_media 302 用)。
+    """本地缺失的原图在启用存储上的公开 URL(serve_media 302 用)。
 
     rel 是 /media 相对路径(如 "chunmomo/xxx/001.jpg");photo_uploads 按
-    photo_id 关联,先反查 Photo。找不到返回 None(保持 404 行为)。
+    photo_id 关联,先反查 Photo。同一照片存了多个存储时按 Storage.priority
+    取最高者。找不到返回 None(保持 404 行为)。
+    """
+    urls = remote_redirects(rel)
+    return urls[0] if urls else None
+
+
+def remote_redirects(rel: str) -> list[str]:
+    """全部启用存储的公开 URL,按优先级从高到低(优先级相同按存储 id 新者优先)。
+
+    serve_media 302 用第一个;serve_thumb 回源按顺序尝试,高优先级失败
+    自动落到下一级。
     """
     from ...database import SessionLocal
 
@@ -23,21 +34,20 @@ def remote_redirect(rel: str) -> str | None:
     try:
         photo_id = s.scalar(select(Photo.id).where(Photo.filename == rel))
         if photo_id is None:
-            return None
-        row = s.execute(
+            return []
+        rows = s.execute(
             select(PhotoUpload.remote_path, Storage)
             .join(Storage, Storage.id == PhotoUpload.storage_id)
             .where(PhotoUpload.photo_id == photo_id, Storage.enabled == True)  # noqa: E712
-            .limit(1)).first()
-        if not row:
-            return None
-        remote_path, st = row
-        from .base import get_backend
-        try:
-            return get_backend(st).public_url(st, remote_path)
-        except Exception:
-            log.exception("public_url failed: storage %s", st.id)
-            return None
+            .order_by(Storage.priority.desc(), Storage.id.desc())).all()
+        urls: list[str] = []
+        for remote_path, st in rows:
+            from .base import get_backend
+            try:
+                urls.append(get_backend(st).public_url(st, remote_path))
+            except Exception:
+                log.exception("public_url failed: storage %s", st.id)
+        return urls
     finally:
         s.close()
 

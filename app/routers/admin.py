@@ -909,11 +909,12 @@ async def admin_settings_save(request: Request, s: Session = Depends(get_db)):
 
 # ---- 存储管理 -------------------------------------------------------------------
 
-STORAGE_TYPES = ("imgbed",)
+STORAGE_TYPES = ("imgbed", "webdav")
 
 
 def _storages_ctx(s: Session) -> dict:
-    storages = s.scalars(select(Storage).order_by(Storage.id)).all()
+    storages = s.scalars(select(Storage).order_by(Storage.priority.desc(),
+                                                  Storage.id)).all()
     conf = settings_store.storage_conf(s)
     return {
         "page": "admin",
@@ -949,12 +950,15 @@ async def admin_storage_new(request: Request, s: Session = Depends(get_db)):
 async def admin_storage_create(request: Request, s: Session = Depends(get_db),
                                name: str = Form(...), type: str = Form("imgbed"),
                                root_dir: str = Form(""), api_url: str = Form(""),
-                               token: str = Form(""), enabled: str = Form("")):
+                               token: str = Form(""), username: str = Form(""),
+                               priority: str = Form("0"), enabled: str = Form("")):
     if type not in STORAGE_TYPES:
         return RedirectResponse("/admin/storages/new?error=type", 303)
     st = Storage(name=name.strip() or "未命名存储", type=type,
                  root_dir=root_dir.strip(), api_url=api_url.strip(),
-                 token=token.strip(), enabled=bool(enabled))
+                 token=token.strip(), username=username.strip(),
+                 priority=_parse_priority(priority),
+                 enabled=bool(enabled))
     s.add(st)
     s.commit()
     return RedirectResponse(f"/admin/storages?flash={quote(t('存储已创建'))}", 303)
@@ -977,18 +981,29 @@ async def admin_storage_edit(request: Request, st_id: int, s: Session = Depends(
 async def admin_storage_update(request: Request, st_id: int, s: Session = Depends(get_db),
                                name: str = Form(...), type: str = Form("imgbed"),
                                root_dir: str = Form(""), api_url: str = Form(""),
-                               token: str = Form(""), enabled: str = Form("")):
+                               token: str = Form(""), username: str = Form(""),
+                               priority: str = Form("0"), enabled: str = Form("")):
     st = s.get(Storage, st_id)
     if not st:
         raise HTTPException(404)
     st.name = name.strip() or st.name
     st.root_dir = root_dir.strip()
     st.api_url = api_url.strip()
+    if st.type == "webdav":  # webdav 用户名可改; imgbed 的 username 无意义保持原值
+        st.username = username.strip()
     if token.strip():  # 留空 = 不修改
         st.token = token.strip()
+    st.priority = _parse_priority(priority)
     st.enabled = bool(enabled)
     s.commit()
     return RedirectResponse(f"/admin/storages?flash={quote(t('已保存'))}", 303)
+
+
+def _parse_priority(raw: str) -> int:
+    try:
+        return max(0, min(int(raw), 9999))
+    except (TypeError, ValueError):
+        return 0
 
 
 @router.post("/storages/{st_id}/delete")

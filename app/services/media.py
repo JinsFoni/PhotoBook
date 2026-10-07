@@ -305,11 +305,10 @@ def serve_thumb(spec: str, request: Request) -> Response:
 
     src = _safe_path(rel)
     if not src.is_file():
-        # 原图不在本地但缓存也没有: 试从外部存储回源下载再生成
-        from .storage import remote_redirect
-        url = remote_redirect(rel)
-        if url:
-            data = _make_webp_from_remote(url, w, h, q)
+        # 原图不在本地但缓存也没有: 按存储优先级逐个尝试回源下载再生成
+        from .storage import remote_redirects
+        for url in remote_redirects(rel):
+            data = _make_webp_from_remote_checked(url, w, h, q)
             if data is not None:
                 cache.parent.mkdir(parents=True, exist_ok=True)
                 cache.write_bytes(data)
@@ -367,6 +366,16 @@ def _make_webp_from_remote(url: str, w: int, h: int | None, q: int) -> bytes | N
     except Exception:
         log.warning("remote thumb regen failed: %s w=%s", url[:120], w, exc_info=True)
         return None
+
+
+def _make_webp_from_remote_checked(url: str, w: int, h: int | None, q: int) -> bytes | None:
+    """_make_webp_from_remote 的多存储版本。
+
+    与单存储时期不同,失败可能意味着该存储的这份文件坏了/不可达,而不只是
+    网络抖动 —— 返回 None 让调用方落到下一优先级存储。实现上无差别,
+    单独命名只为语义清晰。
+    """
+    return _make_webp_from_remote(url, w, h, q)
 
 
 def thumb_url(rel: str | None, w: int, h: int | None = None) -> str:

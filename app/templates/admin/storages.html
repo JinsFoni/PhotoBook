@@ -33,6 +33,7 @@
             {% if storages %}
             <table style="width:100%;border-collapse:collapse">
               <thead><tr>
+                <th class="t-small" style="text-align:left;padding:var(--s2) 0;border-bottom:1px solid var(--line)">{{ t('优先级') }}</th>
                 <th class="t-small" style="text-align:left;padding:var(--s2) 0;border-bottom:1px solid var(--line)">{{ t('名称') }}</th>
                 <th class="t-small" style="text-align:left;padding:var(--s2) 0;border-bottom:1px solid var(--line)">{{ t('类型') }}</th>
                 <th class="t-small" style="text-align:left;padding:var(--s2) 0;border-bottom:1px solid var(--line)">{{ t('根目录') }}</th>
@@ -42,6 +43,7 @@
               <tbody>
               {% for st in storages %}
               <tr style="border-bottom:1px solid var(--line-2)">
+                <td style="padding:var(--s2) 0" class="t-small">{{ st.priority }}</td>
                 <td style="padding:var(--s2) 0">{{ st.name }}</td>
                 <td style="padding:var(--s2) 0" class="t-small">{{ st.type }}</td>
                 <td style="padding:var(--s2) 0" class="t-small"><code>{{ st.root_dir or '/' }}</code></td>

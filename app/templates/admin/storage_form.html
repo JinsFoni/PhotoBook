@@ -30,28 +30,42 @@
                      placeholder="ImgBed 图床"></label>
 
             <label class="field"><span class="field__label">{{ t('类型') }}</span>
-              <select class="select" name="type">
+              <select class="select" name="type" data-storage-type
+                      onchange="document.body.dispatchEvent(new CustomEvent('storage-type'))">
                 {% for tp in storage_types %}
                 <option value="{{ tp }}" {% if st and st.type == tp %}selected{% endif %}>{{ tp }}</option>
                 {% endfor %}
               </select>
-              <span class="t-small" style="color:var(--ink-3)">{{ t('目前支持 CloudFlare ImgBed 兼容图床。') }}</span></label>
+              <span class="t-small" style="color:var(--ink-3)">{{ t('imgbed = CloudFlare ImgBed 兼容图床;webdav = 通过 WebDAV 服务(如 OpenList)上传到网盘。') }}</span></label>
 
             <label class="field"><span class="field__label">{{ t('API 地址') }}</span>
               <input class="input" name="api_url" value="{{ st.api_url if st else '' }}"
-                     placeholder="https://imgbed.example.com" spellcheck="false"></label>
+                     placeholder="https://imgbed.example.com" spellcheck="false" data-hint-api>
+              <span class="t-small" style="color:var(--ink-3)" data-hint-api-text>
+                {{ t('图床站点地址。') }}</span></label>
 
             <label class="field"><span class="field__label">{{ t('根目录(远端)') }}</span>
               <input class="input" name="root_dir" value="{{ st.root_dir if st else '' }}"
                      placeholder="/PhotoBook" spellcheck="false">
               <span class="t-small" style="color:var(--ink-3)">{{ t('上传时加在写真目录之前,如 /PhotoBook + 本地 一色雨/coser@xxx → 远端 /PhotoBook/一色雨/coser@xxx。留空表示站点根目录。') }}</span></label>
 
-            <label class="field"><span class="field__label">{{ t('Token(API Key)') }}</span>
+            <div data-webdav-fields style="display:none">
+              <label class="field"><span class="field__label">{{ t('WebDAV 用户名') }}</span>
+                <input class="input" name="username" value="{{ st.username if st else '' }}"
+                       placeholder="mario" autocomplete="off" spellcheck="false"></label>
+            </div>
+
+            <label class="field"><span class="field__label" data-hint-token-label>{{ t('Token(API Key)') }}</span>
               <input class="input" name="token" type="password" value="" autocomplete="new-password"
-                     placeholder="{{ '····' + token_tail if token_tail else 'imgbed_…' }}">
-              <span class="t-small" style="color:var(--ink-3)">
+                     placeholder="{{ '····' + token_tail if token_tail else 'imgbed_…' }}" data-hint-token>
+              <span class="t-small" style="color:var(--ink-3)" data-hint-token-text>
                 {% if st and token_tail %}{{ t('已保存(尾号 {t}),留空表示不修改。', t=token_tail) }}{% else %}{{ t('需要 upload 权限;如需「测试连接」与远端删除,还需 list / delete 权限。') }}{% endif %}
               </span></label>
+
+            <label class="field"><span class="field__label">{{ t('直链优先级') }}</span>
+              <input class="input" name="priority" type="number" min="0" max="9999"
+                     value="{{ st.priority if st else 0 }}">
+              <span class="t-small" style="color:var(--ink-3)">{{ t('本地原图缺失时,按优先级从高到低尝试外部存储:302 跳转取最高优先级,缩略图回源失败自动落到下一级。多个存储相同时先建者优先。') }}</span></label>
 
             <label class="field" style="flex-direction:row;align-items:center;gap:var(--s3)">
               <input type="checkbox" name="enabled" value="1" {% if (st and st.enabled) or not st %}checked{% endif %} style="accent-color:var(--accent)">
@@ -62,6 +76,46 @@
               <a class="btn btn--quiet" href="/admin/storages">{{ t('取消') }}</a>
             </div>
           </form>
+
+          <script>
+            (function () {
+              const sel = document.querySelector('[data-storage-type]');
+              const webdavBox = document.querySelector('[data-webdav-fields]');
+              const apiInput = document.querySelector('[data-hint-api]');
+              const apiHint = document.querySelector('[data-hint-api-text]');
+              const tokenLabel = document.querySelector('[data-hint-token-label]');
+              const tokenInput = document.querySelector('[data-hint-token]');
+              const tokenHint = document.querySelector('[data-hint-token-text]');
+              const HINTS = {
+                imgbed: {
+                  apiPh: 'https://imgbed.example.com',
+                  api: {{ t('图床站点地址。') | tojson }},
+                  tokenLabel: {{ t('Token(API Key)') | tojson }},
+                  tokenPh: 'imgbed_…',
+                },
+                webdav: {
+                  apiPh: 'http://192.168.0.108:5244',
+                  api: {{ t('WebDAV 服务地址(站点根,不含 /dav,如 OpenList 地址)。') | tojson }},
+                  tokenLabel: {{ t('WebDAV 密码') | tojson }},
+                  tokenPh: '••••••',
+                },
+              };
+              function apply() {
+                const h = HINTS[sel.value] || HINTS.imgbed;
+                webdavBox.style.display = sel.value === 'webdav' ? '' : 'none';
+                apiInput.placeholder = h.apiPh;
+                apiHint.textContent = h.api;
+                tokenLabel.textContent = h.tokenLabel;
+                tokenInput.placeholder = tokenInput.dataset.savedTail
+                  ? '····' + tokenInput.dataset.savedTail : h.tokenPh;
+              }
+              if ({{ '1' if st and token_tail else '0' }} === '1') {
+                tokenInput.dataset.savedTail = {{ token_tail | tojson }};
+              }
+              sel.addEventListener('change', apply);
+              apply();
+            })();
+          </script>
         </div>
       </div>
     </div>

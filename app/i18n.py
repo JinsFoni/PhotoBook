@@ -719,6 +719,19 @@ STRINGS: dict[str, dict[str, str]] = {
         "zh-CN": "没有已启用的存储,请先到存储管理添加",
         "zh-TW": "沒有已啟用的儲存,請先到儲存管理新增"},
     "未命名存储": {"zh-CN": "未命名存储", "zh-TW": "未命名儲存"},
+    "imgbed = CloudFlare ImgBed 兼容图床;webdav = 通过 WebDAV 服务(如 OpenList)上传到网盘。": {
+        "zh-CN": "imgbed = CloudFlare ImgBed 兼容图床;webdav = 通过 WebDAV 服务(如 OpenList)上传到网盘。",
+        "zh-TW": "imgbed = CloudFlare ImgBed 相容圖床;webdav = 透過 WebDAV 服務(如 OpenList)上傳到網盤。"},
+    "WebDAV 服务地址(站点根,不含 /dav,如 OpenList 地址)。": {
+        "zh-CN": "WebDAV 服务地址(站点根,不含 /dav,如 OpenList 地址)。",
+        "zh-TW": "WebDAV 服務位址(站點根,不含 /dav,如 OpenList 位址)。"},
+    "WebDAV 用户名": {"zh-CN": "WebDAV 用户名", "zh-TW": "WebDAV 使用者名稱"},
+    "WebDAV 密码": {"zh-CN": "WebDAV 密码", "zh-TW": "WebDAV 密碼"},
+    "图床站点地址。": {"zh-CN": "图床站点地址。", "zh-TW": "圖床站點位址。"},
+    "直链优先级": {"zh-CN": "直链优先级", "zh-TW": "直鏈優先級"},
+    "本地原图缺失时,按优先级从高到低尝试外部存储:302 跳转取最高优先级,缩略图回源失败自动落到下一级。多个存储相同时先建者优先。": {
+        "zh-CN": "本地原图缺失时,按优先级从高到低尝试外部存储:302 跳转取最高优先级,缩略图回源失败自动落到下一级。多个存储相同时先建者优先。",
+        "zh-TW": "本地原圖缺失時,按優先級從高到低嘗試外部儲存:302 跳轉取最高優先級,縮圖回源失敗自動落到下一級。多個儲存相同時先建者優先。"},
 }
 
 
