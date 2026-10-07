@@ -37,6 +37,12 @@ async def lifespan(app: FastAPI):
         media.recover_stuck_processing()  # 重启丢内存队列的自愈: 重新入队 processing 集合
     except Exception:
         log.exception("recover stuck processing failed")
+    from .services.storage import worker as storage_worker
+    try:
+        storage_worker.recover_stuck_running()  # 上传任务 running → queued 自愈
+    except Exception:
+        log.exception("recover stuck upload jobs failed")
+    storage_worker.ensure_worker()  # 上传队列消费者(daemon)
     media.preheat_all()  # daemon 线程预热缩略图(存量兑底), 不阻塞启动
     log.info("PhotoBook started — http://%s:%s", settings.host, settings.port)
     yield

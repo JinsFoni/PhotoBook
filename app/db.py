@@ -203,3 +203,48 @@ class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(80), primary_key=True)
     value: Mapped[str | None] = mapped_column(Text, default=None)
+
+
+# ---- 外部存储与上传 ----------------------------------------------------------
+
+class Storage(Base):
+    """外部存储后端(图床等)。type 决定用哪个 backend 实现。"""
+    __tablename__ = "storages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    type: Mapped[str] = mapped_column(String(20), default="imgbed")  # imgbed | (预留 s3/r2)
+    root_dir: Mapped[str] = mapped_column(String(200), default="")   # 远端根目录,如 /PhotoBook
+    api_url: Mapped[str] = mapped_column(String(300), default="")    # 如 https://imgbed.example.com
+    token: Mapped[str] = mapped_column(String(300), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class UploadJob(Base):
+    """一个写真集 × 一个存储的上传任务(DB 表作队列,重启不丢)。"""
+    __tablename__ = "upload_jobs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    collection_id: Mapped[int] = mapped_column(ForeignKey("collections.id", ondelete="CASCADE"), index=True)
+    storage_id: Mapped[int] = mapped_column(ForeignKey("storages.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(12), default="queued", index=True)
+    # queued | running | done | failed
+    photos_done: Mapped[int] = mapped_column(Integer, default=0)
+    photos_total: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=utcnow)
+
+    __table_args__ = (Index("ix_upload_jobs_status_id", "status", "id"),)
+
+
+class PhotoUpload(Base):
+    """单张照片在某存储上的上传结果。remote_path 是 /file/ 后的真实路径
+    (imgbed 会给文件名加时间戳前缀,必须逐张记录返回值)。"""
+    __tablename__ = "photo_uploads"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id", ondelete="CASCADE"), index=True)
+    storage_id: Mapped[int] = mapped_column(ForeignKey("storages.id", ondelete="CASCADE"), index=True)
+    remote_path: Mapped[str] = mapped_column(String(400))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (UniqueConstraint("photo_id", "storage_id", name="uq_photo_upload"),)

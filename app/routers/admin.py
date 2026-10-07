@@ -20,12 +20,15 @@ from sqlalchemy.orm import Session
 from ..auth import hash_password, require_admin
 from ..config import settings
 from ..db import (Collection, Favorite, HarvestHistory, HarvestJob, local_dt, Model, Photo,
-                  Session as DbSession, Setting, Tag, User)
+                  PhotoUpload, Session as DbSession, Setting, Storage, Tag, UploadJob, User)
 from ..database import get_db
 from ..i18n import t
 from ..templating import templates
 from ..services import settings_store
 from ..services.harvest import worker as harvest_worker
+from ..services.storage import worker as storage_worker
+from ..services.storage.base import StorageError, get_backend as _get_backend
+from ..services.storage import purge_remote_of_collection
 
 log = logging.getLogger("photobook.admin")
 
@@ -287,15 +290,20 @@ async def admin_model_delete(request: Request, model_id: int, s: Session = Depen
     if m:
         # 该模特名下所有写真集一并删除(DB + 磁盘: 照片/缩略图/收藏);
         # ORM 无级联(DB 层 model_id SET NULL 只会留下无主写真集), 显式删
-        victims = [(c.slug, [p.filename for p in c.photos])
+        victims = [(c.id, c.slug, [p.filename for p in c.photos])
                    for c in s.scalars(select(Collection).where(Collection.model_id == model_id)).all()]
-        for slug, filenames in victims:
+        for col_id, slug, filenames in victims:
+            # 远端同步清理(尽力而为): 失败不阻断本地删除
+            try:
+                purge_remote_of_collection(col_id)
+            except Exception:
+                log.exception("remote purge failed: collection %s", col_id)
             col = s.scalar(select(Collection).where(Collection.slug == slug))
             if col:
                 s.delete(col)
         s.delete(m)
         s.commit()
-        for slug, filenames in victims:
+        for _col_id, slug, filenames in victims:
             media.purge_collection_files(slug, filenames)
         tagging.prune_empty_tags(s)
         flash = t("模特已删除: {n}", n=m.name)
@@ -313,12 +321,57 @@ async def admin_collections(request: Request, s: Session = Depends(get_db),
     cols, page, total_pages, total = _paged_items(
         s, query, page, ADMIN_PAGE_SIZE, desc(Collection.id))
     models = s.scalars(select(Model).order_by(Model.name)).all()
+    # 上传列上下文: 与 API payload 同一构建函数(单存储行内状态由模板渲染)
+    payload = _collections_upload_ctx(s, cols)
     return templates.TemplateResponse(request, "admin/collections.html", {
         "page": "admin", "collections": cols, "models": models,
+        "upload_storages": payload["storages"],
+        "upload_map": payload["upload_map"],
         "error": request.query_params.get("error", ""),
         "q": q, "cur_page": page, "total_pages": total_pages, "total_count": total,
         "flash": request.query_params.get("flash", ""),
     })
+
+
+def _collections_upload_ctx(s: Session, cols: list) -> dict:
+    """上传列渲染上下文(页面 SSR 与 payload 两路共用)。
+
+    upload_map: {collection_id: {storage_id: {status, done, total, storageName}}}
+    """
+    storages = s.scalars(select(Storage).where(Storage.enabled == True)  # noqa: E712
+                         .order_by(Storage.id)).all()
+    active_jobs = s.execute(
+        select(UploadJob.collection_id, UploadJob.storage_id, UploadJob.status,
+               UploadJob.photos_done, UploadJob.photos_total)
+        .where(UploadJob.status.in_(("queued", "running")))).all()
+    active = {(cid, sid): (status, done, total)
+              for cid, sid, status, done, total in active_jobs}
+    upload_map: dict[int, dict[int, dict]] = {}
+    for c in cols:
+        photo_ids = [p.id for p in c.photos]
+        entries: dict[int, dict] = {}
+        for st in storages:
+            n_up = s.query(PhotoUpload).filter(
+                PhotoUpload.storage_id == st.id,
+                PhotoUpload.photo_id.in_(photo_ids or [0])).count() if photo_ids else 0
+            entry: dict = {"storageName": st.name, "done": n_up,
+                           "total": len(photo_ids)}
+            act = active.get((c.id, st.id))
+            if act:
+                status, done, tot = act
+                entry.update({"status": status, "done": done, "total": tot})
+            elif n_up == 0:
+                entry["status"] = "none"
+            elif n_up >= len(photo_ids) > 0:
+                entry["status"] = "done"
+            elif n_up > 0:
+                entry["status"] = "partial"
+            else:
+                entry["status"] = "none"
+            entries[st.id] = entry
+        upload_map[c.id] = entries
+    return {"storages": [{"id": st.id, "name": st.name} for st in storages],
+            "upload_map": upload_map}
 
 
 @router.get("/api/collections")
@@ -333,10 +386,19 @@ def _collections_list_payload(s: Session, q: str, page: int) -> dict:
     query = _search_q(Collection, q, Collection.title, Collection.slug)
     cols, page, total_pages, total = _paged_items(
         s, query, page, ADMIN_PAGE_SIZE, desc(Collection.id))
-    return {"collections": [{"id": c.id, "title": c.title or "", "slug": c.slug,
-                             "model": c.model.name if c.model else "",
-                             "publishedAt": str(c.published_at or ""),
-                             "status": c.status} for c in cols],
+
+    ctx = _collections_upload_ctx(s, cols)
+    items = []
+    for c in cols:
+        uploads = ctx["upload_map"].get(c.id, {})
+        items.append({"id": c.id, "title": c.title or "", "slug": c.slug,
+                      "model": c.model.name if c.model else "",
+                      "publishedAt": str(c.published_at or ""),
+                      "status": c.status,
+                      "photoCount": sum(e["total"] for e in uploads.values())
+                                    if uploads else len(c.photos),
+                      "uploads": {str(sid): e for sid, e in uploads.items()}})
+    return {"collections": items, "storages": ctx["storages"],
             "page": page, "totalPages": total_pages, "total": total}
 async def admin_collection_new(request: Request, s: Session = Depends(get_db)):
     models = s.scalars(select(Model).order_by(Model.name)).all()
@@ -402,6 +464,11 @@ async def admin_collection_delete(request: Request, col_id: int, s: Session = De
     if c:
         slug, filenames = c.slug, [p.filename for p in c.photos]
         model_id = c.model_id
+        # 远端同步清理(尽力而为): 失败不阻断本地删除
+        try:
+            purge_remote_of_collection(col_id)
+        except Exception:
+            log.exception("remote purge failed: collection %s", col_id)
         s.delete(c)
         # 名下写真集删光后模特一并删除(前台模特无写真即不可见, 留着成死链)
         if model_id is not None:
@@ -838,3 +905,179 @@ async def admin_settings_save(request: Request, s: Session = Depends(get_db)):
             settings_store.set_setting(s, key, "0")
     s.commit()
     return RedirectResponse(f"/admin/settings?flash={t('已保存')}", 303)
+
+
+# ---- 存储管理 -------------------------------------------------------------------
+
+STORAGE_TYPES = ("imgbed",)
+
+
+def _storages_ctx(s: Session) -> dict:
+    storages = s.scalars(select(Storage).order_by(Storage.id)).all()
+    conf = settings_store.storage_conf(s)
+    return {
+        "page": "admin",
+        "storages": storages,
+        "storage_types": STORAGE_TYPES,
+        "auto_upload": conf["storage.auto_upload"],
+        "auto_upload_targets": {int(x) for x in
+                                str(conf["storage.auto_upload_targets"]).split(",")
+                                if x.strip().isdigit()},
+        "flash": "",
+        "error": "",
+    }
+
+
+@router.get("/storages")
+async def admin_storages(request: Request, s: Session = Depends(get_db)):
+    ctx = _storages_ctx(s)
+    ctx["flash"] = request.query_params.get("flash", "")
+    ctx["error"] = request.query_params.get("error", "")
+    return templates.TemplateResponse(request, "admin/storages.html", ctx)
+
+
+@router.get("/storages/new")
+async def admin_storage_new(request: Request, s: Session = Depends(get_db)):
+    return templates.TemplateResponse(request, "admin/storage_form.html", {
+        "page": "admin", "st": None, "storage_types": STORAGE_TYPES,
+        "token_tail": "", "action": "/admin/storages/new",
+        "error": request.query_params.get("error", ""),
+    })
+
+
+@router.post("/storages/new")
+async def admin_storage_create(request: Request, s: Session = Depends(get_db),
+                               name: str = Form(...), type: str = Form("imgbed"),
+                               root_dir: str = Form(""), api_url: str = Form(""),
+                               token: str = Form(""), enabled: str = Form("")):
+    if type not in STORAGE_TYPES:
+        return RedirectResponse("/admin/storages/new?error=type", 303)
+    st = Storage(name=name.strip() or "未命名存储", type=type,
+                 root_dir=root_dir.strip(), api_url=api_url.strip(),
+                 token=token.strip(), enabled=bool(enabled))
+    s.add(st)
+    s.commit()
+    return RedirectResponse(f"/admin/storages?flash={quote(t('存储已创建'))}", 303)
+
+
+@router.get("/storages/{st_id}/edit")
+async def admin_storage_edit(request: Request, st_id: int, s: Session = Depends(get_db)):
+    st = s.get(Storage, st_id)
+    if not st:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "admin/storage_form.html", {
+        "page": "admin", "st": st, "storage_types": STORAGE_TYPES,
+        "token_tail": st.token[-4:] if st.token else "",
+        "action": f"/admin/storages/{st_id}/edit",
+        "error": request.query_params.get("error", ""),
+    })
+
+
+@router.post("/storages/{st_id}/edit")
+async def admin_storage_update(request: Request, st_id: int, s: Session = Depends(get_db),
+                               name: str = Form(...), type: str = Form("imgbed"),
+                               root_dir: str = Form(""), api_url: str = Form(""),
+                               token: str = Form(""), enabled: str = Form("")):
+    st = s.get(Storage, st_id)
+    if not st:
+        raise HTTPException(404)
+    st.name = name.strip() or st.name
+    st.root_dir = root_dir.strip()
+    st.api_url = api_url.strip()
+    if token.strip():  # 留空 = 不修改
+        st.token = token.strip()
+    st.enabled = bool(enabled)
+    s.commit()
+    return RedirectResponse(f"/admin/storages?flash={quote(t('已保存'))}", 303)
+
+
+@router.post("/storages/{st_id}/delete")
+async def admin_storage_delete(request: Request, st_id: int, s: Session = Depends(get_db)):
+    """删除存储配置:连带删除该存储的上传记录(远端文件保留,不自动清理)。"""
+    st = s.get(Storage, st_id)
+    if st:
+        s.query(PhotoUpload).filter(PhotoUpload.storage_id == st_id).delete(
+            synchronize_session=False)
+        s.query(UploadJob).filter(UploadJob.storage_id == st_id).delete(
+            synchronize_session=False)
+        s.delete(st)
+        s.commit()
+        flash = t("存储已删除: {n}(远端文件未清理,如需请到图床后台操作)", n=st.name)
+    else:
+        flash = ""
+    return RedirectResponse(f"/admin/storages?flash={quote(flash)}", 303)
+
+
+@router.post("/storages/{st_id}/test")
+async def admin_storage_test(request: Request, st_id: int, s: Session = Depends(get_db)):
+    """连通性测试(fetch + toast)。"""
+    st = s.get(Storage, st_id)
+    if not st:
+        raise HTTPException(404)
+    try:
+        msg = _get_backend(st).test_connection(st)
+        return {"ok": True, "message": msg}
+    except StorageError as e:
+        return {"ok": False, "message": str(e)}
+    except Exception as e:
+        log.exception("storage test failed: %s", st_id)
+        return {"ok": False, "message": f"测试失败: {e}"}
+
+
+@router.post("/storages/auto-upload")
+async def admin_storage_auto_upload(request: Request, s: Session = Depends(get_db),
+                                    auto_upload: str = Form(""),
+                                    targets: list[str] = Form([])):
+    """自动上传开关 + 目标多选(仅影响新入库,不做存量回填)。"""
+    settings_store.set_setting(s, "storage.auto_upload",
+                               "1" if auto_upload else "0")
+    ids = [x for x in targets if x.strip().isdigit()]
+    settings_store.set_setting(s, "storage.auto_upload_targets", ",".join(ids))
+    s.commit()
+    return RedirectResponse(f"/admin/storages?flash={quote(t('已保存'))}", 303)
+
+
+# ---- 手动上传(写真集列表) ----------------------------------------------------------
+
+@router.post("/collections/{col_id}/upload")
+async def admin_collection_upload(request: Request, col_id: int, s: Session = Depends(get_db)):
+    """手动上传:为所有启用的存储建 UploadJob(断点续传,已传的照片跳过)。"""
+    c = s.get(Collection, col_id)
+    if not c:
+        raise HTTPException(404)
+    targets = [st.id for st in s.scalars(select(Storage).where(
+        Storage.enabled == True)).all()]  # noqa: E712
+    if not targets:
+        if _is_ajax(request):
+            return {"ok": False, "message": t("没有已启用的存储,请先到存储管理添加")}
+        return RedirectResponse(f"/admin/storages?error=no-target", 303)
+    n = storage_worker.enqueue_collection(col_id, targets)
+    if _is_ajax(request):
+        return {"ok": True, "queued": n}
+    return RedirectResponse(f"/admin/collections?flash={quote(t('上传任务已创建'))}", 303)
+
+
+@router.get("/api/upload/jobs")
+async def admin_upload_jobs_api(s: Session = Depends(get_db)):
+    """活跃(queued/running)与最近完成(failed,各 20 条)上传任务,列表页轮询用。"""
+    active = s.scalars(select(UploadJob)
+                       .where(UploadJob.status.in_(("queued", "running")))
+                       .order_by(UploadJob.id)).all()
+    recent = s.scalars(select(UploadJob)
+                       .where(UploadJob.status.in_(("done", "failed")))
+                       .order_by(desc(UploadJob.updated_at), desc(UploadJob.id))
+                       .limit(20)).all()
+    return {"jobs": [_upload_job_payload(s, j) for j in active] +
+                    [_upload_job_payload(s, j) for j in recent]}
+
+
+def _upload_job_payload(s: Session, j: UploadJob) -> dict:
+    col = s.get(Collection, j.collection_id)
+    st = s.get(Storage, j.storage_id)
+    return {"id": j.id, "collectionId": j.collection_id,
+            "storageId": j.storage_id,
+            "collectionTitle": (col.title or col.slug) if col else "",
+            "storageName": st.name if st else "",
+            "status": j.status, "done": j.photos_done, "total": j.photos_total,
+            "error": j.error or ""}
+

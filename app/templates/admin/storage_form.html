@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('Storages') }} — Photo Collection{% endblock %}
+{% block body %}
+<div class="shell">
+  <header data-header></header>
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title">{{ t('Storages') }}</h1>
+        <p class="page-head__sub">{{ t('外部存储(图床等)配置与上传管理。') }}</p>
+      </div>
+      <div class="panel-grid">
+        <nav class="side-nav" aria-label="{{ t('Admin') }}">
+          <a class="side-nav__item" href="/admin">{{ t('Dashboard') }}</a>
+          <a class="side-nav__item" href="/admin/harvest">{{ t('Harvest') }}</a>
+          <a class="side-nav__item" href="/admin/collections">{{ t('Collections') }}</a>
+          <a class="side-nav__item" href="/admin/models">{{ t('Models') }}</a>
+          <a class="side-nav__item" href="/admin/tags">{{ t('Tags') }}</a>
+          <a class="side-nav__item" href="/admin/users">{{ t('Users') }}</a>
+          <a class="side-nav__item" href="/admin/storages" aria-current="page">{{ t('Storages') }}</a>
+          <a class="side-nav__item" href="/admin/settings">{{ t('Settings') }}</a>
+          <a class="side-nav__item" href="/">{{ t('← Back to site') }}</a>
+        </nav>
+        <div>
+          {% if error %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)"><p class="state__text" style="margin:0;color:var(--danger,#c0392b)">{{ error }}</p></div>{% endif %}
+
+          <form method="post" action="{{ action }}" style="max-width:680px">
+            <label class="field"><span class="field__label">{{ t('名称') }}</span>
+              <input class="input" name="name" required value="{{ st.name if st else '' }}"
+                     placeholder="ImgBed 图床"></label>
+
+            <label class="field"><span class="field__label">{{ t('类型') }}</span>
+              <select class="select" name="type">
+                {% for tp in storage_types %}
+                <option value="{{ tp }}" {% if st and st.type == tp %}selected{% endif %}>{{ tp }}</option>
+                {% endfor %}
+              </select>
+              <span class="t-small" style="color:var(--ink-3)">{{ t('目前支持 CloudFlare ImgBed 兼容图床。') }}</span></label>
+
+            <label class="field"><span class="field__label">{{ t('API 地址') }}</span>
+              <input class="input" name="api_url" value="{{ st.api_url if st else '' }}"
+                     placeholder="https://imgbed.example.com" spellcheck="false"></label>
+
+            <label class="field"><span class="field__label">{{ t('根目录(远端)') }}</span>
+              <input class="input" name="root_dir" value="{{ st.root_dir if st else '' }}"
+                     placeholder="/PhotoBook" spellcheck="false">
+              <span class="t-small" style="color:var(--ink-3)">{{ t('上传时加在写真目录之前,如 /PhotoBook + 本地 一色雨/coser@xxx → 远端 /PhotoBook/一色雨/coser@xxx。留空表示站点根目录。') }}</span></label>
+
+            <label class="field"><span class="field__label">{{ t('Token(API Key)') }}</span>
+              <input class="input" name="token" type="password" value="" autocomplete="new-password"
+                     placeholder="{{ '····' + token_tail if token_tail else 'imgbed_…' }}">
+              <span class="t-small" style="color:var(--ink-3)">
+                {% if st and token_tail %}{{ t('已保存(尾号 {t}),留空表示不修改。', t=token_tail) }}{% else %}{{ t('需要 upload 权限;如需「测试连接」与远端删除,还需 list / delete 权限。') }}{% endif %}
+              </span></label>
+
+            <label class="field" style="flex-direction:row;align-items:center;gap:var(--s3)">
+              <input type="checkbox" name="enabled" value="1" {% if (st and st.enabled) or not st %}checked{% endif %} style="accent-color:var(--accent)">
+              <span class="field__label" style="margin:0">{{ t('启用此存储') }}</span></label>
+
+            <div style="display:flex;gap:var(--s3);margin-top:var(--s5)">
+              <button class="btn" type="submit">{{ t('保存') }}</button>
+              <a class="btn btn--quiet" href="/admin/storages">{{ t('取消') }}</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer data-footer></footer>
+</div>
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+{% endblock %}

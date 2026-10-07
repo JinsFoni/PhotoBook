@@ -33,12 +33,10 @@ class PhotoDownloader @Inject constructor(
         scope.launch {
             runCatching {
                 android.util.Log.w("PhotoDl", "fetching...")
-                // 1) 拉字节(进程内,cleartext 已放行)
-                val conn = URL(url).openConnection() as HttpURLConnection
-                conn.connectTimeout = 10_000
-                conn.readTimeout = 30_000
-                val bytes = (conn.inputStream).readBytes()
-                conn.disconnect()
+                // 1) 拉字节(进程内,cleartext 已放行)。
+                // HttpURLConnection 只跟随同协议重定向;服务端 /media 在原图
+                // 已上传外部存储时会 302 跳 https 图床(跨协议),须手动跟随。
+                val bytes = fetchFollowingRedirects(url)
                 // 2) MediaStore 插入 Pictures/PhotoBook/(无需写权限,API 29+)
                 val values = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
@@ -62,6 +60,35 @@ class PhotoDownloader @Inject constructor(
                 values.put(MediaStore.Images.Media.IS_PENDING, 0)
                 resolver.update(uri, values, null, null)
             }.onFailure { android.util.Log.w("PhotoDl", "FAIL", it) }
+        }
+    }
+
+    /** 手动跟随重定向(含 http↔https 跨协议),上限 5 跳。 */
+    private fun fetchFollowingRedirects(url: String, redirects: Int = 0): ByteArray {
+        check(redirects <= 5) { "too many redirects" }
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout = 10_000
+        conn.readTimeout = 30_000
+        conn.instanceFollowRedirects = false
+        try {
+            when (conn.responseCode) {
+                HttpURLConnection.HTTP_MOVED_PERM,
+                HttpURLConnection.HTTP_MOVED_TEMP,
+                307, 308 -> {
+                    val loc = conn.getHeaderField("Location")
+                        ?: error("redirect without Location")
+                    conn.disconnect()
+                    val next = java.net.URI(url).resolve(loc).toString()
+                    android.util.Log.w("PhotoDl", "redirect -> $next")
+                    return fetchFollowingRedirects(next, redirects + 1)
+                }
+            }
+            if (conn.responseCode !in 200..299) {
+                error("HTTP ${conn.responseCode}")
+            }
+            return conn.inputStream.use { it.readBytes() }
+        } finally {
+            conn.disconnect()
         }
     }
 }

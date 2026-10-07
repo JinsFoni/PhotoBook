@@ -12,7 +12,7 @@ import re
 import threading
 
 from fastapi import HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from PIL import Image, ImageFile
 from sqlalchemy import select
 
@@ -96,6 +96,41 @@ def _safe_path(rel: str) -> any:
     if not str(p).startswith(str(base)):
         raise HTTPException(404)
     return p
+
+
+def abs_path(rel: str) -> any:
+    """media 下相对路径 → 绝对路径(后台任务用,已过 _safe_path 校验的来源)。"""
+    return settings.media_dir / rel
+
+
+def thumb_cache_ready(rel: str) -> bool:
+    """两档预热缩略图(900/2400)是否都已在磁盘缓存。
+
+    删除本地原图前的门槛: 缓存不全就删原图,该图缩略图将永久无法再生。
+    质量分档须与 serve_thumb 保持一致(>=1600 用 q88)。
+    """
+    for w in PREHEAT_WIDTHS:
+        q = 88 if w >= 1600 else 78
+        if not _cache_path(w, None, q, rel).is_file():
+            return False
+    return True
+
+
+def cleanup_empty_dirs(any_rel: str) -> None:
+    """照片所在写真目录/模特目录若已空则逐级删除(空才删,防误删)。"""
+    if not any_rel:
+        return
+    album_dir = (settings.media_dir / any_rel).parent
+    try:
+        next(album_dir.iterdir())
+    except StopIteration:
+        album_dir.rmdir()
+        try:
+            next(album_dir.parent.iterdir())
+        except StopIteration:
+            album_dir.parent.rmdir()
+    except OSError:
+        pass
 
 
 def _cache_path(w: int, h: int | None, q: int, rel: str) -> any:
@@ -235,6 +270,11 @@ def ensure_cached(rel: str, w: int, h: int | None = None, q: int | None = None) 
 def serve_media(rel: str, request: Request) -> Response:
     p = _safe_path(rel)
     if not p.is_file():
+        # 原图已上传外部存储并删除本地: 302 跳转远端(下载/1:1 放大继续可用)
+        from .storage import remote_redirect
+        redirect = remote_redirect(rel)
+        if redirect:
+            return RedirectResponse(redirect, 302)
         raise HTTPException(404)
     return FileResponse(p, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
@@ -256,14 +296,26 @@ def serve_thumb(spec: str, request: Request) -> Response:
     if rel.lower().endswith(".webp"):
         rel = rel[:-5]
 
-    src = _safe_path(rel)
-    if not src.is_file():
-        raise HTTPException(404)
-
+    # 缓存命中直接回(原图已上传外部存储并删本地时,缓存是唯一来源,
+    # 必须先查缓存再做原图存在性检查)
     cache = _cache_path(w, h, q, rel)
     if cache.is_file():
         return FileResponse(cache, media_type="image/webp",
                             headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+    src = _safe_path(rel)
+    if not src.is_file():
+        # 原图不在本地但缓存也没有: 试从外部存储回源下载再生成
+        from .storage import remote_redirect
+        url = remote_redirect(rel)
+        if url:
+            data = _make_webp_from_remote(url, w, h, q)
+            if data is not None:
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                cache.write_bytes(data)
+                return Response(data, media_type="image/webp",
+                                headers={"Cache-Control": "public, max-age=31536000, immutable"})
+        raise HTTPException(404)
 
     # 生成:缩到目标宽(裁高比),WebP 按尺寸分档
     try:
@@ -275,6 +327,46 @@ def serve_thumb(spec: str, request: Request) -> Response:
     cache.write_bytes(data)
     return Response(data, media_type="image/webp",
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+def _make_webp_from_remote(url: str, w: int, h: int | None, q: int) -> bytes | None:
+    """从外部存储拉原图生成缩放 WebP(本地原图缺失时的回源路径)。
+
+    仅缓存缺失的零星请求会走到这里(上传 worker 保证删除前两档已就绪),
+    单次拉取有超时与大小上限,失败返回 None(→ 404,不阻塞请求)。
+    """
+    import httpx
+    try:
+        resp = httpx.get(url, timeout=30.0, follow_redirects=True)
+        resp.raise_for_status()
+        if len(resp.content) > 200 * 1024 * 1024:
+            return None
+        with _gen_sem:
+            im = _open_tolerant(io.BytesIO(resp.content))
+            try:
+                sw, sh = im.size
+                tw = min(w, sw)
+                if h:
+                    target_ratio = w / h
+                    src_ratio = sw / sh
+                    if src_ratio > target_ratio:
+                        nw = int(sh * target_ratio)
+                        x0 = (sw - nw) // 2
+                        im = im.crop((x0, 0, x0 + nw, sh))
+                    else:
+                        nh = int(sw / target_ratio)
+                        y0 = max(0, (sh - nh) // 3)
+                        im = im.crop((0, y0, sw, y0 + nh))
+                th = h if h else int(tw * sh / sw)
+                im = im.resize((tw, th), Image.LANCZOS)
+                buf = io.BytesIO()
+                im.save(buf, "WEBP", quality=q, method=4)
+                return buf.getvalue()
+            finally:
+                im.close()
+    except Exception:
+        log.warning("remote thumb regen failed: %s w=%s", url[:120], w, exc_info=True)
+        return None
 
 
 def thumb_url(rel: str | None, w: int, h: int | None = None) -> str:
@@ -427,8 +519,24 @@ def _publish_ready(slug: str) -> None:
             c.status = "published"
             s.commit()
             log.info("published (thumbs ready): %s", slug)
+            _auto_upload_new_import(s, c)
     finally:
         s.close()
+
+
+def _auto_upload_new_import(s, c) -> None:
+    """新入库写真发布后自动上传(仅此路径;存量库不回填)。"""
+    try:
+        from .storage import worker as storage_worker
+        from . import settings_store
+        targets = settings_store.auto_upload_targets(s)
+        if targets:
+            n = storage_worker.enqueue_collection(c.id, targets)
+            if n:
+                log.info("auto upload queued: %s -> %d storage(s)",
+                         c.slug, n)
+    except Exception:
+        log.exception("auto upload enqueue failed: %s", c.slug)
 
 
 def _load_libc():

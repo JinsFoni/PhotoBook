@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from ..config import settings as defaults
-from ..db import Setting
+from ..db import Setting, Storage
 
 # key -> (默认值, 说明, 类型)
 HARVEST_KEYS: dict[str, tuple[str, str, type]] = {
@@ -50,4 +50,41 @@ def harvest_conf(s: Session) -> dict[str, object]:
             out[key] = float(val)
         else:
             out[key] = str(val)
+    return out
+
+
+# ---- 存储上传配置 -------------------------------------------------------------
+
+STORAGE_KEYS: dict[str, tuple[str, type]] = {
+    "storage.auto_upload": ("0", bool),          # 新入库写真自动上传开关
+    "storage.auto_upload_targets": ("", str),    # 自动上传目标 storage id,逗号分隔
+}
+
+
+def storage_conf(s: Session) -> dict[str, object]:
+    """读取存储上传配置(settings 表 → 默认)。"""
+    out: dict[str, object] = {}
+    for key, (dflt, typ) in STORAGE_KEYS.items():
+        raw = get_setting(s, key)
+        val = raw if raw is not None and raw != "" else dflt
+        if typ is bool:
+            out[key] = str(val) in ("1", "true", "True", "on")
+        else:
+            out[key] = str(val)
+    return out
+
+
+def auto_upload_targets(s: Session) -> list[int]:
+    """自动上传目标 storage id 列表(只含已启用的存储)。"""
+    conf = storage_conf(s)
+    if not conf["storage.auto_upload"]:
+        return []
+    out: list[int] = []
+    for raw in str(conf["storage.auto_upload_targets"]).split(","):
+        raw = raw.strip()
+        if not raw.isdigit():
+            continue
+        st = s.get(Storage, int(raw))
+        if st and st.enabled:
+            out.append(st.id)
     return out

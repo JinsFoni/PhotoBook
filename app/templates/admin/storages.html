@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('Storages') }} — Photo Collection{% endblock %}
+{% block body %}
+<div class="shell">
+  <header data-header></header>
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title">{{ t('Storages') }}</h1>
+        <p class="page-head__sub">{{ t('外部存储(图床等)配置与上传管理。') }}</p>
+      </div>
+      <div class="panel-grid">
+        <nav class="side-nav" aria-label="{{ t('Admin') }}">
+          <a class="side-nav__item" href="/admin">{{ t('Dashboard') }}</a>
+          <a class="side-nav__item" href="/admin/harvest">{{ t('Harvest') }}</a>
+          <a class="side-nav__item" href="/admin/collections">{{ t('Collections') }}</a>
+          <a class="side-nav__item" href="/admin/models">{{ t('Models') }}</a>
+          <a class="side-nav__item" href="/admin/tags">{{ t('Tags') }}</a>
+          <a class="side-nav__item" href="/admin/users">{{ t('Users') }}</a>
+          <a class="side-nav__item" href="/admin/storages" aria-current="page">{{ t('Storages') }}</a>
+          <a class="side-nav__item" href="/admin/settings">{{ t('Settings') }}</a>
+          <a class="side-nav__item" href="/">{{ t('← Back to site') }}</a>
+        </nav>
+        <div>
+          {% if flash %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)"><p class="state__text" style="margin:0">{{ flash }}</p></div>{% endif %}
+          {% if error %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)"><p class="state__text" style="margin:0;color:var(--danger,#c0392b)">{{ error }}</p></div>{% endif %}
+
+          <div style="max-width:680px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s4)">
+              <h2 class="t-h3" style="margin:0">{{ t('存储列表') }}</h2>
+              <a class="btn btn--sm" href="/admin/storages/new">{{ t('新增存储') }}</a>
+            </div>
+            {% if storages %}
+            <table style="width:100%;border-collapse:collapse">
+              <thead><tr>
+                <th class="t-small" style="text-align:left;padding:var(--s2) 0;border-bottom:1px solid var(--line)">{{ t('名称') }}</th>
+                <th class="t-small" style="text-align:left;padding:var(--s2) 0;border-bottom:1px solid var(--line)">{{ t('类型') }}</th>
+                <th class="t-small" style="text-align:left;padding:var(--s2) 0;border-bottom:1px solid var(--line)">{{ t('根目录') }}</th>
+                <th class="t-small" style="text-align:left;padding:var(--s2) 0;border-bottom:1px solid var(--line)">{{ t('状态') }}</th>
+                <th class="t-small" style="text-align:left;padding:var(--s2) 0;border-bottom:1px solid var(--line)">{{ t('操作') }}</th>
+              </tr></thead>
+              <tbody>
+              {% for st in storages %}
+              <tr style="border-bottom:1px solid var(--line-2)">
+                <td style="padding:var(--s2) 0">{{ st.name }}</td>
+                <td style="padding:var(--s2) 0" class="t-small">{{ st.type }}</td>
+                <td style="padding:var(--s2) 0" class="t-small"><code>{{ st.root_dir or '/' }}</code></td>
+                <td style="padding:var(--s2) 0" class="t-small">
+                  {% if st.enabled %}<span data-storage-enabled="{{ st.id }}">{{ t('已启用') }}</span>
+                  {% else %}<span data-storage-enabled="{{ st.id }}" style="color:var(--ink-3)">{{ t('已停用') }}</span>{% endif %}
+                </td>
+                <td style="padding:var(--s2) 0">
+                  <div style="display:flex;gap:var(--s2);flex-wrap:wrap">
+                    <button class="btn btn--quiet btn--sm" data-test-storage="{{ st.id }}">{{ t('测试连接') }}</button>
+                    <a class="btn btn--quiet btn--sm" href="/admin/storages/{{ st.id }}/edit">{{ t('编辑') }}</a>
+                    <form method="post" action="/admin/storages/{{ st.id }}/delete"
+                          onsubmit='return confirm({{ t('删除存储配置后,已上传记录一并清除(远端文件保留)。确定删除?') | tojson }})'>
+                      <button class="btn btn--quiet btn--sm" type="submit">{{ t('删除') }}</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div class="state" style="padding:var(--s5)"><p class="state__text">{{ t('还没有配置存储。点击「新增存储」添加一个图床。') }}</p></div>
+            {% endif %}
+          </div>
+
+          <div style="border-top:1px solid var(--line);margin-top:var(--s6);padding-top:var(--s5);max-width:680px">
+            <h2 class="t-h3" style="margin-bottom:var(--s2)">{{ t('自动上传(新入库)') }}</h2>
+            <p class="t-small" style="color:var(--ink-3);margin-bottom:var(--s4)">
+              {{ t('开启后,新采集/导入的写真在缩略图就绪发布会自动上传到勾选的存储。只对之后新入库的写真生效,存量写真请在写真集列表手动上传。') }}
+            </p>
+            <form method="post" action="/admin/storages/auto-upload">
+              <label class="field" style="flex-direction:row;align-items:center;gap:var(--s3)">
+                <input type="checkbox" name="auto_upload" value="1" {% if auto_upload %}checked{% endif %} style="accent-color:var(--accent)">
+                <span class="field__label" style="margin:0">{{ t('新入库写真自动上传') }}</span></label>
+              {% for st in storages %}
+              {% if st.enabled %}
+              <label class="field" style="flex-direction:row;align-items:center;gap:var(--s3);margin-left:var(--s5)">
+                <input type="checkbox" name="targets" value="{{ st.id }}" {% if st.id in auto_upload_targets %}checked{% endif %} style="accent-color:var(--accent)">
+                <span class="field__label" style="margin:0">{{ st.name }}</span></label>
+              {% endif %}
+              {% endfor %}
+              <button class="btn" type="submit" style="margin-top:var(--s4)">{{ t('保存设置') }}</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer data-footer></footer>
+</div>
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  document.querySelectorAll('[data-test-storage]').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      var id = btn.getAttribute('data-test-storage');
+      btn.disabled = true;
+      var orig = btn.textContent;
+      btn.textContent = '…';
+      try {
+        var r = await fetch('/admin/storages/' + id + '/test', {
+          method: 'POST', headers: { 'X-Requested-With': 'fetch' }
+        });
+        var d = await r.json();
+        if (window.PC && PC.toast) PC.toast((d.ok ? '✓ ' : '✗ ') + d.message);
+        else alert(d.message);
+      } catch (e) {
+        if (window.PC && PC.toast) PC.toast('✗ ' + e);
+        else alert(String(e));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}
