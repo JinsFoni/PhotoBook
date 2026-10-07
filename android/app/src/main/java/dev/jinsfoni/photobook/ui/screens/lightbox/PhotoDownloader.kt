@@ -78,7 +78,10 @@ class PhotoDownloader @Inject constructor(
                     val loc = conn.getHeaderField("Location")
                         ?: error("redirect without Location")
                     conn.disconnect()
-                    val next = java.net.URI(url).resolve(loc).toString()
+                    // Location 相对于"当前请求 URL 的各组成部分"解析,不能用
+                    // URI(url) 整体解析 —— 文件名里的 [ ] 空格等在 URI 规范里
+                    // 非法(服务端 URL 未编码), 会直接 URISyntaxException。
+                    val next = resolveRedirect(url, loc)
                     android.util.Log.w("PhotoDl", "redirect -> $next")
                     return fetchFollowingRedirects(next, redirects + 1)
                 }
@@ -90,5 +93,18 @@ class PhotoDownloader @Inject constructor(
         } finally {
             conn.disconnect()
         }
+    }
+
+    /** 按 RFC 相对引用规则解析 Location,但容忍未编码字符(逐段修正)。 */
+    private fun resolveRedirect(base: String, location: String): String {
+        if (location.startsWith("http://") || location.startsWith("https://")) {
+            return location
+        }
+        val prefix = if (location.startsWith("/")) {
+            Regex("(https?://[^/]+)").find(base)?.value ?: base
+        } else {
+            base.substringBeforeLast('/') + "/"
+        }
+        return prefix + location
     }
 }
