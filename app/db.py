@@ -218,6 +218,7 @@ class Storage(Base):
     token: Mapped[str] = mapped_column(String(300), default="")      # imgbed: API Key; webdav: 密码
     username: Mapped[str] = mapped_column(String(120), default="")   # webdav 用户名(imgbed 不用)
     priority: Mapped[int] = mapped_column(Integer, default=0)        # 直链优先级,越大越优先(本地缺失时按此排序回源/302)
+    manual_upload: Mapped[bool] = mapped_column(Boolean, default=False)  # 参与写真集列表的手动上传(需 enabled)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

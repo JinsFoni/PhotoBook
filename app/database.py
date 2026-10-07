@@ -48,6 +48,7 @@ def _migrate() -> None:
         "ALTER TABLE collections ADD COLUMN source_serial INTEGER",
         "ALTER TABLE storages ADD COLUMN username VARCHAR(120) NOT NULL DEFAULT ''",
         "ALTER TABLE storages ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE storages ADD COLUMN manual_upload BOOLEAN NOT NULL DEFAULT 0",
     )
     with engine.connect() as conn:
         for stmt in stmts:

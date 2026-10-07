@@ -68,8 +68,16 @@
               <span class="t-small" style="color:var(--ink-3)">{{ t('本地原图缺失时,按优先级从高到低尝试外部存储:302 跳转取最高优先级,缩略图回源失败自动落到下一级。多个存储相同时先建者优先。') }}</span></label>
 
             <label class="field" style="flex-direction:row;align-items:center;gap:var(--s3)">
-              <input type="checkbox" name="enabled" value="1" {% if (st and st.enabled) or not st %}checked{% endif %} style="accent-color:var(--accent)">
+              <input type="checkbox" name="enabled" value="1" {% if (st and st.enabled) or not st %}checked{% endif %}
+                     style="accent-color:var(--accent)" data-enabled-check>
               <span class="field__label" style="margin:0">{{ t('启用此存储') }}</span></label>
+
+            <label class="field" style="flex-direction:row;align-items:center;gap:var(--s3);margin-left:var(--s5)">
+              <input type="checkbox" name="manual_upload" value="1" {% if st and st.manual_upload %}checked{% endif %}
+                     style="accent-color:var(--accent)" data-manual-check
+                     {% if not (st and st.enabled) %}disabled{% endif %}>
+              <span class="field__label" style="margin:0">{{ t('参与手动上传') }}</span>
+              <span class="t-small" style="color:var(--ink-3)">{{ t('勾选后,写真集列表的「上传」按钮会把照片传到此存储(存储需处于启用状态)。') }}</span></label>
 
             <div style="display:flex;gap:var(--s3);margin-top:var(--s5)">
               <button class="btn" type="submit">{{ t('保存') }}</button>
@@ -81,6 +89,8 @@
             (function () {
               const sel = document.querySelector('[data-storage-type]');
               const webdavBox = document.querySelector('[data-webdav-fields]');
+              const enabledCheck = document.querySelector('[data-enabled-check]');
+              const manualCheck = document.querySelector('[data-manual-check]');
               const apiInput = document.querySelector('[data-hint-api]');
               const apiHint = document.querySelector('[data-hint-api-text]');
               const tokenLabel = document.querySelector('[data-hint-token-label]');
@@ -113,6 +123,10 @@
                 tokenInput.dataset.savedTail = {{ token_tail | tojson }};
               }
               sel.addEventListener('change', apply);
+              enabledCheck.addEventListener('change', function () {
+                manualCheck.disabled = !enabledCheck.checked;
+                if (!enabledCheck.checked) manualCheck.checked = false;
+              });
               apply();
             })();
           </script>

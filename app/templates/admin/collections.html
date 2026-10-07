@@ -48,17 +48,19 @@
                 <td class="num">{{ c.status }}</td>
                 <td data-upload-cell="{{ c.id }}" style="white-space:nowrap" class="t-small">
                   {% if upload_storages %}
+                    {# 上传按钮作用于所有启用存储, 只显示一个; 有记录的存储逐行显示状态 #}
+                    {% set ns = namespace(none_count = 0) %}
                     {% for st in upload_storages %}{% set u = upload_map.get(c.id, {}).get(st.id) %}
-                      {% if u %}
+                      {% if u and u.status != 'none' %}
                       <div data-upload-row="{{ c.id }}:{{ st.id }}" style="color:var(--ink-2)">
                         {% if u.status == 'running' or u.status == 'queued' %}{{ st.name }}: {{ u.done }}/{{ u.total }}…
                         {% elif u.status == 'done' %}{{ st.name }}: {{ t('已上传 ✓') }}
                         {% elif u.status == 'partial' %}{{ st.name }}: {{ u.done }}/{{ u.total }}
-                        {% elif u.status == 'failed' %}{{ st.name }}: <span style="color:var(--danger,#c0392b)">{{ t('失败') }}</span>
-                        {% else %}<button class="btn btn--quiet btn--sm" data-upload-btn="{{ c.id }}">{{ t('上传') }}</button>{% if loop.first %}{% endif %}{% endif %}
+                        {% else %}{{ st.name }}: <span style="color:var(--danger,#c0392b)">{{ t('失败') }}</span>{% endif %}
                       </div>
-                      {% endif %}
+                      {% else %}{% set ns.none_count = ns.none_count + 1 %}{% endif %}
                     {% endfor %}
+                    {% if ns.none_count %}<div><button class="btn btn--quiet btn--sm" data-upload-btn="{{ c.id }}">{{ t('上传') }}</button></div>{% endif %}
                   {% else %}<span style="color:var(--ink-3)">—</span>{% endif %}
                 </td>
                 <td style="white-space:nowrap;text-align:center">
@@ -202,12 +204,12 @@
     if (!storagesCache.length) return '<span style="color:var(--ink-3)">—</span>';
     var ups = c.uploads || {};
     var html = "";
+    var noneCount = 0;
     storagesCache.forEach(function (st) {
       var u = ups[String(st.id)];
       var label = esc(st.name) + ": ";
       if (!u || u.status === "none") {
-        html += '<div data-upload-row="' + c.id + ':' + st.id + '">' +
-          '<button class="btn btn--quiet btn--sm" data-upload-btn="' + c.id + '">' + esc(PC.t("上传")) + "</button></div>";
+        noneCount++;
       } else if (u.status === "queued" || u.status === "running") {
         html += '<div data-upload-row="' + c.id + ':' + st.id + '" style="color:var(--ink-2)">' + label + u.done + "/" + u.total + "…</div>";
       } else if (u.status === "done") {
@@ -218,6 +220,9 @@
         html += '<div data-upload-row="' + c.id + ':' + st.id + '" style="color:var(--danger,#c0392b)">' + label + esc(PC.t("失败")) + "</div>";
       }
     });
+    if (noneCount) {
+      html += '<div><button class="btn btn--quiet btn--sm" data-upload-btn="' + c.id + '">' + esc(PC.t("上传")) + "</button></div>";
+    }
     return html;
   }
 
@@ -233,7 +238,7 @@
     })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
-        if (d && d.ok) { schedulePoll(true); if (PC.toast) PC.toast(PC.t("上传任务已创建")); }
+        if (d && d.ok) { loadPage(curPage); schedulePoll(true); if (PC.toast) PC.toast(PC.t("上传任务已创建")); }
         else { if (PC.toast) PC.toast((d && d.message) || PC.t("上传任务创建失败")); btn.disabled = false; }
       })
       .catch(function () { btn.disabled = false; });

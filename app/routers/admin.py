@@ -951,14 +951,17 @@ async def admin_storage_create(request: Request, s: Session = Depends(get_db),
                                name: str = Form(...), type: str = Form("imgbed"),
                                root_dir: str = Form(""), api_url: str = Form(""),
                                token: str = Form(""), username: str = Form(""),
-                               priority: str = Form("0"), enabled: str = Form("")):
+                               priority: str = Form("0"), enabled: str = Form(""),
+                               manual_upload: str = Form("")):
     if type not in STORAGE_TYPES:
         return RedirectResponse("/admin/storages/new?error=type", 303)
+    st_enabled = bool(enabled)
     st = Storage(name=name.strip() or "未命名存储", type=type,
                  root_dir=root_dir.strip(), api_url=api_url.strip(),
                  token=token.strip(), username=username.strip(),
                  priority=_parse_priority(priority),
-                 enabled=bool(enabled))
+                 manual_upload=st_enabled and bool(manual_upload),
+                 enabled=st_enabled)
     s.add(st)
     s.commit()
     return RedirectResponse(f"/admin/storages?flash={quote(t('存储已创建'))}", 303)
@@ -982,7 +985,8 @@ async def admin_storage_update(request: Request, st_id: int, s: Session = Depend
                                name: str = Form(...), type: str = Form("imgbed"),
                                root_dir: str = Form(""), api_url: str = Form(""),
                                token: str = Form(""), username: str = Form(""),
-                               priority: str = Form("0"), enabled: str = Form("")):
+                               priority: str = Form("0"), enabled: str = Form(""),
+                               manual_upload: str = Form("")):
     st = s.get(Storage, st_id)
     if not st:
         raise HTTPException(404)
@@ -995,6 +999,7 @@ async def admin_storage_update(request: Request, st_id: int, s: Session = Depend
         st.token = token.strip()
     st.priority = _parse_priority(priority)
     st.enabled = bool(enabled)
+    st.manual_upload = st.enabled and bool(manual_upload)  # 停用的存储不参与手动上传
     s.commit()
     return RedirectResponse(f"/admin/storages?flash={quote(t('已保存'))}", 303)
 
@@ -1021,6 +1026,19 @@ async def admin_storage_delete(request: Request, st_id: int, s: Session = Depend
     else:
         flash = ""
     return RedirectResponse(f"/admin/storages?flash={quote(flash)}", 303)
+
+
+@router.post("/storages/{st_id}/toggle-manual")
+async def admin_storage_toggle_manual(request: Request, st_id: int, s: Session = Depends(get_db)):
+    """开关「参与手动上传」(列表页 switch)。停用的存储拒绝开启。"""
+    st = s.get(Storage, st_id)
+    if not st:
+        raise HTTPException(404)
+    if not st.enabled:
+        return {"ok": False, "message": t("存储未启用,请先启用再开启手动上传")}
+    st.manual_upload = not st.manual_upload
+    s.commit()
+    return {"ok": True, "manual_upload": st.manual_upload}
 
 
 @router.post("/storages/{st_id}/test")
@@ -1056,15 +1074,16 @@ async def admin_storage_auto_upload(request: Request, s: Session = Depends(get_d
 
 @router.post("/collections/{col_id}/upload")
 async def admin_collection_upload(request: Request, col_id: int, s: Session = Depends(get_db)):
-    """手动上传:为所有启用的存储建 UploadJob(断点续传,已传的照片跳过)。"""
+    """手动上传:为所有启用且勾选「手动上传」的存储建 UploadJob(断点续传,已传的照片跳过)。"""
     c = s.get(Collection, col_id)
     if not c:
         raise HTTPException(404)
     targets = [st.id for st in s.scalars(select(Storage).where(
-        Storage.enabled == True)).all()]  # noqa: E712
+        Storage.enabled == True,  # noqa: E712
+        Storage.manual_upload == True)).all()]  # noqa: E712
     if not targets:
         if _is_ajax(request):
-            return {"ok": False, "message": t("没有已启用的存储,请先到存储管理添加")}
+            return {"ok": False, "message": t("没有可手动上传的存储,请到存储管理为至少一个启用的存储勾选「参与手动上传」")}
         return RedirectResponse(f"/admin/storages?error=no-target", 303)
     n = storage_worker.enqueue_collection(col_id, targets)
     if _is_ajax(request):
