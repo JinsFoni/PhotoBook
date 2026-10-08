@@ -404,7 +404,8 @@ def _make_webp_from_remote(url: str, w: int, h: int | None, q: int,
         return None
 
 
-def _make_webp_from_remote_checked(url: str, w: int, h: int | None, q: int) -> bytes | None:
+def _make_webp_from_remote_checked(url: str, w: int, h: int | None, q: int,
+                                   short: bool = False) -> bytes | None:
     """_make_webp_from_remote 的多存储版本。
 
     与单存储时期不同,失败可能意味着该存储的这份文件坏了/不可达,而不只是
