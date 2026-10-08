@@ -46,8 +46,8 @@ class ModelsRepository @Inject constructor(
             slug = dto.slug,
             name = dto.name,
             stage = dto.stage,
-            // 详情头图全屏铺:900 档发糊 → /t/2400/(同轮播/灯箱 previewUrl 档)
-            heroUrl = (dto.hero ?: dto.avatar)?.let { MediaUrls.thumb(baseUrl = base, rel = it, width = 2400) },
+            // 详情头图全屏铺:900 档发糊 → /t/s2400/ 短边档(同轮播/灯箱 previewUrl)
+            heroUrl = (dto.hero ?: dto.avatar)?.let { MediaUrls.thumbShortSide(base, it, 2400) },
             bio = dto.bio.orEmpty(),
             agency = dto.agency.orEmpty(),
             height = dto.height.orEmpty(),

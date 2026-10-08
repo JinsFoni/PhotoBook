@@ -21,7 +21,9 @@ from ..config import settings
 log = logging.getLogger("photobook.media")
 
 CACHE_DIR = "_cache"
-THUMB_RE = re.compile(r"^(\d+)(?:x(\d+))?/(.+)\.(jpg|jpeg|png|webp)$", re.I)
+# s 前缀 = 短边钳制(/t/s2400/ → 竖图钳宽、横图钳高,等比不裁);无前缀 = 钳宽。
+# s 与 x{h} 裁剪语法互斥(灯箱显示档必须完整构图)。
+THUMB_RE = re.compile(r"^(s?)(\d+)(?:x(\d+))?/(.+)\.(jpg|jpeg|png|webp)$", re.I)
 
 Image.MAX_IMAGE_PIXELS = 400 * 1024 * 1024  # 原图可达 40MP+
 # 宽容模式仅在严格解码失败后按图启用, 见 _open_tolerant()
@@ -57,15 +59,18 @@ def _open_tolerant(src, *, draft=None):
         ImageFile.LOAD_TRUNCATED_IMAGES = False
 
 # 档位策略(两档, 都预热):
-#   900  网格 + 照片墙
-#   2400 灯箱显示档(前端恒用, 见 app.js 的 LB_W) — 全屏 fit 无差, 体积约 286KB/张。
+#   900       网格 + 照片墙(钳宽)
+#   短边 2400 灯箱显示档(前端恒用, 见 app.js 的 LB_W)。竖图 2400×3600、
+#             横图 3600×2400 —— 短边统一 2400, 两向像素量对称(≈8.6MP):
+#             4K 全屏竖图/横图全部零上采样(旧钳宽档横图在 4K 要放大 1.2~1.6 倍)。
 # 灯箱从不请求真原图(24MP 原图解码是切图卡顿根源), 原图只服务下载与 1:1 放大。
 # 曾有 1800 档: 本库 70% 原图宽 ≤1800, "只缩不放"下 1800 与 2400 输出字节完全相同,
 # 两档并存就是纯重复副本; 且屏宽驱动的 1800/2400 双档让灯箱大屏永远打不到热缓存
 # (2400 无人预热 → 每张现场解码 230~900ms)。故收敛为单档预热。
 WALL_W = 900
-HD_W = 2400
-PREHEAT_WIDTHS = (WALL_W, HD_W)
+HD_SHORT = 2400
+PREHEAT_WIDTHS = (WALL_W,)          # 钳宽档
+PREHEAT_SHORT = (HD_SHORT,)         # 短边档
 
 # 缩略图生成全局并发上限。单张 19MP 图解码峰值 ~170MB,
 # 不限流时浏览器并发 8 张就能把容器打到 1.4GB(NAS 实测);
@@ -104,7 +109,7 @@ def abs_path(rel: str) -> any:
 
 
 def thumb_cache_ready(rel: str) -> bool:
-    """两档预热缩略图(900/2400)是否都已在磁盘缓存。
+    """两档预热缩略图(900 钳宽 / 短边 2400)是否都已在磁盘缓存。
 
     删除本地原图前的门槛: 缓存不全就删原图,该图缩略图将永久无法再生。
     质量分档须与 serve_thumb 保持一致(>=1600 用 q88)。
@@ -112,6 +117,9 @@ def thumb_cache_ready(rel: str) -> bool:
     for w in PREHEAT_WIDTHS:
         q = 88 if w >= 1600 else 78
         if not _cache_path(w, None, q, rel).is_file():
+            return False
+    for w in PREHEAT_SHORT:
+        if not _cache_path(w, None, 88, rel, short=True).is_file():
             return False
     return True
 
@@ -133,13 +141,18 @@ def cleanup_empty_dirs(any_rel: str) -> None:
         pass
 
 
-def _cache_path(w: int, h: int | None, q: int, rel: str) -> any:
-    """缓存路径带质量标记,避免不同质量档互相误命中。"""
-    return settings.media_dir / CACHE_DIR / f"{w}x{h or 0}q{q}" / f"{rel}.webp"
+def _cache_path(w: int, h: int | None, q: int, rel: str, short: bool = False) -> any:
+    """缓存路径带质量/模式标记,避免不同档互相误命中。"""
+    spec = f"s{w}" if short else str(w)
+    return settings.media_dir / CACHE_DIR / f"{spec}x{h or 0}q{q}" / f"{rel}.webp"
 
 
-def _make_webp(src, w: int, h: int | None, q: int) -> bytes:
-    """从源图生成缩放 WebP;只缩不放,支持等比(仅 w)与中心裁剪(w+h)。
+def _make_webp(src, w: int, h: int | None, q: int, short: bool = False) -> bytes:
+    """从源图生成缩放 WebP;只缩不放。
+
+    short=False: 等比(仅 w)或中心裁剪(w+h)。
+    short=True : 短边钳制 —— 竖图(高≥宽)钳宽 w, 横图钳高 w, 等比不裁。
+                 灯箱显示档用: 两向构图完整, 4K 全屏零上采样。
 
     JPEG 先 draft() 降采样解码:按目标宽选 1/2、1/4 档,
     解码内存/时间降 4~16 倍,缩放结果肉眼无差(目标宽 ≥ 源宽/2 时取最近档)。
@@ -150,20 +163,29 @@ def _make_webp(src, w: int, h: int | None, q: int) -> bytes:
         im = _open_tolerant(src, draft=("RGB", (w, h or w)))
         try:
             sw, sh = im.size
-            tw = min(w, sw)
-            if h:
-                # 先按比例裁剪,再缩放
-                target_ratio = w / h
-                src_ratio = sw / sh
-                if src_ratio > target_ratio:   # 太宽 → 裁两侧
-                    nw = int(sh * target_ratio)
-                    x0 = (sw - nw) // 2
-                    im = im.crop((x0, 0, x0 + nw, sh))
-                else:                           # 太高 → 裁上下(偏上,保头部)
-                    nh = int(sw / target_ratio)
-                    y0 = max(0, (sh - nh) // 3)
-                    im = im.crop((0, y0, sw, y0 + nh))
-            th = h if h else int(tw * sh / sw)
+            if short:
+                # 短边钳制:横图(宽>高)钳高,竖图/方图钳宽;只缩不放,等比不裁
+                if sw > sh:
+                    th = min(w, sh)
+                    tw = int(th * sw / sh)
+                else:
+                    tw = min(w, sw)
+                    th = int(tw * sh / sw)
+            else:
+                tw = min(w, sw)
+                if h:
+                    # 先按比例裁剪,再缩放
+                    target_ratio = w / h
+                    src_ratio = sw / sh
+                    if src_ratio > target_ratio:   # 太宽 → 裁两侧
+                        nw = int(sh * target_ratio)
+                        x0 = (sw - nw) // 2
+                        im = im.crop((x0, 0, x0 + nw, sh))
+                    else:                           # 太高 → 裁上下(偏上,保头部)
+                        nh = int(sw / target_ratio)
+                        y0 = max(0, (sh - nh) // 3)
+                        im = im.crop((0, y0, sw, y0 + nh))
+                th = h if h else int(tw * sh / sw)
             im = im.resize((tw, th), Image.LANCZOS)
             buf = io.BytesIO()
             im.save(buf, "WEBP", quality=q, method=4)
@@ -244,7 +266,8 @@ def purge_collection_files(slug: str, filenames: list[str]) -> None:
     log.info("purged collection files: %s (%d photos)", slug, len(filenames))
 
 
-def ensure_cached(rel: str, w: int, h: int | None = None, q: int | None = None) -> bool:
+def ensure_cached(rel: str, w: int, h: int | None = None, q: int | None = None,
+                  short: bool = False) -> bool:
     """确保某个缩放档已有磁盘缓存(预热用,不直接服务请求)。
 
     返回是否真的生成了新缓存(命中已有缓存/源图缺失返回 False)。
@@ -254,11 +277,11 @@ def ensure_cached(rel: str, w: int, h: int | None = None, q: int | None = None) 
         return False
     if q is None:
         q = 88 if w >= 1600 else 78
-    cache = _cache_path(w, h, q, rel)
+    cache = _cache_path(w, h, q, rel, short)
     if cache.is_file():
         return False
     try:
-        data = _make_webp(src, w, h, q)
+        data = _make_webp(src, w, h, q, short)
     except Exception:
         log.warning("preheat failed: %s w=%s", rel, w, exc_info=True)
         return False
@@ -283,22 +306,25 @@ def serve_thumb(spec: str, request: Request) -> Response:
     m = THUMB_RE.match(spec)
     if not m:
         raise HTTPException(404)
-    w = min(int(m.group(1)), 2400)
+    short = bool(m.group(1))                     # s 前缀 = 短边钳制
+    if short and m.group(3):
+        raise HTTPException(404)                 # 短边与裁剪语法互斥
+    w = min(int(m.group(2)), 2400)
     if w < 16:
         raise HTTPException(404)
     # 大尺寸(灯箱预览)用高质量,网格小图保持 q78 省体积
     q = 88 if w >= 1600 else 78
-    h = int(m.group(2)) if m.group(2) else None
+    h = int(m.group(3)) if m.group(3) else None
     if h is not None and h < 16:
         raise HTTPException(404)
-    rel = m.group(3)
+    rel = m.group(4)
     # URL 里 .webp 是缩略图格式后缀,真实源文件不带它
     if rel.lower().endswith(".webp"):
         rel = rel[:-5]
 
     # 缓存命中直接回(原图已上传外部存储并删本地时,缓存是唯一来源,
     # 必须先查缓存再做原图存在性检查)
-    cache = _cache_path(w, h, q, rel)
+    cache = _cache_path(w, h, q, rel, short)
     if cache.is_file():
         return FileResponse(cache, media_type="image/webp",
                             headers={"Cache-Control": "public, max-age=31536000, immutable"})
@@ -308,7 +334,7 @@ def serve_thumb(spec: str, request: Request) -> Response:
         # 原图不在本地但缓存也没有: 按存储优先级逐个尝试回源下载再生成
         from .storage import remote_redirects
         for url in remote_redirects(rel):
-            data = _make_webp_from_remote_checked(url, w, h, q)
+            data = _make_webp_from_remote_checked(url, w, h, q, short)
             if data is not None:
                 cache.parent.mkdir(parents=True, exist_ok=True)
                 cache.write_bytes(data)
@@ -318,7 +344,7 @@ def serve_thumb(spec: str, request: Request) -> Response:
 
     # 生成:缩到目标宽(裁高比),WebP 按尺寸分档
     try:
-        data = _make_webp(src, w, h, q)
+        data = _make_webp(src, w, h, q, short)
     except Exception as e:
         raise HTTPException(500, f"thumbnail failed: {e}")
 
@@ -328,7 +354,8 @@ def serve_thumb(spec: str, request: Request) -> Response:
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
-def _make_webp_from_remote(url: str, w: int, h: int | None, q: int) -> bytes | None:
+def _make_webp_from_remote(url: str, w: int, h: int | None, q: int,
+                           short: bool = False) -> bytes | None:
     """从外部存储拉原图生成缩放 WebP(本地原图缺失时的回源路径)。
 
     仅缓存缺失的零星请求会走到这里(上传 worker 保证删除前两档已就绪),
@@ -344,19 +371,28 @@ def _make_webp_from_remote(url: str, w: int, h: int | None, q: int) -> bytes | N
             im = _open_tolerant(io.BytesIO(resp.content))
             try:
                 sw, sh = im.size
-                tw = min(w, sw)
-                if h:
-                    target_ratio = w / h
-                    src_ratio = sw / sh
-                    if src_ratio > target_ratio:
-                        nw = int(sh * target_ratio)
-                        x0 = (sw - nw) // 2
-                        im = im.crop((x0, 0, x0 + nw, sh))
+                if short:
+                    # 短边钳制:横图钳高,竖图/方图钳宽;只缩不放,等比不裁
+                    if sw > sh:
+                        th = min(w, sh)
+                        tw = int(th * sw / sh)
                     else:
-                        nh = int(sw / target_ratio)
-                        y0 = max(0, (sh - nh) // 3)
-                        im = im.crop((0, y0, sw, y0 + nh))
-                th = h if h else int(tw * sh / sw)
+                        tw = min(w, sw)
+                        th = int(tw * sh / sw)
+                else:
+                    tw = min(w, sw)
+                    if h:
+                        target_ratio = w / h
+                        src_ratio = sw / sh
+                        if src_ratio > target_ratio:
+                            nw = int(sh * target_ratio)
+                            x0 = (sw - nw) // 2
+                            im = im.crop((x0, 0, x0 + nw, sh))
+                        else:
+                            nh = int(sw / target_ratio)
+                            y0 = max(0, (sh - nh) // 3)
+                            im = im.crop((0, y0, sw, y0 + nh))
+                    th = h if h else int(tw * sh / sw)
                 im = im.resize((tw, th), Image.LANCZOS)
                 buf = io.BytesIO()
                 im.save(buf, "WEBP", quality=q, method=4)
@@ -375,15 +411,16 @@ def _make_webp_from_remote_checked(url: str, w: int, h: int | None, q: int) -> b
     网络抖动 —— 返回 None 让调用方落到下一优先级存储。实现上无差别,
     单独命名只为语义清晰。
     """
-    return _make_webp_from_remote(url, w, h, q)
+    return _make_webp_from_remote(url, w, h, q, short)
 
 
-def thumb_url(rel: str | None, w: int, h: int | None = None) -> str:
+def thumb_url(rel: str | None, w: int, h: int | None = None, short: bool = False) -> str:
     if not rel:
         return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+    spec = f"s{w}" if short else str(w)
     if h:
-        return f"/t/{w}x{h}/{rel}.webp"
-    return f"/t/{w}/{rel}.webp"
+        return f"/t/{spec}x{h}/{rel}.webp"
+    return f"/t/{spec}/{rel}.webp"
 
 
 # ---- 入库健康检查 ---------------------------------------------------------------
@@ -445,6 +482,9 @@ def _preheat_files(files: list[str], batch: int) -> tuple[int, int]:
         for w in PREHEAT_WIDTHS:
             if ensure_cached(rel, w):
                 made += 1
+        for w in PREHEAT_SHORT:
+            if ensure_cached(rel, w, short=True):
+                made += 1
         done += 1
         generated += made
         if done % 50 == 0:
@@ -467,7 +507,7 @@ _t0 = [0.0]
 
 
 def preheat_all(batch: int = 4) -> None:
-    """巡检全库, 补齐 PREHEAT_WIDTHS 各档缺失的缩略图(900 网格/照片墙 + 2400 灯箱)。
+    """巡检全库, 补齐各档缺失的缩略图(900 网格/照片墙 + 短边 2400 灯箱)。
 
     幂等:已有缓存的文件直接跳过, 全命中时零停顿。daemon 线程, 不阻塞启动。
     顺序按新入库优先 —— 换档后补齐全库是小时级(每张生成 + _preheat_gap 0.3s),
@@ -584,6 +624,8 @@ def _import_worker() -> None:
             for rel in files:
                 for w in PREHEAT_WIDTHS:
                     ensure_cached(rel, w)
+                for w in PREHEAT_SHORT:
+                    ensure_cached(rel, w, short=True)
             _publish_ready(slug)
         except Exception:
             # 生成失败也放行(保持 processing 会永久隐藏写真;放行交给

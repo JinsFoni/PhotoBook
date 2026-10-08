@@ -77,7 +77,7 @@ class CollectionsRepository @Inject constructor(
                     idx = p.idx,
                     thumbUrl = MediaUrls.thumb(base, p.file, 900),
                     fullUrl = MediaUrls.original(base, p.file),
-                    previewUrl = MediaUrls.thumb(base, p.file, 2400),
+                    previewUrl = MediaUrls.thumbShortSide(base, p.file, 2400),
                     width = p.w,
                     height = p.h,
                 )
@@ -91,8 +91,8 @@ class CollectionsRepository @Inject constructor(
         modelName = model_name,
         // coverThumb 服务端已是 "t/900/x.webp" 前缀 rel,直拼即可(与 web 网格同档)
         imageUrl = coverThumb?.let { MediaUrls.fromPrefixed(base, it) },
-        // hero 轮播全屏宽,900 缩略图拉伸会糊 → /t/2400/ 档(同灯箱 previewUrl)
-        heroUrl = cover?.let { MediaUrls.thumb(base, it, 2400) },
+        // hero 轮播全屏宽,900 缩略图拉伸会糊 → /t/s2400/ 短边档(同灯箱 previewUrl)
+        heroUrl = cover?.let { MediaUrls.thumbShortSide(base, it, 2400) },
         count = count,
         tags = tags,
     )

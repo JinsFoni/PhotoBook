@@ -2,7 +2,8 @@ package dev.jinsfoni.photobook.data.remote
 
 /**
  * 媒体 URL 拼装 —— 与服务端 app/services/media.py 约定一致:
- * 原图 /media/{rel};缩略图 /t/{w}x{h}/{rel}.webp(h 省略 → 等比)。
+ * 原图 /media/{rel};缩略图 /t/{w}x{h}/{rel}.webp(h 省略 → 等比),
+ * s 前缀 = 短边钳制(/t/s{w}/ → 竖图钳宽、横图钳高,等比不裁)。
  * DTO 只存 rel 路径,展示时经此拼全 URL。
  */
 object MediaUrls {
@@ -24,6 +25,10 @@ object MediaUrls {
     /** 宽×高裁切缩略图(/t/{w}x{h}/{rel}.webp)。 */
     fun thumb(baseUrl: String, rel: String, width: Int, height: Int): String =
         "${origin(baseUrl)}/t/${width}x$height/$rel.webp"
+
+    /** 短边钳制缩略图(/t/s{w}/{rel}.webp):竖图钳宽、横图钳高,等比不裁。 */
+    fun thumbShortSide(baseUrl: String, rel: String, shortSide: Int): String =
+        "${origin(baseUrl)}/t/s$shortSide/$rel.webp"
 
     /**
      * 服务端已生成带 /t/ 前缀的缩略 rel(如 "t/900x/cover.webp"),

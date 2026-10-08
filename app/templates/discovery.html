@@ -124,9 +124,9 @@
     fg.querySelector(".hero__img").src = BLANK;
   });
 
-  /* 高清档(≤2400w)而非原图:完整显示且首屏快;
-     前景 contain 完整呈现,背景同图模糊压暗填两侧 */
-  function heroUrl(photo) { return "/t/2400/" + photo.file + ".webp"; }
+  /* 高清短边档(/t/s2400/:竖图钳宽横图钳高,等比不裁)而非原图:
+     完整显示且首屏快;前景 contain 完整呈现,背景同图模糊压暗填两侧 */
+  function heroUrl(photo) { return "/t/s2400/" + photo.file + ".webp"; }
 
   function showHero(photo) {
     var token = ++pending;
