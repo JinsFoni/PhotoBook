@@ -12,3 +12,6 @@ __pycache__/
 # 环境
 .env
 .DS_Store
+
+# 工具本地数据
+.zcode/
