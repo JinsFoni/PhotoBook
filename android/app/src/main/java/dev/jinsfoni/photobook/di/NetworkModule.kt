@@ -38,13 +38,18 @@ object NetworkModule {
     fun provideOkHttp(
         auth: AuthInterceptor,
         hostSelection: HostSelectionInterceptor,
-    ): OkHttpClient =
-        OkHttpClient.Builder()
+        repoCaches: dagger.Lazy<dev.jinsfoni.photobook.data.repo.RepoCaches>,
+    ): OkHttpClient {
+        // 401 强登出时顺带作废进程级数据缓存(避免下个账号看到上个会话的 feed/收藏)。
+        // dagger.Lazy 断依赖环:OkHttp ← RepoCaches ← Repository ← MobileApi ← OkHttp
+        auth.onUnauthorized = { repoCaches.get().invalidate() }
+        return OkHttpClient.Builder()
             .addInterceptor(hostSelection)
             .addInterceptor(auth)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .build()
+    }
 
     /**
      * base URL 运行时可变:Retrofit 需要固定 baseUrl,这里用占位 host,

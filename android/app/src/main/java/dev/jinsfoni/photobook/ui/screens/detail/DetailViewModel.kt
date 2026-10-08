@@ -42,7 +42,20 @@ class DetailViewModel @Inject constructor(
             _state.value = _state.value.copy(loading = false, error = "链接无效,请从列表重新进入")
             return
         }
-        if (slug == loadedSlug && _state.value.detail != null) return
+        // 同 slug 已有数据:不整页重拉,后台静默 revalidate(SWR)——
+        // 从灯箱返回/服务端改了内容也能就地更新;失败静默,保留现有内容
+        if (slug == loadedSlug && _state.value.detail != null) {
+            viewModelScope.launch {
+                try {
+                    val fresh = repo.detail(slug)
+                    if (loadedSlug == slug) {
+                        _state.value = _state.value.copy(detail = fresh)
+                    }
+                } catch (_: ApiException) {
+                }
+            }
+            return
+        }
         viewModelScope.launch {
             try {
                 val detail = repo.detail(slug)

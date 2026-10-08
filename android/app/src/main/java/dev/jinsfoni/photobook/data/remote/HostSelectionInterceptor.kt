@@ -1,7 +1,6 @@
 package dev.jinsfoni.photobook.data.remote
 
 import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
-import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.Response
@@ -38,7 +37,8 @@ class HostSelectionInterceptor @Inject constructor(
                 else stripped.newBuilder().url(rewritten).build()
             )
         }
-        val base = runBlocking { session.currentBaseUrl() }.toHttpUrl()
+        // 内存快照(快照层保证与 DataStore 同步),不再每请求 runBlocking
+        val base = session.baseUrlSnapshot().toHttpUrl()
         val rewritten = request.url.newBuilder()
             .scheme(base.scheme)
             .host(base.host)

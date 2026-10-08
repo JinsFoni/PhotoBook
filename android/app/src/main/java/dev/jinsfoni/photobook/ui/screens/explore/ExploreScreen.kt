@@ -24,6 +24,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.LocalThemeMode
@@ -61,6 +63,13 @@ fun ExploreScreen(
     val colors = LocalPhotoColors.current
     val state by vm.state.collectAsState()
 
+    // SWR:每次进入页面(组合)与从后台回前台时静默 revalidate,feed 旧数据先展示
+    LifecycleResumeEffect(Unit) {
+        vm.revalidate()
+        onPauseOrDispose { }
+    }
+
+
     Box(Modifier.fillMaxSize()) {
         val feed = state.feed
         // 虚化主题垫底:首张最新合集封面(设计稿 s1 用 cover-1.jpg 同源做法)
@@ -74,6 +83,7 @@ fun ExploreScreen(
                 onOpenAllCollections = onOpenAllCollections,
                 onOpenSearch = onOpenSearch,
                 onRetry = vm::retry,
+                onRefresh = vm::refresh,
             )
             state.error != null -> Box(
                 Modifier.fillMaxSize(),
@@ -130,10 +140,17 @@ private fun ExploreContent(
     onOpenAllCollections: () -> Unit,
     onOpenSearch: () -> Unit,
     onRetry: () -> Unit,
+    onRefresh: () -> Unit,
 ) {
     val colors = LocalPhotoColors.current
     val gridState = rememberLazyGridState()
 
+    // 下拉刷新(与错误文案"下拉重试"对应);SWR 静默刷新不显示指示器
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize(),
+    ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         state = gridState,
@@ -209,6 +226,7 @@ private fun ExploreContent(
                 onClick = { onOpenCollection(c.slug) },
             )
         }
+    }
     }
 }
 

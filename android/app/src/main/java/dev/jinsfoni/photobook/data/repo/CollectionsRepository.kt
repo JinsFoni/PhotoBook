@@ -26,6 +26,14 @@ class CollectionsRepository @Inject constructor(
 
     private var discoverCache: DiscoverFeed? = null
 
+    /** 当前缓存(可能 null;SWR 决定是否需要后台 revalidate)。 */
+    fun cached(): DiscoverFeed? = discoverCache
+
+    /** 作废内存 feed 缓存(切服务器档案/登出时由 RepoCaches 调)。 */
+    fun invalidate() {
+        discoverCache = null
+    }
+
     suspend fun discover(force: Boolean = false): DiscoverFeed {
         if (!force) discoverCache?.let { return it }
         val dto = safeCall { api.discover() }

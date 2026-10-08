@@ -15,7 +15,7 @@ import javax.inject.Inject
 
 data class ExploreUiState(
     val loading: Boolean = true,      // 首载骨架屏
-    val refreshing: Boolean = false,  // 下拉刷新
+    val refreshing: Boolean = false,  // 下拉刷新(带指示器;SWR 静默刷新不含在内)
     val feed: DiscoverFeed? = null,
     val error: String? = null,
 )
@@ -28,20 +28,40 @@ class ExploreViewModel @Inject constructor(
     private val _state = MutableStateFlow(ExploreUiState())
     val state: StateFlow<ExploreUiState> = _state.asStateFlow()
 
+    private var swrJob: kotlinx.coroutines.Job? = null
+
     init { load(force = false) }
 
     /** 首载/重试:显示骨架屏。 */
     fun retry() = load(force = true, showSkeleton = true)
 
+    /** 下拉刷新:指示器 + 强制拉新。 */
     fun refresh() {
         if (_state.value.refreshing) return
         _state.value = _state.value.copy(refreshing = true)
         viewModelScope.launch {
             try {
-                repo.discover(force = true)
-                _state.value = _state.value.copy(feed = repo.discover(), refreshing = false, error = null)
+                val feed = repo.discover(force = true)
+                _state.value = _state.value.copy(feed = feed, refreshing = false, error = null)
             } catch (e: ApiException) {
                 _state.value = _state.value.copy(refreshing = false, error = friendly(e))
+            }
+        }
+    }
+
+    /**
+     * SWR 静默刷新:缓存命中后仍异步拉新,成功就地替换 feed(无骨架/指示器)。
+     * 进入页面与 ON_RESUME 共用;无缓存(首载)时不起飞,交给 init 的 load。
+     */
+    fun revalidate() {
+        if (repo.cached() == null || _state.value.refreshing) return
+        swrJob?.cancel()
+        swrJob = viewModelScope.launch {
+            try {
+                val feed = repo.discover(force = true)
+                _state.value = _state.value.copy(feed = feed, error = null)
+            } catch (_: ApiException) {
+                // 静默刷新失败不打扰 UI,保留现有 feed
             }
         }
     }

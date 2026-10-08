@@ -40,6 +40,12 @@ open class FakeSessionStore : SessionStoreApi {
             ?: profilesFlow.value.firstOrNull())?.baseUrl ?: DEFAULT
     override suspend fun currentToken(): String = tokenFlow.value.orEmpty()
 
+    override fun baseUrlSnapshot(): String = currentBaseUrlLocked()
+    override fun tokenSnapshot(): String = tokenFlow.value.orEmpty()
+
+    private fun currentBaseUrlLocked(): String =        (profilesFlow.value.firstOrNull { it.id == activeIdFlow.value }
+            ?: profilesFlow.value.firstOrNull())?.baseUrl ?: DEFAULT
+
     override suspend fun saveSession(token: String, username: String) {
         saved = token to username
         tokenFlow.value = token

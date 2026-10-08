@@ -29,6 +29,12 @@ interface SessionStoreApi {
 
     suspend fun currentBaseUrl(): String
 
+    /** 活动 baseUrl 的内存快照(拦截器每请求读取用,免 runBlocking 开销)。 */
+    fun baseUrlSnapshot(): String
+
+    /** 活动 token 的内存快照(空串 = 无 token;拦截器每请求读取用)。 */
+    fun tokenSnapshot(): String
+
     /** 活动档案的 token(与 [token] 同源;无档案时空)。 */
     suspend fun currentToken(): String
 

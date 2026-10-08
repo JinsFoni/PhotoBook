@@ -9,9 +9,14 @@ import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.data.remote.ApiErrors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -81,6 +86,41 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
     override suspend fun currentBaseUrl(): String = baseUrl.first()
 
     override suspend fun currentToken(): String = token.first().orEmpty()
+
+    /**
+     * 活动档案快照(baseUrl/token),供拦截器每请求同步读取。
+     * 初始化阻塞读一次 DataStore(仅首个请求一次),并启动常驻收集:
+     * 任何写入(登录/续期/切档/登出)都会让 data flow 发射,据此刷新快照,
+     * 拦截器不再每请求 runBlocking。
+     */
+    private class Snapshot(val baseUrl: String, val token: String)
+
+    private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    @Volatile
+    private var snap: Snapshot? = null
+
+    @Synchronized
+    private fun snapshot(): Snapshot {
+        snap?.let { return it }
+        val initial = runBlocking {
+            Snapshot(baseUrl = baseUrl.first(), token = token.first().orEmpty())
+        }
+        snap = initial
+        snapshotScope.launch {
+            context.dataStore.data.collect { prefs ->
+                snap = Snapshot(
+                    baseUrl = activeProfile(prefs)?.baseUrl ?: prefs[baseUrlKey] ?: DEFAULT_BASE_URL,
+                    token = activeProfile(prefs)?.token?.takeIf { it.isNotBlank() }.orEmpty(),
+                )
+            }
+        }
+        return initial
+    }
+
+    override fun baseUrlSnapshot(): String = snapshot().baseUrl
+
+    override fun tokenSnapshot(): String = snapshot().token
 
     override suspend fun saveSession(token: String, username: String) {
         context.dataStore.edit { prefs ->

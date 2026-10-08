@@ -21,13 +21,21 @@ const val RENEW_HEADER = "X-Renewed-Token"
 /**
  * 读 DataStore token,注入 Bearer(无 token 不加头);
  * 响应带 X-Renewed-Token(服务端滑动续期)时持久化新 token。
+ *
+ * 401 统一出口:会话被服务端判失效(换实例/过期/手动撤销)时清 token——
+ * AppRoot 的 loggedIn 流翻 false 自动切登录页,各页面不必逐处处理 401。
+ * onUnauthorized 由 NetworkModule 注入 RepoCaches::invalidate(避免依赖成环)。
  */
 @Singleton
 class AuthInterceptor @Inject constructor(private val session: SessionStore) : Interceptor {
 
+    /** 401 强登出时的附加清理(数据缓存作废),可为空。 */
+    var onUnauthorized: (() -> Unit)? = null
+
     override fun intercept(chain: Interceptor.Chain): Response {
-        val token = runBlocking { session.token.firstOrNull() }
-        val request = if (token.isNullOrBlank()) {
+        // 内存快照(快照层保证与 DataStore 同步),不再每请求 runBlocking
+        val token = session.tokenSnapshot()
+        val request = if (token.isBlank()) {
             chain.request()
         } else {
             chain.request().newBuilder()
@@ -38,10 +46,14 @@ class AuthInterceptor @Inject constructor(private val session: SessionStore) : I
         response.header(RENEW_HEADER)?.takeIf { it.isNotBlank() }?.let { renewed ->
             runBlocking { session.renewToken(renewed) }
         }
+        // 登录接口的 401 是"密码错",不算会话失效,不触发登出
+        if (response.code == 401 && !response.request.url.encodedPath.endsWith("auth/login")) {
+            runBlocking { session.clearSession() }
+            onUnauthorized?.invoke()
+        }
         return response
     }
 }
-
 /**
  * 错误体转 ApiException:
  * - 4xx/5xx 带 {"error":{...}} → ApiException(code,message)

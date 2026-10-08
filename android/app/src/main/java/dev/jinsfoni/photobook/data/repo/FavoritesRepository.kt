@@ -28,6 +28,11 @@ class FavoritesRepository @Inject constructor(
     /** 当前收藏态流(null = 尚未拉取过)。 */
     val state: StateFlow<Favorites?> = _state.asStateFlow()
 
+    /** 作废本地收藏态(切服务器档案/登出时由 RepoCaches 调;null = 回到未拉取)。 */
+    fun invalidate() {
+        _state.value = null
+    }
+
     /** 当前态(可能未刷新过 → null)。 */
     fun peek(): Favorites? = _state.value
 
