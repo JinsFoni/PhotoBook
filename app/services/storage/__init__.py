@@ -23,10 +23,10 @@ def remote_redirect(rel: str) -> str | None:
 
 
 def remote_redirects(rel: str) -> list[str]:
-    """全部启用存储的公开 URL,按优先级从高到低(优先级相同按存储 id 新者优先)。
+    """开启直链的启用存储的公开 URL,按优先级从高到低(优先级相同按存储 id 新者优先)。
 
     serve_media 302 用第一个;serve_thumb 回源按顺序尝试,高优先级失败
-    自动落到下一级。
+    自动落到下一级。direct_link 关闭的存储是纯备份,不参与直链/回源。
     """
     from ...database import SessionLocal
 
@@ -38,7 +38,8 @@ def remote_redirects(rel: str) -> list[str]:
         rows = s.execute(
             select(PhotoUpload.remote_path, Storage)
             .join(Storage, Storage.id == PhotoUpload.storage_id)
-            .where(PhotoUpload.photo_id == photo_id, Storage.enabled == True)  # noqa: E712
+            .where(PhotoUpload.photo_id == photo_id, Storage.enabled == True,  # noqa: E712
+                   Storage.direct_link == True)  # noqa: E712
             .order_by(Storage.priority.desc(), Storage.id.desc())).all()
         urls: list[str] = []
         for remote_path, st in rows:

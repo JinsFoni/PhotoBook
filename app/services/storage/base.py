@@ -7,7 +7,6 @@ backend 只做纯 HTTP 交互,不碰 DB;队列/进度/记录在 worker.py。
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Protocol
 
 from ...db import Storage
@@ -20,8 +19,10 @@ class StorageError(Exception):
 
 
 class StorageBackend(Protocol):
-    def upload(self, st: Storage, local_path: Path, remote_folder: str) -> str:
-        """上传单个文件到远端目录,返回远端相对路径(/file/ 后那段)。
+    def upload(self, st: Storage, data: bytes, filename: str,
+               remote_folder: str) -> str:
+        """上传单个文件(内容已读入内存,多存储分发共享同一份数据)到远端
+        目录,返回远端相对路径(/file/ 后那段)。
 
         remote_folder 已含根目录,如 "PhotoBook/一色雨/coser@xxx"。
         文件名可能被远端改名(加前缀),必须用返回值,不得自行拼接。

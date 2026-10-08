@@ -79,6 +79,13 @@
               <span class="field__label" style="margin:0">{{ t('参与手动上传') }}</span>
               <span class="t-small" style="color:var(--ink-3)">{{ t('勾选后,写真集列表的「上传」按钮会把照片传到此存储(存储需处于启用状态)。') }}</span></label>
 
+            <label class="field" style="flex-direction:row;align-items:center;gap:var(--s3);margin-left:var(--s5)">
+              <input type="checkbox" name="direct_link" value="1" {% if (st and st.direct_link) or not st %}checked{% endif %}
+                     style="accent-color:var(--accent)" data-direct-check
+                     {% if not (st and st.enabled) %}disabled{% endif %}>
+              <span class="field__label" style="margin:0">{{ t('开启直链') }}</span>
+              <span class="t-small" style="color:var(--ink-3)">{{ t('开启后,本地缺失的原图会 302 跳转到此存储,缩略图回源也会尝试它。关闭则当做纯备份,不参与直链访问。') }}</span></label>
+
             <div style="display:flex;gap:var(--s3);margin-top:var(--s5)">
               <button class="btn" type="submit">{{ t('保存') }}</button>
               <a class="btn btn--quiet" href="/admin/storages">{{ t('取消') }}</a>
@@ -91,6 +98,7 @@
               const webdavBox = document.querySelector('[data-webdav-fields]');
               const enabledCheck = document.querySelector('[data-enabled-check]');
               const manualCheck = document.querySelector('[data-manual-check]');
+              const directCheck = document.querySelector('[data-direct-check]');
               const apiInput = document.querySelector('[data-hint-api]');
               const apiHint = document.querySelector('[data-hint-api-text]');
               const tokenLabel = document.querySelector('[data-hint-token-label]');
@@ -126,6 +134,8 @@
               enabledCheck.addEventListener('change', function () {
                 manualCheck.disabled = !enabledCheck.checked;
                 if (!enabledCheck.checked) manualCheck.checked = false;
+                directCheck.disabled = !enabledCheck.checked;
+                if (!enabledCheck.checked) directCheck.checked = false;
               });
               apply();
             })();

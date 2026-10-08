@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from pathlib import Path
 
 import httpx
 
@@ -43,20 +42,20 @@ def _upload_folder(root_dir: str, remote_folder: str) -> str:
 
 
 class ImgBedBackend:
-    def upload(self, st: Storage, local_path: Path, remote_folder: str) -> str:
+    def upload(self, st: Storage, data: bytes, filename: str,
+               remote_folder: str) -> str:
         folder = _upload_folder(st.root_dir, remote_folder)
         with _client(st) as client:
-            with local_path.open("rb") as f:
-                resp = client.post(
-                    "/upload",
-                    params={
-                        "uploadChannel": "telegram",
-                        "uploadFolder": folder,
-                        "serverCompress": "false",
-                        "returnFormat": "full",
-                    },
-                    files={"file": (local_path.name, f)},
-                )
+            resp = client.post(
+                "/upload",
+                params={
+                    "uploadChannel": "telegram",
+                    "uploadFolder": folder,
+                    "serverCompress": "false",
+                    "returnFormat": "full",
+                },
+                files={"file": (filename, data)},
+            )
         if resp.status_code != 200:
             raise StorageError(f"上传失败 HTTP {resp.status_code}: {resp.text[:200]}")
         try:

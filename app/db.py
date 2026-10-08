@@ -219,6 +219,7 @@ class Storage(Base):
     username: Mapped[str] = mapped_column(String(120), default="")   # webdav 用户名(imgbed 不用)
     priority: Mapped[int] = mapped_column(Integer, default=0)        # 直链优先级,越大越优先(本地缺失时按此排序回源/302)
     manual_upload: Mapped[bool] = mapped_column(Boolean, default=False)  # 参与写真集列表的手动上传(需 enabled)
+    direct_link: Mapped[bool] = mapped_column(Boolean, default=True)  # 参与 URL 直链(302/回源);关闭=纯备份
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

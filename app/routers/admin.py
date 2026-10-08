@@ -952,7 +952,7 @@ async def admin_storage_create(request: Request, s: Session = Depends(get_db),
                                root_dir: str = Form(""), api_url: str = Form(""),
                                token: str = Form(""), username: str = Form(""),
                                priority: str = Form("0"), enabled: str = Form(""),
-                               manual_upload: str = Form("")):
+                               manual_upload: str = Form(""), direct_link: str = Form("")):
     if type not in STORAGE_TYPES:
         return RedirectResponse("/admin/storages/new?error=type", 303)
     st_enabled = bool(enabled)
@@ -961,6 +961,7 @@ async def admin_storage_create(request: Request, s: Session = Depends(get_db),
                  token=token.strip(), username=username.strip(),
                  priority=_parse_priority(priority),
                  manual_upload=st_enabled and bool(manual_upload),
+                 direct_link=st_enabled and bool(direct_link),
                  enabled=st_enabled)
     s.add(st)
     s.commit()
@@ -986,7 +987,7 @@ async def admin_storage_update(request: Request, st_id: int, s: Session = Depend
                                root_dir: str = Form(""), api_url: str = Form(""),
                                token: str = Form(""), username: str = Form(""),
                                priority: str = Form("0"), enabled: str = Form(""),
-                               manual_upload: str = Form("")):
+                               manual_upload: str = Form(""), direct_link: str = Form("")):
     st = s.get(Storage, st_id)
     if not st:
         raise HTTPException(404)
@@ -1000,6 +1001,7 @@ async def admin_storage_update(request: Request, st_id: int, s: Session = Depend
     st.priority = _parse_priority(priority)
     st.enabled = bool(enabled)
     st.manual_upload = st.enabled and bool(manual_upload)  # 停用的存储不参与手动上传
+    st.direct_link = st.enabled and bool(direct_link)  # 停用的存储不参与直链
     s.commit()
     return RedirectResponse(f"/admin/storages?flash={quote(t('已保存'))}", 303)
 
@@ -1039,6 +1041,19 @@ async def admin_storage_toggle_manual(request: Request, st_id: int, s: Session =
     st.manual_upload = not st.manual_upload
     s.commit()
     return {"ok": True, "manual_upload": st.manual_upload}
+
+
+@router.post("/storages/{st_id}/toggle-direct")
+async def admin_storage_toggle_direct(request: Request, st_id: int, s: Session = Depends(get_db)):
+    """开关「直链」(列表页 switch)。停用的存储拒绝开启。"""
+    st = s.get(Storage, st_id)
+    if not st:
+        raise HTTPException(404)
+    if not st.enabled:
+        return {"ok": False, "message": t("存储未启用,请先启用再开启直链")}
+    st.direct_link = not st.direct_link
+    s.commit()
+    return {"ok": True, "direct_link": st.direct_link}
 
 
 @router.post("/storages/{st_id}/test")

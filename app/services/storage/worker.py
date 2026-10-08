@@ -1,8 +1,10 @@
-"""上传 Worker — DB 表作队列(upload_jobs),daemon 线程串行消费。
+"""上传 Worker — DB 表作队列(upload_jobs),daemon 线程按组并行消费。
 
 参照 harvest worker 模式:
 - 队列本体是 upload_jobs 表,重启不丢;启动时把 running 重置回 queued。
-- 逐张上传,每张成功 commit photos_done + 写 photo_uploads(断点续传依据)。
+- 同一写真集的多个存储任务合并成一组执行: 逐张读原图到内存,并行分发到
+  各存储同时上传(单存储失败只淘汰它自己,其余存储继续)。
+- 每张成功 commit photos_done + 写 photo_uploads(断点续传依据)。
 - 全部成功后删除本地原图(仅当两档缩略图缓存已在盘,否则保留并记提示);
   随后按"空目录才删"规则清理 media 下的空目录。
 """
@@ -12,11 +14,12 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy import select
 
 from ...db import Collection, Photo, PhotoUpload, Storage, UploadJob
-from .. import media, settings_store
+from .. import media
 from .base import StorageError, get_backend
 
 log = logging.getLogger("pb.storage.worker")
@@ -24,7 +27,7 @@ log = logging.getLogger("pb.storage.worker")
 _poll_gap = 3.0
 _thread: threading.Thread | None = None
 _wake = threading.Event()
-# 防僵尸线程: 每个正在执行的 job 一个 token,过期线程的状态写入会被丢弃
+# 防僵尸线程: 每个正在执行的任务一个 token,过期线程的状态写入会被丢弃
 _run_tokens: dict[int, int] = {}
 
 
@@ -106,26 +109,33 @@ def _consume_loop() -> None:
     while True:
         from ...database import SessionLocal
 
-        job_id = None
+        job_ids: list[int] = []
         s = SessionLocal()
         try:
-            job = s.scalar(select(UploadJob).where(UploadJob.status == "queued")
-                           .order_by(UploadJob.id).limit(1))
-            if job is None:
+            first = s.scalar(select(UploadJob).where(UploadJob.status == "queued")
+                             .order_by(UploadJob.id).limit(1))
+            if first is None:
                 s.close()
                 _wake.wait(timeout=_poll_gap)
                 _wake.clear()
                 continue
-            job_id = job.id
-            job.status = "running"
+            # 同一写真集的所有 queued 存储任务合并成一组,按张并行分发
+            jobs = s.scalars(select(UploadJob).where(
+                UploadJob.status == "queued",
+                UploadJob.collection_id == first.collection_id)
+                .order_by(UploadJob.id)).all()
+            for j in jobs:
+                j.status = "running"
+                job_ids.append(j.id)
             s.commit()
         finally:
             s.close()
         try:
-            _run_job(job_id)
+            _run_group(job_ids)
         except Exception:
-            log.exception("upload job %s crashed", job_id)
-            _fail_job(job_id, "内部错误(详见日志)")
+            log.exception("upload group %s crashed", job_ids)
+            for jid in job_ids:
+                _fail_job(jid, "内部错误(详见日志)")
         time.sleep(0.1)
 
 
@@ -143,89 +153,129 @@ def _fail_job(job_id: int, error: str) -> None:
         s.close()
 
 
-def _run_job(job_id: int) -> None:
-    """执行单个上传任务。逐张上传,单张失败即终止(可重试,已传的跳过)。"""
+def _run_group(job_ids: list[int]) -> None:
+    """执行同写真集的一组存储任务:逐张读原图,并行分发到各存储同时上传。
+
+    - 单存储单张失败 → 该存储任务 failed 并退出本组,其余存储继续;
+    - 每张成功即 commit(photo_uploads + photos_done),断点续传不受影响;
+    - 本地原图缺失 → 仍需要它的存储任务 failed(其余继续)。
+    """
     from ...database import SessionLocal
 
-    token = _run_tokens.get(job_id, 0) + 1
-    _run_tokens[job_id] = token
-
     s = SessionLocal()
+    executor: ThreadPoolExecutor | None = None
     try:
-        job = s.get(UploadJob, job_id)
-        if not job or job.status != "running":
+        jobs = {j.id: j for j in s.query(UploadJob).filter(
+            UploadJob.id.in_(job_ids or [0]),
+            UploadJob.status == "running").all()}
+        if not jobs:
             return
-        c = s.get(Collection, job.collection_id)
-        st = s.get(Storage, job.storage_id)
-        if not c or not st:
-            job.status = "failed"
-            job.error = "写真集或存储已不存在"
-            s.commit()
-            return
-        if not st.enabled:
-            job.status = "failed"
-            job.error = "存储已被停用"
+        tokens = {jid: _run_tokens.get(jid, 0) + 1 for jid in jobs}
+        _run_tokens.update(tokens)
+
+        c = s.get(Collection, next(iter(jobs.values())).collection_id)
+        if not c:
+            for j in jobs.values():
+                j.status, j.error = "failed", "写真集已不存在"
             s.commit()
             return
         photos = list(c.photos)
-        try:
-            backend = get_backend(st)
-        except StorageError as e:
-            job.status = "failed"
-            job.error = str(e)
+        if not photos:
+            for j in jobs.values():
+                j.status, j.error = "failed", "写真集没有照片"
             s.commit()
             return
 
-        done_before = s.query(PhotoUpload).filter(
-            PhotoUpload.storage_id == st.id,
-            PhotoUpload.photo_id.in_([p.id for p in photos] or [0])).count()
-        job.photos_total = len(photos)
-        job.photos_done = done_before
-        job.error = None
+        # 校验各存储与 backend,无效的任务直接 failed
+        active: dict[int, tuple[UploadJob, Storage, object]] = {}
+        for jid, j in jobs.items():
+            st = s.get(Storage, j.storage_id)
+            if not st:
+                j.status, j.error = "failed", "存储已不存在"
+            elif not st.enabled:
+                j.status, j.error = "failed", "存储已被停用"
+            else:
+                try:
+                    active[jid] = (j, st, get_backend(st))
+                except StorageError as e:
+                    j.status, j.error = "failed", str(e)
+        s.commit()
+        if not active:
+            return
+
+        # remote_folder = <模特slug>/<写真目录>,即 photo.filename 的前两级
+        parts = photos[0].filename.split("/")
+        remote_root = "/".join(parts[:2]) if len(parts) >= 2 else parts[0]
+
+        # 每存储的断点续传基线: 已上传过的照片直接跳过
+        needing: dict[int, set[int]] = {}  # job_id -> 待上传 photo_id 集合
+        for jid, (j, st, _backend) in active.items():
+            done_ids = set(s.scalars(select(PhotoUpload.photo_id).where(
+                PhotoUpload.storage_id == st.id,
+                PhotoUpload.photo_id.in_([p.id for p in photos] or [0]))).all())
+            j.photos_total = len(photos)
+            j.photos_done = len(done_ids)
+            j.error = None
+            needing[jid] = {p.id for p in photos} - done_ids
         s.commit()
 
-        slug = c.slug
-        # remote_folder = <模特slug>/<写真目录>,即 photo.filename 的前两级
-        remote_root = ""
-        if photos:
-            parts = photos[0].filename.split("/")
-            remote_root = "/".join(parts[:2]) if len(parts) >= 2 else parts[0]
-
+        executor = ThreadPoolExecutor(max_workers=len(active),
+                                      thread_name_prefix="upload")
         for p in photos:
-            if _run_tokens.get(job_id) != token:
-                return  # 已被新一轮启动取代,停止写状态
-            exists = s.query(PhotoUpload).filter(
-                PhotoUpload.photo_id == p.id,
-                PhotoUpload.storage_id == st.id).first()
-            if exists:
+            if not active:
+                break
+            targets = [(jid, entry) for jid, entry in active.items()
+                       if p.id in needing[jid]]
+            if not targets:
                 continue
             local = media.abs_path(p.filename)
             if not local.is_file():
-                # 原图本地已删但远端记录缺失: 无法补传,标记失败
-                job.status = "failed"
-                job.error = f"本地原图缺失: {p.filename}"
+                # 原图本地已删但远端记录缺失: 无法补传,涉及的存储任务失败
+                for jid, (j, _st, _backend) in targets:
+                    j.status, j.error = "failed", f"本地原图缺失: {p.filename}"
+                    del active[jid]
                 s.commit()
-                return
-            try:
-                remote_path = backend.upload(st, local, remote_root)
-            except Exception as e:
-                log.exception("upload failed: %s %s", slug, p.filename)
-                job.status = "failed"
-                job.error = f"上传失败: {e}"
-                s.commit()
-                return
-            s.add(PhotoUpload(photo_id=p.id, storage_id=st.id,
-                              remote_path=remote_path))
-            job.photos_done += 1
+                continue
+            data = local.read_bytes()
+
+            futures = {jid: executor.submit(backend.upload, st, data,
+                                            local.name, remote_root)
+                       for jid, (_j, st, backend) in targets}
+            for jid, fut in futures.items():
+                entry = active.get(jid)
+                if entry is None:
+                    continue
+                j, st, _backend = entry
+                if _run_tokens.get(jid) != tokens[jid]:
+                    # 已被新一轮启动取代,停止写该任务状态
+                    del active[jid]
+                    continue
+                try:
+                    remote_path = fut.result()
+                except Exception as e:
+                    log.exception("upload failed: %s %s -> %s",
+                                  c.slug, p.filename, st.name)
+                    j.status, j.error = "failed", f"上传失败: {e}"
+                    del active[jid]
+                    continue
+                s.add(PhotoUpload(photo_id=p.id, storage_id=st.id,
+                                  remote_path=remote_path))
+                j.photos_done += 1
+                needing[jid].discard(p.id)
             s.commit()
 
-        _delete_local_originals(s, st, photos, job)
-        if job.status == "running":
-            job.status = "done"
+        # 收尾: 仍存活的任务尝试删本地原图并标记完成
+        for jid, (j, st, _backend) in list(active.items()):
+            if j.status != "running":
+                continue
+            _delete_local_originals(s, st, photos, j)
+            j.status = "done"
             s.commit()
             log.info("upload done: %s -> %s (%d photos)",
-                     slug, st.name, job.photos_total)
+                     c.slug, st.name, j.photos_total)
     finally:
+        if executor:
+            executor.shutdown(wait=False)
         s.close()
 
 
@@ -237,7 +287,6 @@ def _delete_local_originals(s, st, photos: list[Photo], job: UploadJob) -> None:
     2. 缩略图缓存(900/2400)已在盘(否则缩略图永远无法再生)。
     不满足的保留本地并在 job.error 里提示。
     """
-    from ...database import SessionLocal
     enabled_ids = s.scalars(select(Storage.id).where(Storage.enabled == True)).all()  # noqa: E712
     photo_ids = [p.id for p in photos]
     # photo_id -> 已上传的存储数
@@ -255,8 +304,11 @@ def _delete_local_originals(s, st, photos: list[Photo], job: UploadJob) -> None:
         if not media.thumb_cache_ready(p.filename):
             kept += 1
             continue
+        local = media.abs_path(p.filename)
+        if not local.is_file():
+            continue  # 已被同组其他存储任务的收尾删除,不算保留
         try:
-            media.abs_path(p.filename).unlink()
+            local.unlink()
         except OSError:
             kept += 1
     media.cleanup_empty_dirs(photos[0].filename if photos else "")

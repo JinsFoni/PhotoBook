@@ -39,7 +39,8 @@
                 <th class="t-small" style="text-align:left;padding:var(--s3) var(--s4) var(--s3) 0;border-bottom:1px solid var(--line)">{{ t('根目录') }}</th>
                 <th class="t-small" style="text-align:left;padding:var(--s3) var(--s4) var(--s3) 0;border-bottom:1px solid var(--line);white-space:nowrap">{{ t('状态') }}</th>
                 <th class="t-small" style="text-align:left;padding:var(--s3) var(--s4) var(--s3) 0;border-bottom:1px solid var(--line);white-space:nowrap">{{ t('手动上传') }}</th>
-                <th class="t-small" style="text-align:left;padding:var(--s3) 0;border-bottom:1px solid var(--line);white-space:nowrap">{{ t('操作') }}</th>
+                <th class="t-small" style="text-align:left;padding:var(--s3) var(--s4) var(--s3) 0;border-bottom:1px solid var(--line);white-space:nowrap">{{ t('直链') }}</th>
+                <th class="t-small" style="text-align:left;padding:var(--s3) 0 var(--s3) var(--s4);border-bottom:1px solid var(--line);white-space:nowrap">{{ t('操作') }}</th>
               </tr></thead>
               <tbody>
               {% for st in storages %}
@@ -58,6 +59,16 @@
                           data-manual-toggle="{{ st.id }}"
                           aria-checked="{{ 'true' if st.manual_upload else 'false' }}"
                           aria-label="{{ t('手动上传') }}"></button>
+                  {% else %}
+                  <span class="switch switch--sm" style="opacity:.4;pointer-events:none" aria-checked="false"></span>
+                  {% endif %}
+                </td>
+                <td style="padding:var(--s4) var(--s4) var(--s4) 0">
+                  {% if st.enabled %}
+                  <button type="button" class="switch switch--sm" role="switch"
+                          data-direct-toggle="{{ st.id }}"
+                          aria-checked="{{ 'true' if st.direct_link else 'false' }}"
+                          aria-label="{{ t('直链') }}"></button>
                   {% else %}
                   <span class="switch switch--sm" style="opacity:.4;pointer-events:none" aria-checked="false"></span>
                   {% endif %}
@@ -135,17 +146,19 @@
       }
     });
   });
-  document.querySelectorAll('[data-manual-toggle]').forEach(function (sw) {
+  /* 通用开关列: data-*-toggle → /admin/storages/{id}/toggle-* */
+  document.querySelectorAll('[data-manual-toggle], [data-direct-toggle]').forEach(function (sw) {
     sw.addEventListener('click', async function () {
-      var id = sw.getAttribute('data-manual-toggle');
+      var kind = sw.hasAttribute('data-manual-toggle') ? 'manual' : 'direct';
+      var id = sw.getAttribute('data-' + kind + '-toggle');
       sw.disabled = true;
       try {
-        var r = await fetch('/admin/storages/' + id + '/toggle-manual', {
+        var r = await fetch('/admin/storages/' + id + '/toggle-' + kind, {
           method: 'POST', headers: { 'X-Requested-With': 'fetch' }
         });
         var d = await r.json();
         if (d.ok) {
-          sw.setAttribute('aria-checked', d.manual_upload ? 'true' : 'false');
+          sw.setAttribute('aria-checked', d[kind === 'manual' ? 'manual_upload' : 'direct_link'] ? 'true' : 'false');
         } else {
           sw.setAttribute('aria-checked', 'false');
           if (window.PC && PC.toast) PC.toast(d.message || '✗');

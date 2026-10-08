@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+import time
 from urllib.parse import quote
 
 import httpx
@@ -23,6 +23,10 @@ from .base import StorageError
 log = logging.getLogger("pb.storage.webdav")
 
 _TIMEOUT = httpx.Timeout(120.0, connect=15.0)
+
+# 网盘驱动瞬时抖动(高频 PUT 偶发 405/429/5xx)视为可重试
+_RETRYABLE = {405, 429, 500, 502, 503, 504}
+_RETRY_DELAYS = (2.0, 5.0)
 
 
 def _upload_folder(root_dir: str, remote_folder: str) -> str:
@@ -55,21 +59,32 @@ def _dav_path(root_dir: str, remote_folder: str, name: str = "") -> str:
 
 
 class WebDavBackend:
-    def upload(self, st: Storage, local_path: Path, remote_folder: str) -> str:
+    def upload(self, st: Storage, data: bytes, filename: str,
+               remote_folder: str) -> str:
         folder = _upload_folder(st.root_dir, remote_folder)
-        with _client(st) as client:
-            _mkcol_all(client, folder)
-            with local_path.open("rb") as f:
-                resp = client.put(_dav_path(st.root_dir, remote_folder,
-                                            local_path.name), content=f)
-        if resp.status_code not in (200, 201, 204):
-            raise StorageError(
-                f"上传失败 HTTP {resp.status_code}: {resp.text[:200]}"
-                + ("(根目录需包含挂载名,如 /123云盘/WebDav/PhotoBook)"
-                   if resp.status_code == 404 else ""))
-        # WebDAV 不会改文件名, 返回 root/relative 约定路径
-        return "/".join(p for p in (_upload_folder(st.root_dir, remote_folder),
-                                    local_path.name) if p)
+        # 网盘驱动(115 等)偶发对瞬时高频 PUT 返回 405/429/5xx,
+        # 退避重试两次,避免单张抖动让整个任务失败(断点续传会跳过已成功的)。
+        last: httpx.Response | None = None
+        for attempt in range(3):
+            if attempt:
+                time.sleep(_RETRY_DELAYS[attempt - 1])
+            with _client(st) as client:
+                if attempt == 0:
+                    _mkcol_all(client, folder)
+                last = client.put(_dav_path(st.root_dir, remote_folder, filename),
+                                  content=data)
+            if last.status_code in (200, 201, 204):
+                # WebDAV 不会改文件名, 返回 root/relative 约定路径
+                return "/".join(p for p in (_upload_folder(st.root_dir, remote_folder),
+                                            filename) if p)
+            if last.status_code not in _RETRYABLE:
+                break
+        code = last.status_code if last is not None else 0
+        body = last.text[:200] if last is not None else ""
+        raise StorageError(
+            f"上传失败 HTTP {code}: {body}"
+            + ("(根目录需包含挂载名,如 /123云盘/WebDav/PhotoBook)"
+               if code == 404 else ""))
 
     def delete_batch(self, st: Storage, remote_paths: list[str]) -> None:
         """WebDAV 无批量删除, 逐个 DELETE(尽力而为, 404 视为已删)。"""
