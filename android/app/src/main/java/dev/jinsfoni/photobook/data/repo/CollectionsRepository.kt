@@ -103,7 +103,8 @@ class CollectionsRepository @Inject constructor(
         modelName = model_name,
         // S2 列表卡的 coverThumb 同为 "t/900/…webp" 前缀 rel,直拼(origin 根)
         imageUrl = coverThumb?.let { MediaUrls.fromPrefixed(base, it) },
-        heroUrl = cover?.let { MediaUrls.thumb(base, it, 2400) },
+        // hero 轮播全屏宽 → /t/s2400/ 短边档(同灯箱 previewUrl)
+        heroUrl = cover?.let { MediaUrls.thumbShortSide(base, it, 2400) },
         count = count,
         tags = tags,
     )
