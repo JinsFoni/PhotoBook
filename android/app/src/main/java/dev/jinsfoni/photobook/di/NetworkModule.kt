@@ -43,7 +43,15 @@ object NetworkModule {
         // 401 强登出时顺带作废进程级数据缓存(避免下个账号看到上个会话的 feed/收藏)。
         // dagger.Lazy 断依赖环:OkHttp ← RepoCaches ← Repository ← MobileApi ← OkHttp
         auth.onUnauthorized = { repoCaches.get().invalidate() }
+        // HTTP 缓存:服务端 discover/models/favorites-resolve 带 ETag(no-cache 语义),
+        // 本层自动补发 If-None-Match,304 时直接吃本地副本(省流量省解析);
+        // 缩略图响应是一年 immutable,缓存直接命中不再打网络(磁盘占用归 Coil 后另算)
+        val httpCache = okhttp3.Cache(
+            dev.jinsfoni.photobook.PhotoBookApp.instance.cacheDir.resolve("http_cache"),
+            64L * 1024 * 1024,
+        )
         return OkHttpClient.Builder()
+            .cache(httpCache)
             .addInterceptor(hostSelection)
             .addInterceptor(auth)
             .connectTimeout(10, TimeUnit.SECONDS)

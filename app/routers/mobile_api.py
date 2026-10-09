@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
@@ -30,6 +32,22 @@ RENEW_HEADER = "X-Renewed-Token"    # 滑动续期:响应头携带新 token,客�
 
 THUMB_W_CARD = 900    # 列表卡片 /t/900/(与 web 端网格页同档,共用 HTTP 缓存)
 THUMB_W_HERO = 900    # 详情头图 /t/900x/
+
+
+# ---- ETag 条件请求 ------------------------------------------------------------
+
+def _etag_response(payload, if_none_match: str | None) -> Response:
+    """内容寻址 ETag:payload 的 sha1 即弱验证器,数据不变 → 304 空响应。
+
+    客户端(OkHttp Cache)自动带 If-None-Match;304 省去客户端重新
+    反序列化,更省蜂窝流量(响应体占这类接口流量的大头)。
+    """
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    etag = '"' + hashlib.sha1(body.encode()).hexdigest() + '"'
+    headers = {"ETag": etag, "Cache-Control": "no-cache"}
+    if if_none_match and etag in if_none_match:
+        return Response(status_code=304, headers=headers)
+    return Response(body, media_type="application/json", headers=headers)
 
 
 # ---- 统一错误体 --------------------------------------------------------------
@@ -203,7 +221,8 @@ def _published_collections(s: Session) -> list[Collection]:
 # ---- discover ----
 
 @router.get("/discover")
-async def mobile_discover(s: Session = Depends(get_db)):
+async def mobile_discover(s: Session = Depends(get_db),
+                          if_none_match: str | None = Header(default=None)):
     cols = _published_collections(s)
     featured = [c for c in cols if c.featured][:4] or cols[:4]
     # 12 个:发现页轮播吃前 12(客户端 HeroCarousel take(12));网格只展示前 6
@@ -220,7 +239,7 @@ async def mobile_discover(s: Session = Depends(get_db)):
             if c.model:
                 d["models"].add(c.model.slug)
 
-    return {
+    return _etag_response({
         "featured": [_collection_payload(s, c) for c in featured],
         "latest": [_collection_payload(s, c) for c in latest],
         "models": [_model_payload(s, m, [c for c in cols if c.model_id == m.id])
@@ -228,7 +247,7 @@ async def mobile_discover(s: Session = Depends(get_db)):
         "tags": [{"name": t.name, "collections": tag_counts.get(t.name, {}).get("collections", 0),
                   "models": len(tag_counts.get(t.name, {}).get("models", set()))} for t in tags],
         "stats": {"collections": len(cols), "models": len(models)},
-    }
+    }, if_none_match)
 
 
 # ---- collections 列表/详情 ----
@@ -269,7 +288,8 @@ async def mobile_collection_detail(slug: str, s: Session = Depends(get_db)):
 @router.get("/models")
 async def mobile_models(s: Session = Depends(get_db),
                         featured: str = Query("", pattern="^(|1)$"),
-                        sort: str = Query("latest", pattern="^(latest|oldest)$")):
+                        sort: str = Query("latest", pattern="^(latest|oldest)$"),
+                        if_none_match: str | None = Header(default=None)):
     # 精选永远置顶(与时间排序解耦),组内按创建时间 latest 新→旧 / oldest 旧→新
     created = Model.created_at.desc() if sort == "latest" else Model.created_at.asc()
     mid = Model.id.desc() if sort == "latest" else Model.id.asc()
@@ -278,8 +298,10 @@ async def mobile_models(s: Session = Depends(get_db),
     if featured:
         models = [m for m in models if m.featured]
     cols = _published_collections(s)
-    return {"items": [_model_payload(s, m, [c for c in cols if c.model_id == m.id])
-                      for m in models], "total": len(models)}
+    return _etag_response(
+        {"items": [_model_payload(s, m, [c for c in cols if c.model_id == m.id])
+                   for m in models], "total": len(models)},
+        if_none_match)
 
 
 @router.get("/models/{slug}")
@@ -342,7 +364,8 @@ async def mobile_search(q: str = Query(""), s: Session = Depends(get_db)):
 
 @router.get("/favorites/resolve")
 async def mobile_favorites_resolve(s: Session = Depends(get_db),
-                                   user: User = Depends(require_mobile_user)):
+                                   user: User = Depends(require_mobile_user),
+                                   if_none_match: str | None = Header(default=None)):
     """收藏三段解析为实体(S7 直接渲染,免客户端逐段反查):
     model 段 = _model_payload;collection 段 = _collection_card;
     photo 段 = key slug:idx 反查文件名 + 缩略 rel + 所在合集标题。"""
@@ -353,7 +376,7 @@ async def mobile_favorites_resolve(s: Session = Depends(get_db),
         if r.target_type in favs:
             favs[r.target_type].add(r.target_key)
     if not any(favs.values()):
-        return out
+        return _etag_response(out, if_none_match)
 
     cols = _published_collections(s)
     if favs["model"]:
@@ -376,7 +399,7 @@ async def mobile_favorites_resolve(s: Session = Depends(get_db),
                         "w": p.width, "h": p.height,
                     })
         out["photos"] = photos
-    return out
+    return _etag_response(out, if_none_match)
 
 
 @router.get("/favorites")

@@ -342,3 +342,80 @@ def test_models_sort_latest_then_oldest(client):
 def test_models_sort_invalid(client):
     r = client.get("/api/mobile/models", params={"sort": "bogus"})
     assert r.status_code == 422
+
+
+# ---- ETag 条件请求 ----
+
+def test_discover_etag_roundtrip(client):
+    """首响应带 ETag;同值 If-None-Match → 304 空体;数据变更后 ETag 变化。"""
+    r1 = client.get("/api/mobile/discover")
+    assert r1.status_code == 200
+    etag = r1.headers.get("ETag")
+    assert etag
+    assert r1.headers["Cache-Control"] == "no-cache"
+
+    r2 = client.get("/api/mobile/discover", headers={"If-None-Match": etag})
+    assert r2.status_code == 304
+    assert r2.content == b""
+    # 客户端沿用缓存体;304 响应也带 ETag 供后续条件请求
+    assert r2.headers.get("ETag") == etag
+
+    # 弱验证:If-None-Match 允许逗号列表(OkHttp 可能拼多值)
+    r3 = client.get("/api/mobile/discover",
+                    headers={"If-None-Match": f'W/{etag}, {etag}, "other"'})
+    assert r3.status_code == 304
+
+
+def test_models_etag_roundtrip(client):
+    r1 = client.get("/api/mobile/models")
+    assert r1.status_code == 200
+    etag = r1.headers["ETag"]
+    r2 = client.get("/api/mobile/models", headers={"If-None-Match": etag})
+    assert r2.status_code == 304
+
+
+def test_favorites_resolve_etag(client, token):
+    h = _auth(token)
+    r1 = client.get("/api/mobile/favorites/resolve", headers=h)
+    assert r1.status_code == 200
+    etag = r1.headers["ETag"]
+    r2 = client.get("/api/mobile/favorites/resolve",
+                    headers={**h, "If-None-Match": etag})
+    assert r2.status_code == 304
+
+    # 收藏变更 → payload 变 → ETag 变,条件请求不再命中
+    cols = client.get("/api/mobile/collections").json()["items"]
+    if cols:
+        slug = cols[0]["slug"]
+        client.post("/api/mobile/favorites", headers=h,
+                    json={"type": "collection", "key": slug, "added": True})
+        r3 = client.get("/api/mobile/favorites/resolve",
+                        headers={**h, "If-None-Match": etag})
+        assert r3.status_code == 200
+        assert r3.headers["ETag"] != etag
+        client.post("/api/mobile/favorites", headers=h,
+                    json={"type": "collection", "key": slug, "added": False})
+
+
+def test_discover_etag_changes_on_content_change(client):
+    """发现页内容依赖集合数据:内容变 → ETag 变(直接改库模拟)。"""
+    r1 = client.get("/api/mobile/discover")
+    etag1 = r1.headers["ETag"]
+    from app.database import SessionLocal
+    from app.db import Collection
+    s = SessionLocal()
+    try:
+        col = s.query(Collection).filter_by(status="published").first()
+        if not col:
+            pytest.skip("no seeded collections")
+        old = col.featured
+        col.featured = not old
+        s.commit()
+        try:
+            etag2 = client.get("/api/mobile/discover").headers["ETag"]
+            assert etag2 != etag1
+        finally:
+            col.featured = old
+            s.commit()
+    finally:
+        s.close()
