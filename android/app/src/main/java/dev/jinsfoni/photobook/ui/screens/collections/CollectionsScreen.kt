@@ -48,7 +48,9 @@ import dev.jinsfoni.photobook.ui.nav.LocalGlassBarBottomInset
 fun CollectionsScreen(
     initialTag: String?,
     onOpenCollection: (String) -> Unit,
-    onOpenSearch: () -> Unit = {},
+    onOpenSearch: (() -> Unit)? = {},
+    // 独立页形态(标签筛选页)才显示返回键;底栏 tab 形态没有返回概念
+    onBack: (() -> Unit)? = null,
     vm: CollectionsViewModel = hiltViewModel(),
 ) {
     // 所有页面统一跟随全局主题(设置页切换),不再有页面级强制深/浅
@@ -79,20 +81,35 @@ fun CollectionsScreen(
                 .padding(horizontal = 18.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (onBack != null) {
+                Box(
+                    Modifier
+                        .photoClickable(onBack)
+                        .padding(8.dp),
+                ) {
+                    dev.jinsfoni.photobook.ui.icons.StrokeIcon(
+                        dev.jinsfoni.photobook.ui.icons.BackIcon,
+                        size = 22.dp,
+                        tint = colors.ink2,
+                    )
+                }
+            }
             Text(
                 if (state.tag != null) "#${state.tag}" else stringResource(R.string.collections_noun),
                 style = PhotoType.wordmark,
                 color = colors.ink,
             )
             Spacer(Modifier.weight(1f))
-            dev.jinsfoni.photobook.ui.icons.StrokeIcon(
-                dev.jinsfoni.photobook.ui.icons.SearchIcon,
-                size = 20.dp,
-                tint = colors.ink2,
-                modifier = Modifier
-                    .photoClickable(onOpenSearch)
-                    .padding(4.dp),
-            )
+            if (onOpenSearch != null) {
+                dev.jinsfoni.photobook.ui.icons.StrokeIcon(
+                    dev.jinsfoni.photobook.ui.icons.SearchIcon,
+                    size = 20.dp,
+                    tint = colors.ink2,
+                    modifier = Modifier
+                        .photoClickable(onOpenSearch)
+                        .padding(4.dp),
+                )
+            }
         }
 
         // 筛选行:排序图标 + 计数(原型 .filterrow;标签筛选由进入参数决定,M1 不做抽屉)

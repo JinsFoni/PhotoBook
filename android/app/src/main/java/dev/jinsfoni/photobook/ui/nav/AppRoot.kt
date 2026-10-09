@@ -16,6 +16,7 @@ import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.core.design.ThemeState
 import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
 import dev.jinsfoni.photobook.ui.screens.MainShell
+import dev.jinsfoni.photobook.ui.screens.collections.CollectionsScreen
 import dev.jinsfoni.photobook.ui.screens.detail.DetailScreen
 import dev.jinsfoni.photobook.ui.screens.lightbox.LightboxScreen
 import dev.jinsfoni.photobook.ui.screens.lightbox.PhotoDownloader
@@ -152,8 +153,8 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     onOpenModel = { slug -> nav.navigate("model/$slug") },
                     onOpenCollection = { slug -> nav.navigate("detail/$slug") },
                     onOpenTag = { tag ->
-                        // 标签点回 S2 列表:清搜索栈到 shell(简化:直接返回上一层)
-                        nav.popBackStack()
+                        // 标签点回标签筛选页(复用 S2 列表,独立页形态)
+                        nav.navigate("collections?tag=$tag")
                     },
                 )
             }
@@ -166,6 +167,20 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     slug = slug,
                     onBack = { nav.popBackStack() },
                     onOpenPhoto = { s, idx -> nav.navigate("lightbox/$s/$idx") },
+                    onOpenTag = { tag -> nav.navigate("collections?tag=$tag") },
+                )
+            }
+            // 标签筛选页:点任意页面的标签进入,复用 S2 列表(带返回键的独立页形态)
+            composable(
+                "collections?tag={tag}",
+                arguments = listOf(navArgument("tag") { defaultValue = "" }),
+            ) { entry ->
+                val tag = entry.arguments?.getString("tag").orEmpty().ifBlank { null }
+                CollectionsScreen(
+                    initialTag = tag,
+                    onOpenCollection = { slug -> nav.navigate("detail/$slug") },
+                    onOpenSearch = null,
+                    onBack = { nav.popBackStack() },
                 )
             }
             // 灯箱是"浮层"语义:退出动画由 LightboxScreen 屏内自编排(黑底/chrome 先撤,

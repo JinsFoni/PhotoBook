@@ -54,6 +54,7 @@ fun DetailScreen(
     slug: String,
     onBack: () -> Unit,
     onOpenPhoto: (slug: String, idx: Int) -> Unit,
+    onOpenTag: (String) -> Unit = {},
     vm: DetailViewModel = hiltViewModel(),
 ) {
     val colors = LocalPhotoColors.current
@@ -157,7 +158,7 @@ fun DetailScreen(
                                         dev.jinsfoni.photobook.ui.components.TagChip(
                                             label = "#$tag",
                                             selected = false,
-                                            onClick = {},
+                                            onClick = { onOpenTag(tag) },
                                         )
                                     }
                                 }
