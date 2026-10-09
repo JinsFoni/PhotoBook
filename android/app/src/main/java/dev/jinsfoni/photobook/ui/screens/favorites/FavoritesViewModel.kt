@@ -35,6 +35,7 @@ data class FavPhotoItem(
 data class FavoritesUiState(
     val tab: FavTab = FavTab.PHOTOS,
     val loading: Boolean = true,
+    val refreshing: Boolean = false,   // 下拉刷新指示器(已有数据时的刷新;与 loading 互斥)
     val models: List<ModelCard> = emptyList(),
     val collections: List<CollectionCard> = emptyList(),
     val photos: List<FavPhotoItem> = emptyList(),
@@ -83,7 +84,7 @@ class FavoritesViewModel @Inject constructor(
     fun refresh() {
         val first = _state.value.models.isEmpty() && _state.value.collections.isEmpty() &&
             _state.value.photos.isEmpty()
-        _state.value = _state.value.copy(loading = first, error = null)
+        _state.value = _state.value.copy(loading = first, refreshing = !first, error = null)
         viewModelScope.launch {
             try {
                 val dto = safeCall { api.favoritesResolve() }
@@ -91,6 +92,7 @@ class FavoritesViewModel @Inject constructor(
                 _state.value = FavoritesUiState(
                     tab = _state.value.tab,
                     loading = false,
+                    refreshing = false,
                     models = dto.models.map { it.toCard(base) },
                     collections = dto.collections.map { it.toModel(base) },
                     photos = dto.photos.map { p ->
@@ -107,10 +109,12 @@ class FavoritesViewModel @Inject constructor(
             } catch (e: ApiException) {
                 _state.value = _state.value.copy(
                     loading = false,
-                    error = when (e.code) {
+                    refreshing = false,
+                    // 已有内容时下拉失败不打断现状,只收指示器;空态才显示错误
+                    error = if (first) when (e.code) {
                         ApiException.NETWORK -> "无法连接服务器"
                         else -> e.message.ifBlank { "加载失败" }
-                    },
+                    } else null,
                 )
             }
         }

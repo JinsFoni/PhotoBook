@@ -14,6 +14,7 @@ import javax.inject.Inject
 
 data class ModelsUiState(
     val loading: Boolean = true,
+    val refreshing: Boolean = false,   // 下拉刷新(带指示器)
     val items: List<ModelCard> = emptyList(),
     val sort: String = "latest",       // latest | oldest(切换后从服务端重新拉取)
     val error: String? = null,
@@ -37,6 +38,20 @@ class ModelsViewModel @Inject constructor(
     }
 
     fun retry() = load()
+
+    /** 下拉刷新:指示器 + 静默拉新,保留列表内容。 */
+    fun refresh() {
+        if (_state.value.refreshing || _state.value.loading || _state.value.items.isEmpty()) return
+        _state.value = _state.value.copy(refreshing = true)
+        viewModelScope.launch {
+            try {
+                val items = repo.list(sort = _state.value.sort)
+                _state.value = _state.value.copy(refreshing = false, items = items, error = null)
+            } catch (e: ApiException) {
+                _state.value = _state.value.copy(refreshing = false)
+            }
+        }
+    }
 
     fun toggleSort() {
         _state.value = _state.value.copy(sort = if (_state.value.sort == "latest") "oldest" else "latest")

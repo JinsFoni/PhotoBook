@@ -15,6 +15,7 @@ import javax.inject.Inject
 data class CollectionsUiState(
     val loading: Boolean = true,       // 首载骨架
     val loadingMore: Boolean = false,  // 追加页
+    val refreshing: Boolean = false,   // 下拉刷新(带指示器;与 loading 互斥)
     val items: List<CollectionCard> = emptyList(),
     val total: Int = 0,
     val tag: String? = null,
@@ -56,6 +57,29 @@ class CollectionsViewModel @Inject constructor(
 
     fun retry() = loadFirst()
 
+    /**
+     * 下拉刷新:指示器 + 强制拉第一页。与 loadFirst 的区别是不清空已有
+     * 列表(保滚动位置),失败也只收指示器、不顶掉现有内容。
+     */
+    fun refresh() {
+        val s = _state.value
+        if (s.refreshing || s.loading || s.items.isEmpty()) return
+        _state.value = s.copy(refreshing = true, error = null)
+        viewModelScope.launch {
+            try {
+                val st = _state.value
+                val (items, total) = repo.collections(st.tag, 1, pageSize, st.sort)
+                page = 1
+                _state.value = _state.value.copy(
+                    refreshing = false, items = items, total = total,
+                    endReached = items.size >= total, error = null,
+                )
+            } catch (e: ApiException) {
+                _state.value = _state.value.copy(refreshing = false)
+            }
+        }
+    }
+
     private fun loadFirst() {
         page = 1
         _state.value = _state.value.copy(loading = true, error = null, items = emptyList(), endReached = false)
@@ -76,7 +100,7 @@ class CollectionsViewModel @Inject constructor(
     /** 滚动接近尾部时追加下一页。 */
     fun loadMore() {
         val s = _state.value
-        if (s.loading || s.loadingMore || s.endReached || s.error != null) return
+        if (s.loading || s.loadingMore || s.refreshing || s.endReached || s.error != null) return
         _state.value = s.copy(loadingMore = true)
         viewModelScope.launch {
             try {

@@ -92,6 +92,12 @@ fun ModelsScreen(
             }
         }
 
+        // 下拉刷新(仅内容区;首载骨架/错误态走骨架与重试,不套指示器)
+        androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+            isRefreshing = state.refreshing,
+            onRefresh = vm::refresh,
+            modifier = Modifier.fillMaxSize(),
+        ) {
         when {
             state.loading -> GridSkeleton()
             state.items.isEmpty() && state.error != null -> Box(
@@ -130,6 +136,7 @@ fun ModelsScreen(
                     )
                 }
             }
+        }
         }
     }
     }

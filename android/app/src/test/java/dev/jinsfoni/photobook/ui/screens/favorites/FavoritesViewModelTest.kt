@@ -96,10 +96,24 @@ class FavoritesViewModelTest {
         enqueueResolve()
         vm.refresh()
         waitUntil { !vm.state.value.loading }
+        // 有数据时下拉刷新失败不打断现状:只收指示器、清 error、保留列表
         server.shutdown()
         vm.refresh()
-        waitUntil { vm.state.value.error != null }
-        assertEquals("无法连接服务器", vm.state.value.error)
+        waitUntil { !vm.state.value.refreshing }
+        assertNull(vm.state.value.error)
+        assertEquals(1, vm.state.value.models.size)
+        // 空态首刷失败才显示错误 + 重试恢复
+        val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
+        val api = Retrofit.Builder()
+            .baseUrl("http://localhost:1/")
+            .client(OkHttpClient())
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+            .create(MobileApi::class.java)
+        val vm2 = FavoritesViewModel(FavoritesRepository(api, FakeSessionStore()), api, FakeSessionStore())
+        vm2.refresh()
+        waitUntil { vm2.state.value.error != null }
+        assertEquals("无法连接服务器", vm2.state.value.error)
     }
 
     @Test

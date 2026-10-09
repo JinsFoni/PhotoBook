@@ -687,25 +687,33 @@ window.PC = (function () {
       if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1);
     }, { passive: true });
 
-    /* 滚轮切换照片。触控板惯性会拖出几十个小 delta 事件且正负抖动,
-       固定节流会切完下一张又被余波切回上一张。所以: delta 先累加,
-       攒够阈值才切; 切完进入抑制期, 直到滚动彻底停下(180ms 无事件)
-       才重新武装, 惯性余波全部吃掉 */
-    var wheelAcc = 0, wheelArmed = true, wheelSettle;
+    /* 滚轮切换照片。三个场景的行为约定:
+       1) 慢滚/精细滚轮: 单事件 delta 1~30, 跨事件累加攒阈值(40),
+          武装态 800ms 无活动才清零, 不因停顿作废;
+       2) 单次滚动(一 flick 连发数个事件, 手势可长达数百 ms): 首个过阈值
+          的事件切一张, 之后 SUP_MS 抑制期内的事件**全部丢弃**。抑制窗必须
+          盖住一个完整手势 —— 180ms 实测不够(稍长的滚动在抑制结束后, 同一
+          手势的后续事件 delta≥100 立即又过阈值 → 一次滚切好几张), 取 400ms;
+       3) 持续快滚: 抑制窗固定 SUP_MS 且**不被后续事件重置**(事件重置会
+          让抑制期"滚多久吃多久"→ 整段快滚一张不切, 旧版败因), 到点重新
+          武装, 节奏约每 400ms 一张。
+       方向反转立即清账, 防上滚余波抵消下滚意图 */
+    var SUP_MS = 400;
+    var wheelAcc = 0, wheelSup = false, wheelSettle, wheelReset;
     el.addEventListener("wheel", function (e) {
       if (el.dataset.open !== "true" || lb.zoom) { wheelAcc = 0; return; }
       e.preventDefault();
-      clearTimeout(wheelSettle);
-      if (!wheelArmed) {
-        wheelSettle = setTimeout(function () { wheelArmed = true; wheelAcc = 0; }, 180);
-        return;
-      }
+      if (wheelSup) return;   /* 抑制期: 同一手势余波直接丢弃 */
+      if (wheelAcc * e.deltaY < 0) wheelAcc = 0;
       wheelAcc += e.deltaY;
+      clearTimeout(wheelReset);
+      wheelReset = setTimeout(function () { wheelAcc = 0; }, 800);
       if (Math.abs(wheelAcc) < 40 || lb.photos.length < 2) return;
       var dir = wheelAcc > 0 ? 1 : -1;
       wheelAcc = 0;
-      wheelArmed = false;
-      wheelSettle = setTimeout(function () { wheelArmed = true; }, 180);
+      wheelSup = true;
+      /* 定时器只在此刻设一次, 事件不重置它 —— SUP_MS 后必然重新武装 */
+      wheelSettle = setTimeout(function () { wheelSup = false; wheelAcc = 0; }, SUP_MS);
       go(dir);
     }, { passive: false });
 
