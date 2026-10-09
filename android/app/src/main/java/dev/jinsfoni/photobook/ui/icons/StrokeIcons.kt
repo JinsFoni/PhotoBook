@@ -145,10 +145,22 @@ val SearchIcon = part {
     moveTo(20f, 20f); lineToRelative(-3.8f, -3.8f)
 }
 
-val SortIcon = part {
-    moveTo(4f, 7f); horizontalLineToRelative(16f)
-    moveTo(7f, 12f); horizontalLineToRelative(10f)
-    moveTo(10f, 17f); horizontalLineToRelative(4f)
+// 排序图标(箭头方向示序):箭头朝下=最新(SortLatestIcon),朝上=最旧(SortOldestIcon)。
+// 三条渐短横线 + 右侧竖线带箭头,箭头起止随方向翻转,24 viewBox 1.6 描边。
+val SortLatestIcon = part {
+    moveTo(4f, 7f); horizontalLineToRelative(10f)
+    moveTo(4f, 12f); horizontalLineToRelative(7f)
+    moveTo(4f, 17f); horizontalLineToRelative(4f)
+    moveTo(17f, 5f); verticalLineToRelative(13f)
+    moveTo(13.5f, 14.5f); lineTo(17f, 18f); lineTo(20.5f, 14.5f)
+}
+
+val SortOldestIcon = part {
+    moveTo(4f, 7f); horizontalLineToRelative(10f)
+    moveTo(4f, 12f); horizontalLineToRelative(7f)
+    moveTo(4f, 17f); horizontalLineToRelative(4f)
+    moveTo(17f, 19f); verticalLineTo(6f)
+    moveTo(13.5f, 9.5f); lineTo(17f, 6f); lineTo(20.5f, 9.5f)
 }
 
 val HeartIcon = part {

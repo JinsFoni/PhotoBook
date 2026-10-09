@@ -21,8 +21,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** 三段 Tab(原型 s7:照片/写真/模特,照片段默认选中)。 */
-enum class FavTab { PHOTOS, COLLECTIONS, MODELS }
+/** 三段 Tab(照片在最右,写真/模特保持原相对顺序,写真段默认选中)。 */
+enum class FavTab { COLLECTIONS, MODELS, PHOTOS }
 
 data class FavPhotoItem(
     val slug: String,
@@ -33,7 +33,7 @@ data class FavPhotoItem(
 )
 
 data class FavoritesUiState(
-    val tab: FavTab = FavTab.PHOTOS,
+    val tab: FavTab = FavTab.COLLECTIONS,
     val loading: Boolean = true,
     val refreshing: Boolean = false,   // 下拉刷新指示器(已有数据时的刷新;与 loading 互斥)
     val models: List<ModelCard> = emptyList(),

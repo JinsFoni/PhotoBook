@@ -32,7 +32,6 @@ import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.EmptyState
 import dev.jinsfoni.photobook.ui.components.ModelCard
 import dev.jinsfoni.photobook.ui.components.SkeletonBox
-import dev.jinsfoni.photobook.ui.components.TagChip
 import dev.jinsfoni.photobook.ui.components.photoClickable
 import dev.jinsfoni.photobook.ui.nav.LocalGlassBarBottomInset
 
@@ -69,7 +68,7 @@ fun ModelsScreen(
             )
         }
 
-        // 筛选行:排序 chip + 计数,与写真页 .filterrow 同构
+        // 筛选行:排序图标 + 计数,与写真页 .filterrow 同构
         Row(
             Modifier
                 .fillMaxWidth()
@@ -77,10 +76,13 @@ fun ModelsScreen(
                 .padding(bottom = 15.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TagChip(
-                label = if (state.sort == "latest") stringResource(R.string.sort_latest) else stringResource(R.string.sort_earliest),
-                selected = true,
-                onClick = vm::toggleSort,
+            dev.jinsfoni.photobook.ui.icons.StrokeIcon(
+                if (state.sort == "latest") dev.jinsfoni.photobook.ui.icons.SortLatestIcon else dev.jinsfoni.photobook.ui.icons.SortOldestIcon,
+                size = 20.dp,
+                tint = colors.ink2,
+                modifier = Modifier
+                    .photoClickable(vm::toggleSort)
+                    .padding(4.dp),
             )
             Spacer(Modifier.weight(1f))
             if (!state.loading && state.error == null) {
