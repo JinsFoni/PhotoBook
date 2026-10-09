@@ -35,6 +35,9 @@ interface SessionStoreApi {
     /** 活动 token 的内存快照(空串 = 无 token;拦截器每请求读取用)。 */
     fun tokenSnapshot(): String
 
+    /** 活动档案 id 的内存快照(null = 无档案;磁盘缓存分文件等同步读用)。 */
+    fun activeProfileIdSnapshot(): String?
+
     /** 活动档案的 token(与 [token] 同源;无档案时空)。 */
     suspend fun currentToken(): String
 

@@ -4,6 +4,7 @@ import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
 import dev.jinsfoni.photobook.data.prefs.FakeSessionStore
 import dev.jinsfoni.photobook.data.remote.MobileApi
 import dev.jinsfoni.photobook.data.repo.CollectionsRepository
+import dev.jinsfoni.photobook.data.repo.tempCacheDir
 import dev.jinsfoni.photobook.data.repo.FavoritesRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -50,7 +51,7 @@ class DetailViewModelTest {
             .create(MobileApi::class.java)
         val store = FakeSessionStore()
         favs = FavoritesRepository(api, store)
-        vm = DetailViewModel(CollectionsRepository(api, store), favs, api)
+        vm = DetailViewModel(CollectionsRepository(api, store, tempCacheDir()), favs, api)
     }
 
     @After

@@ -88,12 +88,12 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
     override suspend fun currentToken(): String = token.first().orEmpty()
 
     /**
-     * 活动档案快照(baseUrl/token),供拦截器每请求同步读取。
+     * 活动档案快照(baseUrl/token/activeId),供拦截器/磁盘缓存键同步读取。
      * 初始化阻塞读一次 DataStore(仅首个请求一次),并启动常驻收集:
      * 任何写入(登录/续期/切档/登出)都会让 data flow 发射,据此刷新快照,
      * 拦截器不再每请求 runBlocking。
      */
-    private class Snapshot(val baseUrl: String, val token: String)
+    private class Snapshot(val baseUrl: String, val token: String, val activeId: String?)
 
     private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -104,14 +104,23 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
     private fun snapshot(): Snapshot {
         snap?.let { return it }
         val initial = runBlocking {
-            Snapshot(baseUrl = baseUrl.first(), token = token.first().orEmpty())
+            Snapshot(
+                baseUrl = baseUrl.first(),
+                token = token.first().orEmpty(),
+                activeId = activeProfileId.first(),
+            )
         }
         snap = initial
         snapshotScope.launch {
             context.dataStore.data.collect { prefs ->
+                val list = loadProfiles(prefs)
+                val activeId = prefs[activeProfileKey] ?: list.firstOrNull()?.id
                 snap = Snapshot(
-                    baseUrl = activeProfile(prefs)?.baseUrl ?: prefs[baseUrlKey] ?: DEFAULT_BASE_URL,
-                    token = activeProfile(prefs)?.token?.takeIf { it.isNotBlank() }.orEmpty(),
+                    baseUrl = list.firstOrNull { it.id == activeId }?.baseUrl
+                        ?: prefs[baseUrlKey] ?: DEFAULT_BASE_URL,
+                    token = list.firstOrNull { it.id == activeId }?.token
+                        ?.takeIf { it.isNotBlank() }.orEmpty(),
+                    activeId = activeId,
                 )
             }
         }
@@ -121,6 +130,8 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
     override fun baseUrlSnapshot(): String = snapshot().baseUrl
 
     override fun tokenSnapshot(): String = snapshot().token
+
+    override fun activeProfileIdSnapshot(): String? = snapshot().activeId
 
     override suspend fun saveSession(token: String, username: String) {
         context.dataStore.edit { prefs ->

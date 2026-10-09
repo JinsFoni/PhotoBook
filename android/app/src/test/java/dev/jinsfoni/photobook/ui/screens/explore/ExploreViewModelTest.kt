@@ -4,6 +4,7 @@ import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
 import dev.jinsfoni.photobook.data.prefs.FakeSessionStore
 import dev.jinsfoni.photobook.data.remote.MobileApi
 import dev.jinsfoni.photobook.data.repo.CollectionsRepository
+import dev.jinsfoni.photobook.data.repo.tempCacheDir
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -45,7 +46,7 @@ class ExploreViewModelTest {
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
             .create(MobileApi::class.java)
-        val repo = CollectionsRepository(api, FakeSessionStore())
+        val repo = CollectionsRepository(api, FakeSessionStore(), tempCacheDir())
         vm = ExploreViewModel(repo)
     }
 

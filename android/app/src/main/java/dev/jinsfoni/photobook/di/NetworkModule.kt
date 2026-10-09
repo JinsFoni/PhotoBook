@@ -71,6 +71,13 @@ object NetworkModule {
     fun provideMobileApi(retrofit: Retrofit): MobileApi =
         retrofit.create(MobileApi::class.java)
 
+    @Provides
+    @Singleton
+    fun provideCacheDirProvider(): dev.jinsfoni.photobook.data.repo.CacheDirProvider =
+        dev.jinsfoni.photobook.data.repo.AppCacheDirProvider(
+            java.io.File(dev.jinsfoni.photobook.PhotoBookApp.instance.filesDir, "cache")
+        )
+
     /**
      * Coil 与网络层共用 OkHttp(缓存/拦截一致)。
      * 内存缓存(默认 25% 堆)+ 磁盘缓存(2% 磁盘,上限 512MB):没有磁盘缓存时

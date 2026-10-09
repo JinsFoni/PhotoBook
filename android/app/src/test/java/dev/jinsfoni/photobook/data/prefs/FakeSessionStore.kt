@@ -42,6 +42,7 @@ open class FakeSessionStore : SessionStoreApi {
 
     override fun baseUrlSnapshot(): String = currentBaseUrlLocked()
     override fun tokenSnapshot(): String = tokenFlow.value.orEmpty()
+    override fun activeProfileIdSnapshot(): String? = activeIdFlow.value
 
     private fun currentBaseUrlLocked(): String =        (profilesFlow.value.firstOrNull { it.id == activeIdFlow.value }
             ?: profilesFlow.value.firstOrNull())?.baseUrl ?: DEFAULT
