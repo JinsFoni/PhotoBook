@@ -49,7 +49,7 @@
                 <td data-upload-cell="{{ c.id }}" style="white-space:nowrap" class="t-small">
                   {% if upload_storages %}
                     {# 上传按钮作用于所有启用存储, 只显示一个; 有记录的存储逐行显示状态 #}
-                    {% set ns = namespace(none_count = 0) %}
+                    {% set ns = namespace(none_count = 0, retry_count = 0) %}
                     {% for st in upload_storages %}{% set u = upload_map.get(c.id, {}).get(st.id) %}
                       {% if u and u.status != 'none' %}
                       <div data-upload-row="{{ c.id }}:{{ st.id }}" style="color:var(--ink-2)">
@@ -58,9 +58,11 @@
                         {% elif u.status == 'partial' %}{{ st.name }}: {{ u.done }}/{{ u.total }}
                         {% else %}{{ st.name }}: <span style="color:var(--danger,#c0392b)">{{ t('失败') }}</span>{% endif %}
                       </div>
+                      {% if u.status == 'partial' or u.status == 'failed' %}{% set ns.retry_count = ns.retry_count + 1 %}{% endif %}
                       {% else %}{% set ns.none_count = ns.none_count + 1 %}{% endif %}
                     {% endfor %}
-                    {% if ns.none_count %}<div><button class="btn btn--quiet btn--sm" data-upload-btn="{{ c.id }}">{{ t('上传') }}</button></div>{% endif %}
+                    {# 有未传完的存储(partial/failed)或从未上传的存储时都给上传入口;重复入队安全,已传照片自动跳过 #}
+                    {% if ns.none_count or ns.retry_count %}<div><button class="btn btn--quiet btn--sm" data-upload-btn="{{ c.id }}">{{ t('上传') }}</button></div>{% endif %}
                   {% else %}<span style="color:var(--ink-3)">—</span>{% endif %}
                 </td>
                 <td style="white-space:nowrap;text-align:center">
@@ -204,23 +206,25 @@
     if (!storagesCache.length) return '<span style="color:var(--ink-3)">—</span>';
     var ups = c.uploads || {};
     var html = "";
-    var noneCount = 0;
+    var needBtn = false;
     storagesCache.forEach(function (st) {
       var u = ups[String(st.id)];
       var label = esc(st.name) + ": ";
       if (!u || u.status === "none") {
-        noneCount++;
+        needBtn = true;
       } else if (u.status === "queued" || u.status === "running") {
         html += '<div data-upload-row="' + c.id + ':' + st.id + '" style="color:var(--ink-2)">' + label + u.done + "/" + u.total + "…</div>";
       } else if (u.status === "done") {
         html += '<div data-upload-row="' + c.id + ':' + st.id + '" style="color:var(--ink-2)">' + label + esc(PC.t("已上传 ✓")) + "</div>";
       } else if (u.status === "partial") {
         html += '<div data-upload-row="' + c.id + ':' + st.id + '" style="color:var(--ink-2)">' + label + u.done + "/" + u.total + "</div>";
+        needBtn = true;
       } else if (u.status === "failed") {
         html += '<div data-upload-row="' + c.id + ':' + st.id + '" style="color:var(--danger,#c0392b)">' + label + esc(PC.t("失败")) + "</div>";
+        needBtn = true;
       }
     });
-    if (noneCount) {
+    if (needBtn) {
       html += '<div><button class="btn btn--quiet btn--sm" data-upload-btn="' + c.id + '">' + esc(PC.t("上传")) + "</button></div>";
     }
     return html;
