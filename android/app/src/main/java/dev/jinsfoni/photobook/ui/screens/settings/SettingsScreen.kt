@@ -24,9 +24,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -165,6 +167,22 @@ fun SettingsScreen(
                 color = colors.ink3,
             )
         }
+
+        // 版本号:尾行居中,micro 灰字(读取 PackageManager,不依赖 BuildConfig 开关)
+        val versionName = remember {
+            runCatching {
+                activity.packageManager.getPackageInfo(activity.packageName, 0).versionName
+            }.getOrNull()
+        }
+        Text(
+            stringResource(R.string.app_version) + " " + (versionName ?: "—"),
+            style = PhotoType.micro,
+            color = colors.ink3,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 28.dp),
+        )
 
         Spacer(Modifier.height(120.dp))
     }

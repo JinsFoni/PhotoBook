@@ -67,5 +67,6 @@
     <string name="lang_system">跟隨系統</string>
     <string name="section_download">下載位置</string>
     <string name="system_album">系統相簿</string>
+    <string name="app_version">版本</string>
     <string name="need_user_pass">請輸入使用者名稱和密碼</string>
 </resources>

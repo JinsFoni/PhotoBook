@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from . import i18n
+from . import __version__
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -46,6 +47,7 @@ def boot_json(request: Request) -> str:
                  "avatar": avatar_data_uri(user.avatar_seed or user.username) if user else ""},
         "path": request.url.path,
         "lang": lang,
+        "version": __version__,
         "i18n": i18n.js_strings(lang),
         "stats": {"collections": None, "models": None},
         "tags": [],

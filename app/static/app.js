@@ -441,7 +441,7 @@ window.PC = (function () {
         }).join("") +
         "</div></div>" +
         '<div class="footer__bottom">' +
-        "<span>© 2026 Photo Collection</span>" +
+        "<span>© 2026 Photo Collection · v" + ((window.PB_BOOT && window.PB_BOOT.version) || "?") + "</span>" +
         "<span>" + t("All photographs are licensed to the archive.") + "</span>" +
         "</div></div>";
     }
