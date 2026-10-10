@@ -578,8 +578,10 @@ window.PC = (function () {
      (旧钳宽档横图在 4K 要放大 1.2~1.6 倍)。
      注: 这里不乘 DPR —— 1:1 放大走真原图(见 upgradeOriginal)。 */
   var LB_W = 2400;
-  /* 垫底/氛围档: 与后端 WALL_W 及网格页 /t/900/ 同一 URL —— 开灯箱前网格图
-     必已看过, HTTP 缓存必命中, 首开垫底层零请求零等待(Immich thumbnail 层) */
+  /* 垫底/氛围档: 短边 900(与后端 WALL_W 一致)。注意 /t/s900/ 与网格页
+     /t/900/ 是不同的缓存档(短边钳制 vs 钳宽), 服务器侧缓存互不相通 ——
+     「网格页看过所以氛围层零等待」不成立, s900 首次切到必现一次网络往返。
+     解法: 氛围档随导航预取(见 bdPrefetch), 切换时素材已在内存, 揭示即时 */
   var WALL_W = 900;
 
   function lightboxEl() {
@@ -750,6 +752,7 @@ window.PC = (function () {
     /* 打开即预取 ±1(Immich initializePreloads): 用户浏览首图的 1~2s 里
        邻图 2400 已在下载, 首次翻页直接命中 */
     lbPrefetch();
+    bdPrefetch();
     el.querySelector("[data-lb-close]").focus();
   }
 
@@ -769,6 +772,7 @@ window.PC = (function () {
     /* 导航瞬间沿方向补预取(Immich updateAfterNavigation), 不等当前图上屏
        —— 连翻时每步都提前一个身位。lbEntry 幂等, 已缓存的邻图零请求 */
     lbPrefetch();
+    bdPrefetch();
   }
 
   /* 1:1 放大专用:按需加载真原图并替换(预览档用于 fit 显示已足够) */
@@ -899,12 +903,13 @@ window.PC = (function () {
       return;
     }
     lb.el.dataset.bg = "blur";
-    /* 氛围层用 900 档: blur(46px) 下与 2400 无差, 且网格页已缓存 →
-       灯箱一开就出现, 不等主图 2400 下载解码(首开氛围即时)。 */
+    /* 氛围层用 s900 档: blur(46px) 下与 2400 无差。素材经 bdPrefetch
+       预取进 bdCache(导航瞬间即发), 切换时通常已就绪 —— bdReady 直接
+       resolve, 揭示零等待; 未命中预取(深跳/首开)时才等一次网络往返 */
     var src = lightboxSrc(p, WALL_W);
     var front = lb.bdFront && lb.bdFront.dataset.ready === "true" ? lb.bdFront : null;
     if (front && front.dataset.src === src) return;   /* 同图幂等 */
-    /* 双缓冲: 新图加载到非前图层, onload 后置顶淡入; 旧前图层等新层
+    /* 双缓冲: 新图加载到非前图层, 就绪后置顶淡入; 旧前图层等新层
        完全不透明后再撤。换图瞬间旧氛围始终铺在屏上, 黑帧不可能出现 */
     var back = front === a ? b : a;
     var reveal = function () {
@@ -937,18 +942,21 @@ window.PC = (function () {
       });
     };
     back.dataset.src = src;
-    if (back.getAttribute("src") === src && back.complete && back.naturalWidth > 0) {
-      /* 同 URL 曾在这层加载过(solid 往返/翻回去): onload 不会因重复赋值
-         再触发, 直接揭示。注意判据必须是已挂的 src 属性 —— 曾写成
-         back.dataset.src === src, 而上一行刚把它赋成新 src, 恒真;
-         于是 900 档已入 HTTP 缓存的图(网格页看过)每次都走"揭示"却从不
-         赋 src, 该层永远显示上一张的内容 = 背景与照片对不上 */
-      back.onload = null;
-      reveal();
-      return;
-    }
-    back.onload = reveal;
-    back.src = src;
+    /* 揭示素材统一走 bdReady(bdCache 持有 Image, decode 完的位图常驻):
+       预取命中 → promise 已 resolve, 稍作停顿即揭示; 未命中 → 用预取
+       同一个请求, 不再像旧实现那样往 <img> 上挂 onload 第二次下载。
+       揭示前停 100ms: 预取后揭示是瞬时的, 快速翻页时背景跟着照片跳
+       反而显得急躁, 给一个呼吸感; 连翻时由 reveal 内 stale 守卫丢弃
+       过期的延迟揭示(层与照片双重比对), 旧背景不会迟到刷屏 */
+    bdReady(src).then(function (e) {
+      if (!e || back.dataset.src !== src) return;
+      setTimeout(function () {
+        if (back.dataset.src !== src) return;
+        if (lbBg !== "blur" || lb.photos[lb.index] !== p) return;
+        back.src = e.img.src;   /* 同 URL, 命中 bdCache/HTTP 缓存, 无网络 */
+        reveal();
+      }, 100);
+    });
   }
 
   /* ---------- 灯箱图 LRU --------------------------------------------------
@@ -1008,6 +1016,56 @@ window.PC = (function () {
     [1, -1].forEach(function (d) {
       var q = lb.photos[(lb.index + d + n) % n];
       if (q) lbReady(lightboxSrc(q, LB_W));
+    });
+  }
+
+  /* ---------- 氛围层素材 LRU ----------------------------------------------
+     与主图 LRU 分开: 主图 2400 档解码位图 ~30MB/张, 上限 6; s900 档
+     位图 ~4MB/张, 预取 ±2 已绰绰有余。分开的目的是互不挤占 —— 混用
+     同一个 LRU 时连翻会让 2400 档把 s900 冲掉, 翻回去又要重新请求 */
+  var BD_CACHE_MAX = 8;
+  var bdCache = {};
+  var bdCacheOrder = [];
+
+  function bdEntry(u) {
+    var e = bdCache[u];
+    if (e) return e;
+    e = { img: new Image(), ready: false, p: null };
+    bdCache[u] = e;
+    bdCacheOrder.push(u);
+    for (var i = 0; i < bdCacheOrder.length && Object.keys(bdCache).length > BD_CACHE_MAX;) {
+      var old = bdCacheOrder[i];
+      if (old === u) { i++; continue; }
+      bdCacheOrder.splice(i, 1);
+      delete bdCache[old];
+    }
+    return e;
+  }
+
+  function bdReady(u) {
+    var e = bdEntry(u);
+    if (e.ready) return Promise.resolve(e);
+    if (e.p) return e.p;
+    var img = e.img;
+    if (!img.src) img.src = u;
+    var w = img.decode ? img.decode() : new Promise(function (res, rej) {
+      img.onload = res; img.onerror = rej;
+    });
+    e.p = w.then(function () {
+      e.ready = true; e.p = null; return e;
+    }, function () { e.p = null; return null; });
+    return e.p;
+  }
+
+  /* 氛围档预取: 与 lbPrefetch 同时机(导航瞬间), 覆盖当前 + 双向 ±2。
+     ±2 而非 ±1: 连翻时用户看到的是「上一张的虚化」, 预取到 ±2 才能保证
+     快速连翻时下一张的氛围素材也已在内存 */
+  function bdPrefetch() {
+    var n = lb.photos.length;
+    if (!n) return;
+    [0, 1, -1, 2, -2].forEach(function (d) {
+      var q = lb.photos[(lb.index + d + n) % n];
+      if (q) bdReady(lightboxSrc(q, WALL_W));
     });
   }
 
