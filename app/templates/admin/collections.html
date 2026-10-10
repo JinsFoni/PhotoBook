@@ -196,7 +196,9 @@
     var url = "/admin/collections" + (qs || d.page > 1 ? "?" : "") + qs + (d.page > 1 ? "page=" + d.page : "");
     if (replace) history.replaceState({ page: d.page }, "", url);
     else history.pushState({ page: d.page }, "", url);
-    schedulePoll();
+    /* render 会清掉点击处理刚排下的轮询(行也是刚重建的), 必须立即重启 tick,
+       否则轮询链断掉, 上传进度不再刷新 */
+    schedulePoll(true);
   }
 
   /* ---- 上传列 ---- */
@@ -292,7 +294,8 @@
     }
     if (immediate) tick();
   }
-  schedulePoll();
+  /* 页面加载时可能已有进行中的任务, 立即 tick 一次接上轮询链 */
+  schedulePoll(true);
 
   function loadPage(page) {
     fetch("/admin/api/collections?page=" + page + (curQ ? "&q=" + encodeURIComponent(curQ) : ""), { credentials: "same-origin" })
