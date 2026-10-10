@@ -26,6 +26,8 @@
   --scrim: rgba(255, 255, 255, 0.9);
   --overlay-ink: #ffffff;
   --lightbox-bg: rgba(250, 250, 249, 0.97);
+  /* 灯箱栏文字光晕(solid 模式): 照片满高后伸进栏下, 墨字靠主题反色光晕保可读 */
+  --lb-halo: rgba(255, 255, 255, 0.9);
 
   /* 按钜/选中态等“墨底字”用纸色作字色;虚化态纸底透明,
      这些地方改用固定深墨, 避免透明背景上字隐形 */
@@ -101,6 +103,7 @@
   --void: #17191c;
   --scrim: rgba(12, 13, 15, 0.9);
   --lightbox-bg: rgba(8, 9, 10, 0.98);
+  --lb-halo: rgba(0, 0, 0, 0.85);
   --paper-ink: #0c0d0f;
   --panel-solid: #0c0d0f;
 }
@@ -121,6 +124,7 @@
   --void: rgba(23, 25, 28, 0.72);
   --scrim: rgba(12, 13, 15, 0.82);
   --lightbox-bg: rgba(8, 9, 10, 0.98);
+  --lb-halo: rgba(0, 0, 0, 0.85);
   --paper-ink: #0c0d0f;
   --panel-solid: #101114;
 }
@@ -1876,7 +1880,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lightbox__backdrop[data-ready="true"] { opacity: 1; transform: none; }
 .lightbox[data-bg="solid"] .lightbox__backdrop { opacity: 0; }
 .lightbox[data-bg="blur"] { background: rgba(8, 9, 10, 0.82); }
-/* blur 模式: 顶/底栏无实体底, 完全透明, 与虚化垫底融为一体 */
+/* blur 模式: 顶/底栏无实体底, 完全透明, 与虚化垫底融为一体(白字投影保可读) */
 .lightbox[data-bg="blur"] .lightbox__title,
 .lightbox[data-bg="blur"] .lightbox__counter,
 .lightbox[data-bg="blur"] .lightbox__nav,
@@ -1891,15 +1895,32 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 /* 收藏点亮态在白字下也用 accent, 保持高识别 */
 .lightbox[data-bg="blur"] .fav[aria-pressed="true"] { color: var(--accent); }
 
+/* 顶/底栏悬浮在图上(与全屏态同布局): stage 占满整块视口, 照片 contain
+   适配结果与全屏一致, 非全屏不再因栏占 flex 行而在照片上下留白。
+   solid 模式栏内墨字压在照片上, 用主题反色光晕保可读;
+   blur/全屏模式的白字投影规则(见下)会覆盖这里的 text-shadow */
 .lightbox__bar,
-.lightbox__foot { position: relative; z-index: 1; }
+.lightbox__foot { position: absolute; left: 0; right: 0; z-index: 2; text-shadow: 0 1px 6px var(--lb-halo); }
+/* SVG 图标不走 text-shadow, 用 drop-shadow 同样光晕(blur/全屏白图标压暗晕,
+   solid 墨色图标提亮晕) */
+.lightbox .icon-btn svg,
+.lightbox .fav svg,
+.lightbox__nav svg { filter: drop-shadow(0 1px 4px var(--lb-halo)); }
+/* solid 模式: 栏后垫主题底色渐变(非全宽色块, 只压住照片边缘),
+   墨字压在任意明暗的照片上都可读; blur/全屏模式不垫 */
+.lightbox[data-bg="solid"] .lightbox__bar {
+  background: linear-gradient(to bottom, var(--scrim), transparent);
+}
+.lightbox[data-bg="solid"] .lightbox__foot {
+  background: linear-gradient(to top, var(--scrim), transparent);
+}
 .lightbox__bar {
+  top: 0;
   height: 60px;
   display: flex;
   align-items: center;
   gap: var(--s4);
   padding-inline: var(--pad);
-  flex: none;
 }
 .lightbox__title {
   font-size: var(--fs-small);
@@ -1996,31 +2017,20 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lightbox[data-zoom="true"] .lightbox__under { opacity: 0 !important; }
 
 /* ---------- 灯箱全屏态(:fullscreen 元素即 .lightbox) ----------------------
-   布局与普通态一致(stage 本就 flex:1 占满视口, 照片 contain 适配不裁切);
-   仅顶/底栏改悬浮在图上(absolute, 渐变垫底保证白字可读), 不再占 flex 行。
+   布局与普通态一致: 顶/底栏本来就悬浮在图上, stage 占满视口, 照片 contain
+   适配不裁切。全屏仅改背景为纯黑(去虚化毛玻璃)并隐藏底部进度条;
    垫底层与放大模式同理隐藏 */
 .lightbox:fullscreen { background: #000; backdrop-filter: none; -webkit-backdrop-filter: none; }
-/* 悬浮栏: absolute 覆盖 stage 之上; 渐变垫底仅保可读, 不改配色逻辑 */
-.lightbox:fullscreen .lightbox__bar,
-.lightbox:fullscreen .lightbox__foot {
-  position: absolute;
-  left: 0;
-  right: 0;
-  z-index: 2;
-}
-.lightbox:fullscreen .lightbox__bar {
-  top: 0;
-}
-.lightbox:fullscreen .lightbox__foot {
-  bottom: 0;
-}
+/* 全屏底为纯黑, 栏字色走白字投影(与 blur 模式同配方) */
 .lightbox:fullscreen .lightbox__title,
 .lightbox:fullscreen .lightbox__counter,
+.lightbox:fullscreen .lightbox__nav,
 .lightbox:fullscreen .icon-btn,
 .lightbox:fullscreen .fav,
 .lightbox:fullscreen .btn--ghost { color: rgba(255, 255, 255, 0.94); text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45); }
 .lightbox:fullscreen .icon-btn:hover,
-.lightbox:fullscreen .fav:hover { color: #ffffff; }
+.lightbox:fullscreen .fav:hover,
+.lightbox:fullscreen .lightbox__nav:hover { color: #ffffff; }
 .lightbox:fullscreen .fav[aria-pressed="true"] { color: var(--accent); }
 /* 全屏下隐藏底部进度条 */
 .lightbox:fullscreen .lightbox__progress { display: none; }
@@ -2047,7 +2057,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lightbox :focus-visible { outline: none; }
 
 .lightbox__foot {
-  flex: none;
+  bottom: 0;
   height: 72px;
   display: flex;
   align-items: center;
