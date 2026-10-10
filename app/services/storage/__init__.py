@@ -74,6 +74,46 @@ def _iter_and_close(client: "httpx.Client", resp: "httpx.Response"):
         client.close()
 
 
+def remote_redirect(rel: str) -> str | None:
+    """本地缺失的原图可 302 的公网直链(serve_media 用),按优先级取最高。
+
+    - imgbed: api_url 即公网站点,public_url 直接可用。
+    - webdav(OpenList): /d/ 直链会 302 到网盘(123 云盘等)的公网 CDN,
+      服务端多发一次请求解析出最终直链再交给浏览器 —— 文件字节完全不过
+      NAS。前提是服务端与 OpenList 同网络可达(部署形态保证);解析失败
+      返回 None,由服务端流式代理兜底。
+    """
+    for url in remote_urls(rel):
+        final = _resolve_final_url(url)
+        if final:
+            return final
+    return None
+
+
+def _resolve_final_url(url: str) -> str | None:
+    """webdav 直链 302 解析: HEAD 不动,OpenList 对 HEAD 同样回 302。
+
+    imgbed 的 /file/ 链接本身即最终地址,无需解析(传 None 跳过)。"""
+    from urllib.parse import urlparse
+    if "/d/" not in (urlparse(url).path or ""):
+        return url
+    import httpx
+    try:
+        with httpx.Client(timeout=httpx.Timeout(30.0, connect=10.0),
+                          follow_redirects=False) as client:
+            resp = client.head(url)
+            if resp.status_code in (301, 302, 303, 307, 308):
+                loc = resp.headers.get("location")
+                if loc and loc.startswith("http"):
+                    return loc
+            # 服务端关闭 sign_all 时 200 即直出文件,原链接本身也可用
+            if resp.status_code == 200:
+                return url
+    except Exception:
+        log.warning("resolve final url failed: %s", url[:120], exc_info=True)
+    return None
+
+
 def remote_urls(rel: str) -> list[str]:
     """开启直链的启用存储的公开 URL,按优先级从高到低(优先级相同按存储 id 新者优先)。
 

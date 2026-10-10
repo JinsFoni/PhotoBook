@@ -89,8 +89,10 @@ class ImgBedBackend:
             raise StorageError(f"远端删除失败 {len(failed)} 个文件")
 
     def public_url(self, st: Storage, remote_path: str) -> str:
+        from urllib.parse import quote
         base = st.api_url.rstrip("/")
-        return f"{base}/file/{remote_path}"
+        # 韩文/[]() 等特殊字符必须 percent-encode(远端路径来自上传返回,原样保留)
+        return quote(f"{base}/file/{remote_path}", safe="/:")
 
     def test_connection(self, st: Storage) -> str:
         import urllib.parse

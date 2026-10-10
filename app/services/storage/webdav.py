@@ -97,10 +97,11 @@ class WebDavBackend:
                     log.warning("webdav delete %s -> HTTP %s", rp, resp.status_code)
 
     def public_url(self, st: Storage, remote_path: str) -> str:
-        base = st.api_url.rstrip("/")
+        base = st.api_url.strip().rstrip("/")
         if base.endswith("/dav"):
             base = base[:-4]
-        return f"{base}/d/{remote_path}"
+        # 中文/[]()/空格等必须 percent-encode,否则浏览器请求或 Location 头会坏
+        return quote(f"{base}/d/{remote_path.lstrip('/')}", safe="/:")
 
     def test_connection(self, st: Storage) -> str:
         root = _dav_path(st.root_dir, "")

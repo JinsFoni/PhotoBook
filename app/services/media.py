@@ -12,7 +12,7 @@ import re
 import threading
 
 from fastapi import HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from PIL import Image, ImageFile
 from sqlalchemy import select
 
@@ -293,12 +293,16 @@ def ensure_cached(rel: str, w: int, h: int | None = None, q: int | None = None,
 def serve_media(rel: str, request: Request) -> Response:
     p = _safe_path(rel)
     if not p.is_file():
-        # 原图已上传外部存储并删除本地: 服务端流式代理回源。
-        # 不做 302 —— WebDAV 类存储的直链可能是局域网地址,公网 HTTPS 页面
-        # 加载会被浏览器按混合内容拦截(Android 蜂窝网络同样不可达);
-        # 容器与存储的连通性已被缩略图回源路径(serve_thumb)验证,原图
-        # 走同一链路必然可达。流式透传不落盘,内存占用恒定。
-        from .storage import remote_urls, remote_stream
+        # 原图已上传外部存储并删除本地:
+        # 1) 直链 302(首选): 存储 public_url 本身公网可达(图床,或 WebDAV
+        #    配了 public_base_url 公网反代)。字节不经过本机,NAS 零流量。
+        # 2) 服务端流式代理(兜底): 直链只是局域网地址(如 OpenList 内网地址)
+        #    时浏览器拿不到(公网 HTTPS 混合内容拦截/客户端不在局域网),
+        #    逐存储拉取后透传给客户端。404 才是最终失败。
+        from .storage import remote_redirect, remote_urls, remote_stream
+        redirect = remote_redirect(rel)
+        if redirect:
+            return RedirectResponse(redirect, 302)
         for url in remote_urls(rel):
             resp = remote_stream(url, dict(request.headers))
             if resp is not None:
