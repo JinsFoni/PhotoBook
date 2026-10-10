@@ -12,7 +12,7 @@ import re
 import threading
 
 from fastapi import HTTPException, Request
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, Response
 from PIL import Image, ImageFile
 from sqlalchemy import select
 
@@ -293,11 +293,16 @@ def ensure_cached(rel: str, w: int, h: int | None = None, q: int | None = None,
 def serve_media(rel: str, request: Request) -> Response:
     p = _safe_path(rel)
     if not p.is_file():
-        # 原图已上传外部存储并删除本地: 302 跳转远端(下载/1:1 放大继续可用)
-        from .storage import remote_redirect
-        redirect = remote_redirect(rel)
-        if redirect:
-            return RedirectResponse(redirect, 302)
+        # 原图已上传外部存储并删除本地: 服务端流式代理回源。
+        # 不做 302 —— WebDAV 类存储的直链可能是局域网地址,公网 HTTPS 页面
+        # 加载会被浏览器按混合内容拦截(Android 蜂窝网络同样不可达);
+        # 容器与存储的连通性已被缩略图回源路径(serve_thumb)验证,原图
+        # 走同一链路必然可达。流式透传不落盘,内存占用恒定。
+        from .storage import remote_urls, remote_stream
+        for url in remote_urls(rel):
+            resp = remote_stream(url, dict(request.headers))
+            if resp is not None:
+                return resp
         raise HTTPException(404)
     return FileResponse(p, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
@@ -332,8 +337,8 @@ def serve_thumb(spec: str, request: Request) -> Response:
     src = _safe_path(rel)
     if not src.is_file():
         # 原图不在本地但缓存也没有: 按存储优先级逐个尝试回源下载再生成
-        from .storage import remote_redirects
-        for url in remote_redirects(rel):
+        from .storage import remote_urls
+        for url in remote_urls(rel):
             data = _make_webp_from_remote_checked(url, w, h, q, short)
             if data is not None:
                 cache.parent.mkdir(parents=True, exist_ok=True)
