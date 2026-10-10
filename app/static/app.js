@@ -545,7 +545,6 @@ window.PC = (function () {
   var LB_ZOOM = 1.5; /* 放大倍数: fit 尺寸 ×1.5(可调) */
   var lb = { photos: [], index: 0, title: "", collection: "", zoom: false, hi: false, el: null, bdFront: null, imgFront: null,
              pan: { x: 0, y: 0 }, dragging: false, dragMoved: false, dragStart: null, tstart: null };
-
   /* 主图双缓冲图层对: a/b 两张 img 交替。front = 最近一次揭示的层 */
   function lbImgPair() {
     var el = lb.el;
@@ -640,28 +639,31 @@ window.PC = (function () {
     /* 点击背景空白关闭;拖拽后释放的 click 不算(dragMoved 守卫) */
     el.addEventListener("click", function (e) { if (e.target === el && !lb.dragMoved) close(); });
 
-    /* 放大后按住左键拖拽平移(transform);未放大不拦截。
+    /* 放大后按住拖拽平移(transform);未放大不拦截。
        监听挂在整个 lightbox 上: 竖图放大后图片下部会溢出 stage、
        被 foot 栏盖住, 只监听 stage 时那部分图拖不动。
        点击与拖拽靠移动阈值区分, 拖后释放的 click 不触发缩放/关闭 */
-    var onDragMove = function (e) {
+    var applyPan = function () {
+      lbVisibleImg().style.transform =
+        "translate(" + lb.pan.x + "px," + lb.pan.y + "px) scale(" + LB_ZOOM + ")";
+    };
+    var onDragMove = function (x, y) {
       if (!lb.dragging || !lb.zoom) return;
       var b = panBounds();
-      var nx = lb.tstart.px + e.clientX - lb.tstart.x;
-      var ny = lb.tstart.py + e.clientY - lb.tstart.y;
-      /* 图随鼠标(grab 隐喻): y 上移(ny<0)受底部溢出量限制, 下移受顶部;
+      var nx = lb.tstart.px + x - lb.tstart.x;
+      var ny = lb.tstart.py + y - lb.tstart.y;
+      /* 图随指针(grab 隐喻): y 上移(ny<0)受底部溢出量限制, 下移受顶部;
          x 同理。图完全在 stage 内时四向全 0, 居中锁死。 */
       lb.pan.x = nx > 0 ? Math.min(b.left, nx) : Math.max(-b.right, nx);
       lb.pan.y = ny > 0 ? Math.min(b.up, ny) : Math.max(-b.down, ny);
       lb.dragMoved = true;
-      lbVisibleImg().style.transform =
-        "translate(" + lb.pan.x + "px," + lb.pan.y + "px)";
+      applyPan();
     };
     var onDragEnd = function () {
       if (!lb.dragging) return;
       lb.dragging = false;
       el.removeAttribute("data-dragging");
-      /* click 事件在 mouseup 后触发;延后一拍清标志,让该次 click 被忽略 */
+      /* click 事件在 mouseup/touchend 后触发;延后一拍清标志,让该次 click 被忽略 */
       setTimeout(function () { lb.dragMoved = false; }, 0);
     };
     el.addEventListener("mousedown", function (e) {
@@ -672,8 +674,28 @@ window.PC = (function () {
       el.setAttribute("data-dragging", "true");
       e.preventDefault();
     });
-    window.addEventListener("mousemove", onDragMove);
+    window.addEventListener("mousemove", function (e) { onDragMove(e.clientX, e.clientY); });
     window.addEventListener("mouseup", onDragEnd);
+
+    /* 触摸拖拽平移(单指, 仅放大态)。swipe 切图与平移按 lb.zoom 分流;
+       tap(无位移)仍产生 click 走 toggleZoom 缩回 —— touchstart 不能
+       preventDefault(会吞掉后续 click), 滚动抑制交给 zoom 态 CSS 的
+       touch-action:none + touchmove 的 preventDefault */
+    el.addEventListener("touchstart", function (e) {
+      if (!lb.zoom || e.touches.length !== 1 || e.target.closest("button, a")) return;
+      lb.dragging = true;
+      lb.dragMoved = false;
+      lb.tstart = { x: e.touches[0].clientX, y: e.touches[0].clientY, px: lb.pan.x, py: lb.pan.y };
+      el.setAttribute("data-dragging", "true");
+    });
+
+    el.addEventListener("touchmove", function (e) {
+      if (!lb.dragging || !lb.zoom) return;
+      e.preventDefault();
+      onDragMove(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: false });
+    el.addEventListener("touchend", function () { onDragEnd(); }, { passive: true });
+    el.addEventListener("touchcancel", function () { onDragEnd(); }, { passive: true });
 
     /* swipe */
     var sx = 0, sy = 0, tracking = false;
@@ -790,9 +812,10 @@ window.PC = (function () {
     else { full.onload = swap; }
   }
 
-  /* 平移边界: 竖图放大后顶部贴 stage 顶、底部向下溢出(上下不对称);
-     横图放大后居中双向溢出。用当前 rect 减去已应用的 pan 还原基准位置
-     (拖拽中 transform 无过渡, rect 无滞后)。图没超出则锁 0。 */
+  /* 平移边界: 放大态定框 transform = translate(pan) scale(LB_ZOOM),
+     getBoundingClientRect 已含缩放与平移 —— 减去 pan 得 pan=0 时的
+     缩放矩形, 与 stage 比对即四向溢出量(不可再除回 LB_ZOOM 还原 fit
+     矩形: fit 恒在 stage 内, 溢出全 0, 平移会被钳死)。图没超出则锁 0。 */
   function panBounds() {
     var fig = lbVisibleImg();
     var st = lb.el.querySelector(".lightbox__stage");
@@ -809,34 +832,31 @@ window.PC = (function () {
     };
   }
 
-  /* 退出放大:清除内联尺寸/平移,回到 fit 显示 */
+  /* 退出放大:清除平移/缩放,回到 fit 显示 */
   function zoomOff(fig) {
     lb.zoom = false;
     lb.pan = { x: 0, y: 0 };
-    fig.style.width = "";
-    fig.style.height = "";
     fig.style.transform = "";
     fig.dataset.zoomed = "false";
     fig.querySelector(".lightbox__photo").style.cursor = "zoom-in";
     lb.el.dataset.zoom = "false";
   }
 
-  /* 放大 = fit 尺寸 × LB_ZOOM(替代原先的 1:1 原图,倍数太大);
-     平移不再用 stage 滚动,改按住左键拖拽(transform)。
+  /* 放大 = fit 显示 × LB_ZOOM,以 transform: scale 实现(从定框中心放大,
+     布局尺寸不变 → 任何内核都保持居中, 不再依赖 grid 静态流溢出居中
+     —— 移动内核会把超大的 static 网格项锚在起始角, 旧布局方案在移动端
+     放大后图跑到左上角)。平移叠加在同一 transform 上。
      只作用于当前可见层(ready), 防止命中交叉/等待期的 idle 层 */
   function toggleZoom() {
     if (lb.dragMoved) return; /* 拖拽结束时的 click 不算缩放切换 */
     var fig = lbVisibleImg();
     if (lb.zoom) { zoomOff(fig); return; }
     lb.zoom = true;
-    /* offsetWidth/H: transform 不影响它们; getBoundingClientRect 会把
-       入场过渡中的中间值算进基准, 导致放大尺寸偏小 */
-    fig.style.width = Math.round(fig.offsetWidth * LB_ZOOM) + "px";
-    fig.style.height = Math.round(fig.offsetHeight * LB_ZOOM) + "px";
     fig.dataset.zoomed = "true";
     fig.querySelector(".lightbox__photo").style.cursor = "grab";
     lb.el.dataset.zoom = "true";
     lb.pan = { x: 0, y: 0 };
+    fig.style.transform = "scale(" + LB_ZOOM + ")";
     /* 放大才需要真原图 1:1 细节;fit 显示用高清版已足够 */
     upgradeOriginal(lb.photos[lb.index], fig);
   }
@@ -1087,9 +1107,7 @@ window.PC = (function () {
     lb.hi = false;              /* 切图后真原图需重新按需加载 */
     lb.zoom = false;
     lb.pan = { x: 0, y: 0 };
-    fig.style.width = "";       /* 清除放大模式内联尺寸/平移/层序 */
-    fig.style.height = "";
-    fig.style.transform = "";
+    fig.style.transform = "";   /* 清除放大模式平移/缩放与层序 */
     fig.style.zIndex = "";
     el.dataset.zoom = "false"; /* 切图/重开时退出放大模式(容器+图同步复位) */
     photo.style.cursor = "zoom-in";
@@ -1099,9 +1117,7 @@ window.PC = (function () {
     fig.style.setProperty("--ar",
       (p.w && p.h ? p.w / p.h : (photo.naturalWidth && photo.naturalHeight)
         ? photo.naturalWidth / photo.naturalHeight : 0.66).toFixed(4));
-    /* 离场层复位残留(尺寸/平移/缩放态), src 保留 —— 交叉期间它就是当前画面 */
-    prev.style.width = "";
-    prev.style.height = "";
+    /* 离场层复位残留(平移/缩放态), src 保留 —— 交叉期间它就是当前画面 */
     prev.style.transform = "";
     prev.style.zIndex = "";
     prev.dataset.zoomed = "false";
