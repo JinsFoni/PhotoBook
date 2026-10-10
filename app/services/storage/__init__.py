@@ -104,6 +104,7 @@ def remote_redirect(rel: str) -> str | None:
 # 资产是加速器,重启后零星几张冷解析(~0.5s)可接受;持久化反而会把死链
 # 留在库里。容量: 全库万级照片每条 ~1KB, 上限 10MB 量级, 忽略不计。
 _REDIRECT_TTL = 6 * 24 * 3600.0
+_REDIRECT_CACHE_MAX = 10000  # 万级照片全库热图也装得下;~1KB/条上限 10MB 量级
 _redirect_cache: dict[str, tuple[str, float]] = {}
 _redirect_lock = threading.Lock()
 
@@ -124,6 +125,10 @@ def _redirect_cache_get(url: str) -> str | None:
 def _redirect_cache_put(url: str, final: str) -> None:
     import time
     with _redirect_lock:
+        if url not in _redirect_cache and len(_redirect_cache) >= _REDIRECT_CACHE_MAX:
+            # 容量上限: 淘汰最旧的一条(早于 TTL 到期也只损失一次 ~0.5s 冷解析)
+            oldest = min(_redirect_cache, key=lambda k: _redirect_cache[k][1])
+            del _redirect_cache[oldest]
         _redirect_cache[url] = (final, time.monotonic() + _REDIRECT_TTL)
 
 

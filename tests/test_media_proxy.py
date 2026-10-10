@@ -253,3 +253,23 @@ def test_redirect_cache_expiry_re_resolves(admin_client, stub_origin):
     assert r2.headers["location"] != loc1 or True  # 新解析;host 相同时 Location 含新签名
     heads = [p for p in _StubOrigin.seen_heads]
     assert len(heads) >= 2  # 过期后确实重新发了解析请求
+
+
+def test_redirect_cache_max_entries_evicts_oldest():
+    """容量上限 1 万条: 满后新写入淘汰过期时刻最早的条目,数量不再增长。"""
+    from app.services import storage
+
+    storage._redirect_cache.clear()
+    try:
+        n = storage._REDIRECT_CACHE_MAX
+        for i in range(n):
+            storage._redirect_cache_put(f"k{i}", f"v{i}")
+        assert len(storage._redirect_cache) == n
+        # 再放一条: 淘汰最早过期的一条,总量守恒
+        storage._redirect_cache_put("k-new", "v-new")
+        assert len(storage._redirect_cache) == n
+        assert "k-new" in storage._redirect_cache
+        assert "k0" not in storage._redirect_cache  # 最早写入者被淘汰
+        assert storage._redirect_cache_get("k1") == "v1"  # 其余条目不受影响
+    finally:
+        storage._redirect_cache.clear()
