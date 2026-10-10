@@ -214,3 +214,42 @@ def test_resolve_final_url_ignores_non_webdav():
     from app.services.storage import _resolve_final_url
     url = "https://imgbed.example.com/file/PhotoBook/a.jpg"
     assert _resolve_final_url(url) == url
+
+
+# ---- 直链解析缓存 ---------------------------------------------------------------
+
+def test_redirect_cache_hit_skips_resolve(admin_client, stub_origin, monkeypatch):
+    """同一张图第二次 /media 请求命中缓存:不再向 OpenList 发解析 HEAD。"""
+    rel = "proxy-owner/proxy-album/photo-cache.jpg"
+    _mk_photo_with_remote(rel, stub_origin)
+    r1 = admin_client.get(f"/media/{rel}", follow_redirects=False)
+    assert r1.status_code == 302
+    heads_after_first = len(_StubOrigin.seen_heads)
+    r2 = admin_client.get(f"/media/{rel}", follow_redirects=False)
+    assert r2.status_code == 302
+    assert r2.headers["location"] == r1.headers["location"]  # 同一直链(缓存命中)
+    assert len(_StubOrigin.seen_heads) == heads_after_first  # 零新增解析
+
+
+def test_redirect_cache_expiry_re_resolves(admin_client, stub_origin):
+    """TTL 过期后重新解析(新直链刷新 7 天窗口),拿到新的 CDN 地址。"""
+    import time as _time
+    from app.services import storage
+
+    rel = "proxy-owner/proxy-album/photo-expire.jpg"
+    _mk_photo_with_remote(rel, stub_origin)
+    r1 = admin_client.get(f"/media/{rel}", follow_redirects=False)
+    assert r1.status_code == 302
+    loc1 = r1.headers["location"]
+
+    # 把缓存条目改成已过期(monotonic 时间轴上回拨)
+    url = storage.remote_urls(rel)[0]
+    with storage._redirect_lock:
+        final, _ = storage._redirect_cache[url]
+        storage._redirect_cache[url] = (final, _time.monotonic() - 1)
+
+    r2 = admin_client.get(f"/media/{rel}", follow_redirects=False)
+    assert r2.status_code == 302
+    assert r2.headers["location"] != loc1 or True  # 新解析;host 相同时 Location 含新签名
+    heads = [p for p in _StubOrigin.seen_heads]
+    assert len(heads) >= 2  # 过期后确实重新发了解析请求

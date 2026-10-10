@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -82,12 +83,48 @@ def remote_redirect(rel: str) -> str | None:
       服务端多发一次请求解析出最终直链再交给浏览器 —— 文件字节完全不过
       NAS。前提是服务端与 OpenList 同网络可达(部署形态保证);解析失败
       返回 None,由服务端流式代理兜底。
+
+    解析结果进进程内缓存(实测 123 签名直链有效期 7 天,远端文件覆盖/
+    删除后旧直链在有效期内依然服务,唯一死链场景是自然到期),TTL 6 天
+    留 1 天余量:同一张图 6 天内任意次浏览零解析请求,网盘签名 API 的
+    调用频率从"每次浏览一次"降到"每图 6 天一次"(风控安全)。
     """
     for url in remote_urls(rel):
-        final = _resolve_final_url(url)
+        final = _redirect_cache_get(url)
         if final:
             return final
+        final = _resolve_final_url(url)
+        if final:
+            _redirect_cache_put(url, final)
+            return final
     return None
+
+
+# 直链解析缓存: {源直链: (最终直链, 过期时刻)}。进程内即可 —— 直链不是
+# 资产是加速器,重启后零星几张冷解析(~0.5s)可接受;持久化反而会把死链
+# 留在库里。容量: 全库万级照片每条 ~1KB, 上限 10MB 量级, 忽略不计。
+_REDIRECT_TTL = 6 * 24 * 3600.0
+_redirect_cache: dict[str, tuple[str, float]] = {}
+_redirect_lock = threading.Lock()
+
+
+def _redirect_cache_get(url: str) -> str | None:
+    import time
+    with _redirect_lock:
+        entry = _redirect_cache.get(url)
+        if not entry:
+            return None
+        final, expires = entry
+        if time.monotonic() >= expires:
+            del _redirect_cache[url]  # 到期惰性清除,下次现场重解析(刷新 7 天窗口)
+            return None
+        return final
+
+
+def _redirect_cache_put(url: str, final: str) -> None:
+    import time
+    with _redirect_lock:
+        _redirect_cache[url] = (final, time.monotonic() + _REDIRECT_TTL)
 
 
 def _resolve_final_url(url: str) -> str | None:
