@@ -39,8 +39,14 @@ NO_MODEL_DIRS = {"未分类", "未分類", "00_Unsorted", "unsorted", "uncategor
 # ---- 工具 -------------------------------------------------------------------
 
 def slugify(text: str | None, *, fallback: str = "untitled", maxlen: int = 120) -> str:
-    """标题 → URL slug。保留汉字/字母数字,其余(空白、下划线、标点)归一为 '-'。"""
-    s = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "-", (text or "").strip())
+    """标题 → URL slug。保留汉字/字母数字,其余(空白、下划线、标点)归一为 '-'。
+
+    URL 结构字符(# ? % &)必须剔除:slug 未编码直拼进 href(模板与前端
+    都是 "/collections/" + slug),浏览器把 # 当 fragment、? 当 query 截断
+    路径 → 404(任务 285 的「#バケショ」实测)。% 还会让服务端解码二次
+    歪斜。这里按"只放行白名单"处理,比追补黑名单稳。
+    """
+    s = re.sub(r'[\\/:*?"<>|#%&?+\x00-\x1f]+', "-", (text or "").strip())
     s = re.sub(r"[\s_.]+", "-", s)
     s = re.sub(r"-{2,}", "-", s).strip("- .")
     s = s.lower()  # 与既有 slug 风格一致(ASCII 小写;汉字不受影响)

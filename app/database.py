@@ -60,6 +60,86 @@ def _migrate() -> None:
                 pass  # 列已存在
     _backfill_collection_slug()
     _backfill_source_serial()
+    _fix_url_unsafe_slugs()
+
+
+def _fix_url_unsafe_slugs() -> None:
+    """一次性修复:存量 slug 含 URL 结构字符(# ? % &)导致链接被浏览器截断 404。
+
+    slugify 旧版只拦 \\/:*?"<>| ,标题里的「#バケショ」等原样进 slug,而模板
+    与前端都是 "/collections/" + slug 直拼(不编码)—— # 后全部被当 fragment,
+    ?后当 query,页面 404(harvest 任务 285 实测)。
+
+    修复三件事,均只对「含 URL 结构字符」的行动手,幂等:
+    1. 重算 Model/Collection slug(用修复后的 slugify,冲突加 -2 序号);
+    2. 同步媒体目录名与 Photo.filename 前缀(filename = 模特slug/写真slug尾/文件,
+       见 import_album);
+    3. 同步 harvest_jobs.collection_slug 引用(任务列表实时判态用)。
+    """
+    from sqlalchemy import select
+
+    from .db import Collection, HarvestJob, Model, Photo
+    from .services.library_import import _unique_slug, slugify
+
+    bad_chars = set("#%&?")
+    s = SessionLocal()
+    try:
+        media_root = settings.media_dir
+        log = logging.getLogger("photobook")
+
+        # ---- Model slug(也是 /media 的 owner 目录名) ----
+        for m in s.scalars(select(Model)).all():
+            if not any(ch in bad_chars for ch in m.slug):
+                continue
+            old = m.slug
+            new = _unique_slug(s, Model, slugify(m.name, maxlen=120), 120)
+            src = media_root / old
+            dst = media_root / new
+            if src.is_dir() and src != dst and not dst.exists():
+                src.rename(dst)
+                log.info("renamed media dir %s -> %s", old, new)
+            for p in s.scalars(select(Photo).where(
+                    Photo.filename.like(f"{old}/%"))).all():
+                p.filename = new + p.filename[len(old):]
+            m.slug = new
+            log.info("model slug %s -> %s", old, new)
+        s.flush()
+
+        # ---- Collection slug(尾段 = dest_dir 目录名) ----
+        for c in s.scalars(select(Collection)).all():
+            if not any(ch in bad_chars for ch in c.slug):
+                continue
+            old = c.slug
+            # owner 段从 Photo.filename 首段取权威值(= 模特slug或未分类目录名)
+            first = s.scalars(select(Photo.filename).where(
+                Photo.collection_id == c.id).limit(1)).first()
+            owner = first.split("/", 1)[0] if first else old.split("-", 1)[0]
+            old_title_slug = old[len(owner) + 1:] if old.startswith(owner + "-") else old
+            title_slug = slugify(c.title, maxlen=160)
+            new = _unique_slug(s, Collection, f"{owner}-{title_slug}"[:200], 200)
+            new_title_slug = new[len(owner) + 1:] if new.startswith(owner + "-") else title_slug
+            src = media_root / owner / old_title_slug
+            dst = media_root / owner / new_title_slug
+            if src.is_dir() and src != dst and not dst.exists():
+                src.rename(dst)
+                log.info("renamed media dir %s -> %s", src, dst)
+            for p in s.scalars(select(Photo).where(
+                    Photo.collection_id == c.id)).all():
+                parts = p.filename.split("/", 2)  # owner / title_slug / file
+                if len(parts) == 3 and parts[1] == old_title_slug:
+                    p.filename = f"{parts[0]}/{new_title_slug}/{parts[2]}"
+            s.execute(text(
+                "UPDATE harvest_jobs SET collection_slug = :new WHERE collection_slug = :old"),
+                {"new": new, "old": old})
+            c.slug = new
+            log.info("collection slug %s -> %s", old, new)
+
+        s.commit()
+    except Exception:
+        s.rollback()
+        logging.getLogger("photobook").exception("url-unsafe slug fix failed")
+    finally:
+        s.close()
 
 
 def _backfill_source_serial() -> None:
