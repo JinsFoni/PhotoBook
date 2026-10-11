@@ -58,19 +58,24 @@ def _open_tolerant(src, *, draft=None):
     finally:
         ImageFile.LOAD_TRUNCATED_IMAGES = False
 
-# 档位策略(两档, 都预热):
+# 档位策略(三档, 都预热):
 #   900       网格 + 照片墙(钳宽)
 #   短边 2400 灯箱显示档(前端恒用, 见 app.js 的 LB_W)。竖图 2400×3600、
 #             横图 3600×2400 —— 短边统一 2400, 两向像素量对称(≈8.6MP):
 #             4K 全屏竖图/横图全部零上采样(旧钳宽档横图在 4K 要放大 1.2~1.6 倍)。
+#   短边 900  灯箱垫底/氛围档(前端恒用, 见 app.js 的 WALL_W)。与网格 900
+#             是不同缓存档(短边钳制 vs 钳宽), 不预热的话每次开灯箱都要
+#             现场全尺寸解码原图 —— 33MP PNG 单张 3~4s、峰值 150MB+, 且
+#             请求路径不像预热线程那样归还堆页, NAS 实测内存一路走高。
 # 灯箱从不请求真原图(24MP 原图解码是切图卡顿根源), 原图只服务下载与 1:1 放大。
 # 曾有 1800 档: 本库 70% 原图宽 ≤1800, "只缩不放"下 1800 与 2400 输出字节完全相同,
 # 两档并存就是纯重复副本; 且屏宽驱动的 1800/2400 双档让灯箱大屏永远打不到热缓存
 # (2400 无人预热 → 每张现场解码 230~900ms)。故收敛为单档预热。
 WALL_W = 900
 HD_SHORT = 2400
-PREHEAT_WIDTHS = (WALL_W,)          # 钳宽档
-PREHEAT_SHORT = (HD_SHORT,)         # 短边档
+LB_AMBIENT_SHORT = 900               # 灯箱垫底/氛围档(短边钳制, = app.js WALL_W)
+PREHEAT_WIDTHS = (WALL_W,)           # 钳宽档
+PREHEAT_SHORT = (HD_SHORT, LB_AMBIENT_SHORT)  # 短边档
 
 # 缩略图生成全局并发上限。单张 19MP 图解码峰值 ~170MB,
 # 不限流时浏览器并发 8 张就能把容器打到 1.4GB(NAS 实测);
@@ -109,7 +114,7 @@ def abs_path(rel: str) -> any:
 
 
 def thumb_cache_ready(rel: str) -> bool:
-    """两档预热缩略图(900 钳宽 / 短边 2400)是否都已在磁盘缓存。
+    """全部预热档(900 钳宽 / 短边 2400 / 短边 900)是否都已在磁盘缓存。
 
     删除本地原图前的门槛: 缓存不全就删原图,该图缩略图将永久无法再生。
     质量分档须与 serve_thumb 保持一致(>=1600 用 q88)。
@@ -119,7 +124,7 @@ def thumb_cache_ready(rel: str) -> bool:
         if not _cache_path(w, None, q, rel).is_file():
             return False
     for w in PREHEAT_SHORT:
-        if not _cache_path(w, None, 88, rel, short=True).is_file():
+        if not _cache_path(w, None, 88 if w >= 1600 else 78, rel, short=True).is_file():
             return False
     return True
 
@@ -347,6 +352,7 @@ def serve_thumb(spec: str, request: Request) -> Response:
             if data is not None:
                 cache.parent.mkdir(parents=True, exist_ok=True)
                 cache.write_bytes(data)
+                _trim_heap()
                 return Response(data, media_type="image/webp",
                                 headers={"Cache-Control": "public, max-age=31536000, immutable"})
         raise HTTPException(404)
@@ -359,8 +365,18 @@ def serve_thumb(spec: str, request: Request) -> Response:
 
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_bytes(data)
+    _trim_heap()
     return Response(data, media_type="image/webp",
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+def _trim_heap() -> None:
+    """请求路径冷生成后的堆归还: 33MP 解码峰值 150MB+,glibc 默认不把
+    空闲堆页还给内核,RSS 只涨不降(NAS 实测灯箱连翻几张内存一路走高)。
+    预热/入库 worker 各自的 trim 不覆盖这里。trim 毫秒级,每张真生成才调。"""
+    libc = _load_libc()
+    if libc:
+        libc.malloc_trim(0)
 
 
 def _make_webp_from_remote(url: str, w: int, h: int | None, q: int,
@@ -517,7 +533,7 @@ _t0 = [0.0]
 
 
 def preheat_all(batch: int = 4) -> None:
-    """巡检全库, 补齐各档缺失的缩略图(900 网格/照片墙 + 短边 2400 灯箱)。
+    """巡检全库, 补齐各档缺失的缩略图(900 网格/照片墙 + 短边 2400/900 灯箱)。
 
     幂等:已有缓存的文件直接跳过, 全命中时零停顿。daemon 线程, 不阻塞启动。
     顺序按新入库优先 —— 换档后补齐全库是小时级(每张生成 + _preheat_gap 0.3s),

@@ -172,7 +172,7 @@ def test_preheat_zero_pause_when_cache_hits(monkeypatch, clean_preheat_event):
 
     assert done == 3
     assert generated == 0
-    assert len(calls) == 6      # 3 张 × 2 档
+    assert len(calls) == 9      # 3 张 × 3 档(900 钳宽 + s2400/s900 短边)
     assert sleeps == []         # 全命中 → 零睡眠
 
 
@@ -195,8 +195,8 @@ def test_preheat_pauses_when_generating(monkeypatch, clean_preheat_event):
     done, generated = media._preheat_files(["a.jpg", "b.jpg"], batch=4)
 
     assert done == 2
-    assert generated == 4            # 2 张 × 2 档(900 钳宽 + s2400 短边)
-    assert len(calls) == 4
+    assert generated == 6            # 2 张 × 3 档(900 钳宽 + s2400/s900 短边)
+    assert len(calls) == 6
     assert sleeps == [media._preheat_gap] * 2  # 每张都节流
 
 
