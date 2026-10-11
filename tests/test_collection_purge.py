@@ -38,18 +38,18 @@ def _mk_collection_with_photos():
 
 
 def _gen_thumbs(rel: str):
-    from app.services.media import PREHEAT_WIDTHS, ensure_cached
-    for w in PREHEAT_WIDTHS:
-        assert ensure_cached(rel, w)
+    from app.services.media import PREHEAT_SHORT, ensure_cached
+    for w in PREHEAT_SHORT:
+        assert ensure_cached(rel, w, short=True)
 
 
 def _cache_paths(rel: str) -> list[str]:
     from app.config import settings
-    from app.services.media import PREHEAT_WIDTHS
+    from app.services.media import PREHEAT_SHORT
     out = []
-    for w in PREHEAT_WIDTHS:
+    for w in PREHEAT_SHORT:
         q = 88 if w >= 1600 else 78
-        out.append(str(settings.media_dir / "_cache" / f"{w}x0q{q}" / f"{rel}.webp"))
+        out.append(str(settings.media_dir / "_cache" / f"s{w}x0q{q}" / f"{rel}.webp"))
     return out
 
 

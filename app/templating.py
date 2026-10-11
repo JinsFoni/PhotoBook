@@ -123,10 +123,9 @@ def _blur_src(request: Request) -> str | None:
         finally:
             s.close()
         if rel:
-            from .config import settings as _settings
-            # 垫底图层重度模糊(46px), 900px 档足够; 2400px 预载太慢,
-            # 点击切虚化后要黑好几秒
-            return "/t/900/" + rel.lstrip("/") + ".webp"
+            # 垫底图层重度模糊(46px), s900 短边档足够(全站统一低清档);
+            # 2400px 预载太慢, 点击切虚化后要黑好几秒
+            return "/t/s900/" + rel.lstrip("/") + ".webp"
     except Exception:
         pass
     return None

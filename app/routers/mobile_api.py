@@ -30,8 +30,8 @@ router = APIRouter(prefix="/api/mobile")
 
 RENEW_HEADER = "X-Renewed-Token"    # 滑动续期:响应头携带新 token,客户端持久化替换
 
-THUMB_W_CARD = 900    # 列表卡片 /t/900/(与 web 端网格页同档,共用 HTTP 缓存)
-THUMB_W_HERO = 900    # 详情头图 /t/900x/
+THUMB_SHORT_CARD = 900    # 列表卡片 /t/s900/(与 web 端全站统一低清档,共用 HTTP 缓存)
+THUMB_SHORT_HERO = 900    # 详情头图 /t/s900/
 
 
 # ---- ETag 条件请求 ------------------------------------------------------------
@@ -168,7 +168,7 @@ def _collection_payload(s: Session, c: Collection) -> dict:
         "model_slug": c.model.slug if c.model else "",
         "model_name": c.model.name if c.model else "未分类",
         "cover": cover,
-        "coverThumb": f"t/{THUMB_W_CARD}/{cover}.webp" if cover else None,
+        "coverThumb": f"t/s{THUMB_SHORT_CARD}/{cover}.webp" if cover else None,
         "photos": [{"idx": i, "file": p.filename, "w": p.width, "h": p.height}
                    for i, p in enumerate(c.photos)],
         "tags": [t.name for t in c.tags],
@@ -185,7 +185,7 @@ def _collection_card(s: Session, c: Collection) -> dict:
         "model_slug": c.model.slug if c.model else "",
         "model_name": c.model.name if c.model else "未分类",
         "cover": cover,
-        "coverThumb": f"t/{THUMB_W_CARD}/{cover}.webp" if cover else None,
+        "coverThumb": f"t/s{THUMB_SHORT_CARD}/{cover}.webp" if cover else None,
         "count": len(c.photos),
         "tags": [t.name for t in c.tags],
     }
@@ -276,7 +276,7 @@ async def mobile_collection_detail(slug: str, s: Session = Depends(get_db)):
     if not c:
         raise ApiError("not_found", "Collection not found", 404)
     payload = _collection_payload(s, c)
-    payload["coverThumb"] = (f"t/{THUMB_W_HERO}/{payload['cover']}.webp"
+    payload["coverThumb"] = (f"t/s{THUMB_SHORT_HERO}/{payload['cover']}.webp"
                              if payload["cover"] else None)
     payload["model"] = ({"slug": c.model.slug, "name": c.model.name}
                         if c.model else None)
@@ -395,7 +395,7 @@ async def mobile_favorites_resolve(s: Session = Depends(get_db),
                     photos.append({
                         "key": f"{c.slug}:{i}", "slug": c.slug, "idx": i,
                         "file": p.filename, "title": c.title,
-                        "thumb": f"t/{THUMB_W_CARD}/{p.filename}.webp",
+                        "thumb": f"t/s{THUMB_SHORT_CARD}/{p.filename}.webp",
                         "w": p.width, "h": p.height,
                     })
         out["photos"] = photos

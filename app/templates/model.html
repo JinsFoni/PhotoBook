@@ -96,7 +96,7 @@
   grid.innerHTML = (m.works || []).map(function (c) {
     return '<article class="collection-card hoverable">' +
       '<div style="position:relative"><a href="/collections/' + c.slug + '">' +
-      '<div class="frame skeleton" style="aspect-ratio:2/3"><img src="/t/900/' + c.cover + '.webp" alt="" loading="lazy"></div></a></div>' +
+      '<div class="frame skeleton" style="aspect-ratio:2/3"><img src="/t/s900/' + c.cover + '.webp" alt="" loading="lazy"></div></a></div>' +
       '<div class="card__caption"><div class="card__caption-main">' +
       '<h3 class="card__title"><a href="/collections/' + c.slug + '">' + c.title + "</a></h3>" +
       '<p class="card__sub"><span>' + PC.t("{n} photos", { n: c.count }) + "</span>" + (c.date ? "<span>" + c.date + "</span>" : "") + "</p>" +
