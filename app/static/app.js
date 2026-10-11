@@ -1131,9 +1131,14 @@ window.PC = (function () {
     if (under.dataset.src !== uSrc) {
       under.dataset.src = uSrc;
       under.dataset.ready = "false";
+      under.style.transition = ""; /* 恢复淡入过渡(上一轮揭示时被置 none 撤层) */
       under.src = uSrc;
       under.onload = function () {
         if (under.dataset.src !== uSrc) return;
+        /* 揭示竞态守卫: 2400 命中预取缓存时揭示先于垫底 onload 完成,
+           揭示块已无过渡撤掉垫底 —— 此时 onload 不得把它点亮回来,
+           否则半透明的入场层底下又垫上同图另一副本, 重影复发 */
+        if (lbShownUrl === url) return;
         under.dataset.ready = "true";
         /* 冻结帧兜底: 垫底已就位而 2400 迟迟不揭示时, 旧层还挂着上一张
            —— 120ms 宽限后淡出旧层露出垫底(900 新图), 替代卡住的旧帧 */
@@ -1177,8 +1182,14 @@ window.PC = (function () {
       }
       fig.dataset.ready = "true";
       prev.dataset.ready = "false";
-      /* 新层已接住画面, 垫底层随即撤去; 若 2400 加载失败, 兜底逻辑
-         已让垫底(900 新图)可见 → 降级为低清而非旧图/空屏 */
+      /* 新层已接住画面, 垫底层立即撤去 —— 不走 200ms 淡出: 淡出期间
+         垫底(scale 1)与入场层(1.015→1 缓落)是同图两个清晰副本, 半透明
+         叠加成错位重影(水印/文字最明显, 竖图错位像素更多)。这里无过渡
+         直接撤, 揭示瞬间舞台只剩入场层一份新图, 重影消失; 代价是入场
+         淡入 620ms 里新图半透明处透出虚化背景而非垫底, 可接受。垫底层
+         本身仍在: 下一次切图它照样先行上屏撑住空窗。若 2400 加载失败,
+         兜底逻辑已让垫底(900 新图)可见 → 降级为低清而非旧图/空屏 */
+      under.style.transition = "none";
       under.dataset.ready = "false";
     });
 

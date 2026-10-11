@@ -1997,11 +1997,12 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 
 .lightbox__under {
   /* 垫底层(Immich thumbnail 层思路): 900 档网格图同 URL 必命中缓存,
-     开灯箱/切图瞬间先上屏撑住画面, 主图就绪后淡入盖住它。
-     不加 blur/轻放大: 任何超出主图 contain 矩形的绘制(1.012 放大的
-     实边或模糊外溢)都会在纯色底上亮出一圈白晕, 换图后 200~350ms
-     内最明显。铺满 stage 盒再 object-fit:contain —— 绘制矩形与主图
-     定框(min(100%, cqh*ar))完全重合。不能像旧实现那样 width:auto +
+     开灯箱/切图瞬间先上屏撑住画面。主图揭示时 JS 置 transition:none
+     立即撤掉(不走淡出): 淡出期间垫底(scale 1)与入场层(1.015→1 缓落)
+     是同图两个清晰副本, 半透明叠加成错位重影。不加 blur/轻放大:
+     任何超出主图 contain 矩形的绘制都会在纯色底上亮出一圈白晕。
+     铺满 stage 盒再 object-fit:contain —— 绘制矩形与主图定框
+     (min(100%, cqh*ar))完全重合。不能像旧实现那样 width:auto +
      max-width/height:100%: 那只会缩不会放, 横图 s900(如 1331x900)
      在大屏上小于 contain 矩形, 2400 揭示前锐利小图悬浮在虚化背景
      中央成"画中画"(竖图 s900 恒大于矩形故从无症状) */
