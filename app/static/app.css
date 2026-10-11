@@ -2000,15 +2000,15 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
      开灯箱/切图瞬间先上屏撑住画面, 主图就绪后淡入盖住它。
      不加 blur/轻放大: 任何超出主图 contain 矩形的绘制(1.012 放大的
      实边或模糊外溢)都会在纯色底上亮出一圈白晕, 换图后 200~350ms
-     内最明显。垫底层与主图同 URL 同比例, stage 内 contain 结果
-     完全重合, 边缘零外溢; 代价仅是大屏上垫底可见的短暂瞬间略软 */
+     内最明显。铺满 stage 盒再 object-fit:contain —— 绘制矩形与主图
+     定框(min(100%, cqh*ar))完全重合。不能像旧实现那样 width:auto +
+     max-width/height:100%: 那只会缩不会放, 横图 s900(如 1331x900)
+     在大屏上小于 contain 矩形, 2400 揭示前锐利小图悬浮在虚化背景
+     中央成"画中画"(竖图 s900 恒大于矩形故从无症状) */
   position: absolute;
   inset: 0;
-  margin: auto;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   opacity: 0;
   transition: opacity 200ms var(--ease);
