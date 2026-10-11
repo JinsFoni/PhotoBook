@@ -301,7 +301,9 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
 
 # ---- MediaFire ---------------------------------------------------------------
 
-MF_DIRECT_RE = re.compile(r'href="(https://download[^"]+)"')
+# 直链 host 形如 download1510.mediafire.com;页面给 http 还是 https 不定
+# (2025-10 起观察到回落 http),方案必须两者都认
+MF_DIRECT_RE = re.compile(r'href="(https?://download[^"]+)"')
 MF_KEY_RE = re.compile(r"mediafire\.com/file/([a-z0-9]+)(?:/|$)", re.I)
 MF_FOLDER_RE = re.compile(r"mediafire\.com/folder/([a-z0-9]+)", re.I)
 
