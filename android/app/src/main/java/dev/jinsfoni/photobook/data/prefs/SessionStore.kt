@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dev.jinsfoni.photobook.core.design.GlassMaterial
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.data.remote.ApiErrors
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +42,7 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
     private val activeProfileKey = stringPreferencesKey("active_profile")
     private val themeKey = stringPreferencesKey("theme")
     private val liquidGlassKey = booleanPreferencesKey("liquid_glass")
+    private val glassMaterialKey = stringPreferencesKey("glass_material")
     private val loadOriginalKey = booleanPreferencesKey("load_original")
     private val localeKey = stringPreferencesKey("locale")
 
@@ -74,8 +76,22 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         }
     }
 
-    override val liquidGlass: Flow<Boolean> =
-        context.dataStore.data.map { prefs -> prefs[liquidGlassKey] ?: false }
+    /**
+     * 底栏玻璃材质:新键优先;旧布尔键迁移(开=清霜玻璃,关=薄磨砂),
+     * 读完旧键即擦除,两代版本并存时各自语义仍正确。
+     */
+    override val glassMaterial: Flow<GlassMaterial> = context.dataStore.data.map { prefs ->
+        when (prefs[glassMaterialKey]) {
+            "LIQUID" -> GlassMaterial.LIQUID
+            "FROST" -> GlassMaterial.FROST
+            "THIN" -> GlassMaterial.THIN
+            else -> when (prefs[liquidGlassKey]) {
+                true -> GlassMaterial.FROST
+                false -> GlassMaterial.THIN
+                null -> GlassMaterial.THIN
+            }
+        }
+    }
 
     override val loadOriginal: Flow<Boolean> =
         context.dataStore.data.map { prefs -> prefs[loadOriginalKey] ?: false }
@@ -254,8 +270,12 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         context.dataStore.edit { it[themeKey] = mode.name }
     }
 
-    override suspend fun saveLiquidGlass(enabled: Boolean) {
-        context.dataStore.edit { it[liquidGlassKey] = enabled }
+    override suspend fun saveGlassMaterial(material: GlassMaterial) {
+        context.dataStore.edit { prefs ->
+            prefs[glassMaterialKey] = material.name
+            // 旧布尔键不再回写:老版本读不到新键会回落默认薄磨砂,不误判
+            prefs.remove(liquidGlassKey)
+        }
     }
 
     override suspend fun saveLoadOriginal(enabled: Boolean) {

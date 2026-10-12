@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dev.jinsfoni.photobook.core.design.GlassMaterial
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.core.design.ThemeState
 import dev.jinsfoni.photobook.data.prefs.ServerProfile
@@ -23,8 +24,8 @@ data class SettingsUiState(
     val profiles: List<ServerProfile> = emptyList(),
     val activeProfileId: String? = null,
     val theme: ThemeMode = ThemeMode.LIGHT,
-    /** 液态玻璃底栏开关(false = 薄磨砂)。 */
-    val liquidGlass: Boolean = false,
+    /** 底栏玻璃材质(false 时旧字段 = 薄磨砂)。 */
+    val glassMaterial: GlassMaterial = GlassMaterial.THIN,
     /** 灯箱加载原图(false = 2400px 预览图)。 */
     val loadOriginal: Boolean = false,
     /** 当前语言标签("" = 跟随系统);API 33+ 以系统 per-app locale 为准。 */
@@ -74,7 +75,7 @@ class SettingsViewModel(
         session.profiles,
         session.activeProfileId,
         session.theme,
-        session.liquidGlass,
+        session.glassMaterial,
         session.locale,
         systemLocale,
         session.loadOriginal,
@@ -84,7 +85,7 @@ class SettingsViewModel(
             profiles = values[0] as List<ServerProfile>,
             activeProfileId = (values[1] as String?) ?: (values[0] as List<ServerProfile>).firstOrNull()?.id,
             theme = values[2] as ThemeMode,
-            liquidGlass = values[3] as Boolean,
+            glassMaterial = values[3] as GlassMaterial,
             locale = (values[5] as String).ifBlank { values[4] as String },
             loadOriginal = values[6] as Boolean,
         )
@@ -105,10 +106,10 @@ class SettingsViewModel(
         viewModelScope.launch { session.saveTheme(mode) }
     }
 
-    /** 液态玻璃底栏开关:内存态即时生效,同时落库。 */
-    fun setLiquidGlass(enabled: Boolean) {
-        ThemeState.liquidGlass = enabled
-        viewModelScope.launch { session.saveLiquidGlass(enabled) }
+    /** 底栏玻璃材质切换:内存态即时生效,同时落库。 */
+    fun setGlassMaterial(material: GlassMaterial) {
+        ThemeState.glassMaterial = material
+        viewModelScope.launch { session.saveGlassMaterial(material) }
     }
 
     /** 灯箱原图开关:灯箱直接订阅 SessionStore.loadOriginal,落库即生效。 */

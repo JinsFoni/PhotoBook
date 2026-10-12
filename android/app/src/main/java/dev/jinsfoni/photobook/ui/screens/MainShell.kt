@@ -56,8 +56,8 @@ fun MainShell(
     }
 
     CompositionLocalProvider(LocalGlassBarBottomInset provides navBarInset) {
-        // 液态玻璃采集源(BiliPai ChromeBackdropSource 同款):挂在页面容器上,
-        // 底栏 drawBackdrop 采样它 —— 页面先录进 GraphicsLayer 再上屏,底栏永远采不到自身
+        // 清霜玻璃采集源(Kyant0/AndroidLiquidGlass Backdrop 体系):挂在页面容器上,
+        // 底栏 drawBackdrop 采样它 —— 页面先录进 LayerBackdrop 再上屏,底栏永远采不到自身
         val liquidSource = rememberGlassBarBackdropSource()
         Box(Modifier.fillMaxSize().background(colors.paper)) {
             HorizontalPager(
@@ -66,7 +66,7 @@ fun MainShell(
                     .fillMaxSize()
                     // 收雪:页面内容进入 haze,玻璃底栏取它做磨砂
                     .hazeSource(hazeState)
-                    // 液态玻璃采集:同页内容双录(miuix layerBackdrop + GraphicsLayer 回放)
+                    // 清霜玻璃采集:同页内容双录(kyant layerBackdrop + haze source)
                     .then(liquidSource.modifier),
             ) { page ->
                 // haze capture 不含 modifier 链上 hazeSource 之前的绘制(如 background),

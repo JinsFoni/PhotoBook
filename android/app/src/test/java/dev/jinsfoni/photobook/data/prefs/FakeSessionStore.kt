@@ -1,5 +1,6 @@
 package dev.jinsfoni.photobook.data.prefs
 
+import dev.jinsfoni.photobook.core.design.GlassMaterial
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,7 +32,7 @@ open class FakeSessionStore : SessionStoreApi {
     override val profiles: Flow<List<ServerProfile>> = profilesFlow
     override val activeProfileId: Flow<String?> = activeIdFlow
     override val theme: Flow<ThemeMode> = themeFlow
-    override val liquidGlass: Flow<Boolean> = MutableStateFlow(false)
+    override val glassMaterial: Flow<GlassMaterial> = MutableStateFlow(GlassMaterial.THIN)
     override val loadOriginal: Flow<Boolean> = MutableStateFlow(false)
     override val locale: Flow<String> = localeFlow
 
@@ -110,7 +111,7 @@ open class FakeSessionStore : SessionStoreApi {
 
     override suspend fun saveTheme(mode: ThemeMode) { themeFlow.value = mode }
 
-    override suspend fun saveLiquidGlass(enabled: Boolean) { }
+    override suspend fun saveGlassMaterial(material: GlassMaterial) { }
 
     override suspend fun saveLoadOriginal(enabled: Boolean) { }
 

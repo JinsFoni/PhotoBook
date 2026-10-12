@@ -92,8 +92,8 @@ dependencies {
     implementation(libs.telephoto.zoomable.image.coil3)
     implementation(libs.haze)
     implementation(libs.haze.blur)
-    // BiliPai 同款液态玻璃 Backdrop 体系(公开 Maven Central 构件)
-    implementation(libs.miuix.blur)
+    // Kyant0/AndroidLiquidGlass 本体(Backdrop 体系:layerBackdrop/drawBackdrop/blur/lens)
+    implementation(libs.backdrop)
 
     debugImplementation(libs.compose.ui.tooling)
 

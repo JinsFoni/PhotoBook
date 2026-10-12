@@ -59,11 +59,11 @@ class AppRootViewModel @Inject constructor(
         .map { !it.isNullOrBlank() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
 
-    /** 启动:把持久化主题/液态玻璃开关灌入 ThemeState(内存单例),变更写回。 */
+    /** 启动:把持久化主题/底栏玻璃材质灌入 ThemeState(内存单例),变更写回。 */
     fun restoreTheme() {
         viewModelScope.launch {
             ThemeState.mode = session.theme.first()
-            ThemeState.liquidGlass = session.liquidGlass.first()
+            ThemeState.glassMaterial = session.glassMaterial.first()
         }
     }
 

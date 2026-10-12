@@ -1,5 +1,6 @@
 package dev.jinsfoni.photobook.data.prefs
 
+import dev.jinsfoni.photobook.core.design.GlassMaterial
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import kotlinx.coroutines.flow.Flow
 
@@ -18,8 +19,8 @@ interface SessionStoreApi {
     /** 主题三态(light/dark/blur)。 */
     val theme: Flow<ThemeMode>
 
-    /** 液态玻璃底栏开关(持久化)。 */
-    val liquidGlass: Flow<Boolean>
+    /** 底栏玻璃材质(三态,持久化;旧布尔键 liquid_glass 读取时迁移)。 */
+    val glassMaterial: Flow<GlassMaterial>
 
     /** 灯箱加载原图开关(false = 2400px webp 预览图,省流量加载快)。 */
     val loadOriginal: Flow<Boolean>
@@ -58,7 +59,7 @@ interface SessionStoreApi {
     suspend fun removeProfile(id: String)
 
     suspend fun saveTheme(mode: ThemeMode)
-    suspend fun saveLiquidGlass(enabled: Boolean)
+    suspend fun saveGlassMaterial(material: GlassMaterial)
     suspend fun saveLoadOriginal(enabled: Boolean)
     suspend fun saveLocale(tag: String)
 }

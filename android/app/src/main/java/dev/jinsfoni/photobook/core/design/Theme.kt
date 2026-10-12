@@ -12,6 +12,9 @@ import androidx.compose.ui.Modifier
 /** 主题模式 —— light/dark/blur 三态(与 Web 端 data-theme 一致)。 */
 enum class ThemeMode { LIGHT, DARK, BLUR }
 
+/** 底栏玻璃材质三选一:薄磨砂(haze)/ 清霜玻璃(tuned 弱折射)/ 液态玻璃(库预设强折射)。 */
+enum class GlassMaterial { THIN, FROST, LIQUID }
+
 val LocalPhotoColors = staticCompositionLocalOf<PhotoColors> {
     lightColors()
 }
@@ -22,8 +25,8 @@ val LocalThemeMode = staticCompositionLocalOf { ThemeMode.LIGHT }
 object ThemeState {
     var mode by mutableStateOf(ThemeMode.LIGHT)
 
-    /** 液态玻璃底栏开关:false = 现有薄磨砂;true = BiliPai 同款液态玻璃(API 33+)。 */
-    var liquidGlass by mutableStateOf(false)
+    /** 底栏玻璃材质(持久化;旧版布尔开关迁移:开=清霜玻璃,关=薄磨砂)。 */
+    var glassMaterial by mutableStateOf(GlassMaterial.THIN)
 }
 
 fun PhotoColors.forMode(mode: ThemeMode): PhotoColors = when (mode) {
