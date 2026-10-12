@@ -243,12 +243,16 @@ async def favorites_page(request: Request, s: Session = Depends(get_db), tab: st
     collection_items = [_collection_payload(s, c) for c in cols if c.slug in favs["collection"]]
 
     # 收藏的照片:target_key = "<collection_slug>:<idx>"
+    # w/h 必带: justified 照片墙(layoutPhotoWall)按宽高比分行,图片未加载时
+    # 只能读模板内联 aspect-ratio,缺了会全部按 2/3 兜底 → 横图卡留洞。
+    # gi 是本页照片列表的全局下标, 灯箱按它直接定位当前张。
     photo_items = []
     for c in cols:
         for i, p in enumerate(c.photos):
             key = f"{c.slug}:{i}"
             if key in favs["photo"]:
-                photo_items.append({"key": key, "file": p.filename,
+                photo_items.append({"key": key, "file": p.filename, "id": p.id,
+                                    "w": p.width, "h": p.height, "gi": len(photo_items),
                                     "collection": c.slug, "title": c.title, "index": i})
 
     payload = {
