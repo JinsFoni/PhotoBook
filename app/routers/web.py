@@ -45,6 +45,8 @@ def _collection_card(s: Session, c: Collection) -> dict:
     return {
         "id": c.id, "slug": c.slug, "title": c.title,
         "date": c.published_at or "",
+        # 入库日期(YYYY-MM-DD,客户端「最新/最早入库」排序用)
+        "created": c.created_at.date().isoformat() if c.created_at else "",
         "model_slug": c.model.slug if c.model else "",
         "model_name": c.model.name if c.model else t("未分类"),
         "cover": _collection_cover(s, c),

@@ -26,10 +26,14 @@
     <span class="filters__count num" data-count></span>
 
     <select class="select" data-f-sort aria-label="{{ t('Sort') }}">
-      <option value="newest">{{ t('Sort: Newest') }}</option>
-      <option value="oldest">{{ t('Sort: Oldest') }}</option>
-      <option value="title">{{ t('Sort: Title') }}</option>
+      <option value="newest">{{ t('Sort: Newest imported') }}</option>
+      <option value="oldest">{{ t('Sort: Oldest imported') }}</option>
+      <option value="pub-newest">{{ t('Sort: Newest published') }}</option>
+      <option value="pub-oldest">{{ t('Sort: Oldest published') }}</option>
+      <option value="title-asc">{{ t('Sort: Title A-Z') }}</option>
+      <option value="title-desc">{{ t('Sort: Title Z-A') }}</option>
       <option value="size">{{ t('Sort: Most photos') }}</option>
+      <option value="size-asc">{{ t('Sort: Fewest photos') }}</option>
     </select>
 
     <button class="btn btn--quiet btn--sm" type="button" data-f-reset>{{ t('Reset') }}</button>
@@ -121,10 +125,23 @@
       if (f.model && c.model_slug !== f.model) return false;
       return true;
     });
-    if (f.sort === "oldest") list.sort(function (a, b) { return (a.date || "").localeCompare(b.date || ""); });
-    else if (f.sort === "title") list.sort(function (a, b) { return a.title.localeCompare(b.title); });
-    else if (f.sort === "size") list.sort(function (a, b) { return b.count - a.count; });
-    else list.sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); });
+    /* date=源站发布日期, created=入库日期;空值排末尾(空串 localeCompare 恒为负) */
+    function byField(key, flip) {
+      return function (a, b) {
+        var d = ((a[key] || "").localeCompare(b[key] || "")) || (a.id - b.id);
+        return flip ? -d : d;
+      };
+    }
+    switch (f.sort) {
+      case "oldest": list.sort(byField("created", false)); break;   /* 最早入库 */
+      case "pub-oldest": list.sort(byField("date", false)); break;  /* 最早发布 */
+      case "title-asc": list.sort(function (a, b) { return a.title.localeCompare(b.title); }); break;
+      case "title-desc": list.sort(function (a, b) { return b.title.localeCompare(a.title); }); break;
+      case "size": list.sort(function (a, b) { return (b.count - a.count) || (a.id - b.id); }); break;
+      case "size-asc": list.sort(function (a, b) { return (a.count - b.count) || (a.id - b.id); }); break;
+      case "pub-newest": list.sort(byField("date", true)); break;   /* 最新发布 */
+      default: list.sort(byField("created", true));                 /* 最新入库 */
+    }
     return list;
   }
 
