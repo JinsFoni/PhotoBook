@@ -68,7 +68,7 @@ internal fun ModelDto.toCard(base: String) = ModelCard(
     slug = slug,
     name = name,
     stage = stage,
-    imageUrl = avatar?.let { MediaUrls.thumb(baseUrl = base, rel = it, width = 900, height = 1350) }, // 2:3 裁切
+    imageUrl = avatar?.let { MediaUrls.thumbShortSide(base, it, 900) }, // 全站统一低清档,卡片框 2:3 客户端裁切
     count = count,
     photoCount = photoCount,
     featured = featured,
