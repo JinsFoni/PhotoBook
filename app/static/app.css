@@ -750,13 +750,13 @@ html[data-theme="blur"] .search {
   font-size: var(--fs-small);
   letter-spacing: 0.04em;
 }
+/* 无方框:仅图标 + 投影,保证在图片上可见 */
 .fav--on-image {
-  background: rgba(0, 0, 0, 0.42);
   color: #fff;
-  backdrop-filter: blur(6px);
+  filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.45));
 }
-.fav--on-image:hover { color: #fff; background: rgba(0, 0, 0, 0.62); }
-.fav--on-image[aria-pressed="true"] { color: var(--accent); background: rgba(0, 0, 0, 0.62); }
+.fav--on-image:hover { color: #fff; opacity: 0.82; }
+.fav--on-image[aria-pressed="true"] { color: var(--accent); }
 .fav--bare {
   color: #fff;
   filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.45));
