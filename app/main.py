@@ -16,7 +16,7 @@ from .auth import COOKIE_NAME, current_user
 from .config import settings
 from .database import SessionLocal, init_db
 from .db import Session as DbSession, User
-from .routers import admin, auth, ext_api, favorites_api, mobile_api, search_api, web
+from .routers import admin, auth, ext_api, favorites_api, mobile_api, photo_meta, search_api, web
 from .services.media import serve_media, serve_thumb
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -335,6 +335,7 @@ def _boot_context(request: Request, s=None) -> dict:
 app.include_router(auth.router)
 app.include_router(web.router)
 app.include_router(favorites_api.router)
+app.include_router(photo_meta.router)
 app.include_router(search_api.router)
 app.include_router(admin.router)
 app.include_router(ext_api.router)

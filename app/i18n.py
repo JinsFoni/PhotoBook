@@ -166,6 +166,12 @@ STRINGS: dict[str, dict[str, str]] = {
     "Backdrop: solid": {"zh-CN": "纯色背景", "zh-TW": "純色背景"},
     "Fullscreen": {"zh-CN": "全屏", "zh-TW": "全螢幕"},
     "Exit fullscreen": {"zh-CN": "退出全屏", "zh-TW": "退出全螢幕"},
+    "Set as collection cover": {"zh-CN": "设为写真集封面", "zh-TW": "設為寫真集封面"},
+    "Set as model avatar": {"zh-CN": "设为模特头像", "zh-TW": "設為模特兒頭像"},
+    "Cover updated": {"zh-CN": "已设为封面", "zh-TW": "已設為封面"},
+    "Failed to set cover": {"zh-CN": "设置封面失败", "zh-TW": "設定封面失敗"},
+    "Avatar updated": {"zh-CN": "已设为模特头像", "zh-TW": "已設為模特兒頭像"},
+    "Failed to set avatar": {"zh-CN": "设置头像失败", "zh-TW": "設定頭像失敗"},
 
     # ---- 数量词(计数)-------------------------------------------------------
     "collection": {"zh-CN": "个写真集", "zh-TW": "個寫真集"},

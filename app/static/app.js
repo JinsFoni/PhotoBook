@@ -7,6 +7,7 @@
 
 window.PC = (function () {
   var BOOT = window.PB_BOOT || { user: { name: "", role: "" }, path: "/" };
+  var IS_ADMIN = BOOT.user && BOOT.user.role === "admin";
   var ME = BOOT.user || {};
   var I18N = BOOT.i18n || {};
 
@@ -35,6 +36,7 @@ window.PC = (function () {
     check: '<path d="M5 13l4 4L19 7"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     grid: '<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>',
+    image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 17l4.5-4.5 3 3 3.5-3.5 4 4"/>',
     user: '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
     logout: '<path d="M9 4H5v16h4M14 8l4 4-4 4M18 12H9"/>',
     expand: '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>',
@@ -594,6 +596,10 @@ window.PC = (function () {
       '<div class="lightbox__bar">' +
       '<span class="lightbox__title" data-lb-title></span>' +
       '<div class="lightbox__bar-end">' +
+      (IS_ADMIN
+        ? '<button class="icon-btn" type="button" data-lb-cover title="' + t("Set as collection cover") + '">' + icon("image") + "</button>" +
+          '<button class="icon-btn" type="button" data-lb-avatar title="' + t("Set as model avatar") + '">' + icon("user") + "</button>"
+        : "") +
       '<button class="icon-btn" type="button" data-lb-close aria-label="' + t("Close viewer") + '">' + icon("close") + "</button>" +
       "</div></div>" +
       /* 氛围层双缓冲: 两块同式样交替, 新图永远在旧图之上淡入,
@@ -629,6 +635,10 @@ window.PC = (function () {
     lb.el = el;
 
     el.querySelector("[data-lb-close]").addEventListener("click", close);
+    if (IS_ADMIN) {  /* 按钮只在 admin 下渲染,绑定也须同条件(null 会炸掉整个灯箱) */
+      el.querySelector("[data-lb-cover]").addEventListener("click", setCover);
+      el.querySelector("[data-lb-avatar]").addEventListener("click", setAvatar);
+    }
     el.querySelector("[data-lb-bg]").addEventListener("click", toggleBackdrop);
     el.querySelector("[data-lb-fullscreen]").addEventListener("click", toggleFullscreen);
     el.querySelector("[data-lb-prev]").addEventListener("click", function () { go(-1); });
@@ -907,6 +917,36 @@ window.PC = (function () {
     b.title = on ? t("Exit fullscreen") : t("Fullscreen");
   }
   document.addEventListener("fullscreenchange", paintFullscreenBtn);
+
+  /* ---------- 管理操作: 设为封面 / 设为模特头像 --------------------------
+     仅 admin 可见按钮(IS_ADMIN);后端同样校验,双保险。
+     photo.id 随 PB_DATA.photos 下发(见 _collection_payload)。 */
+  function pbPost(body, done) {
+    fetch("/api/photo-meta", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().then(function (j) { done(j.ok ? null : (j.error || "error")); },
+        function () { done(r.ok ? null : "error"); });
+    }, function () { done("network"); });
+  }
+
+  function setCover() {
+    var p = lb.photos[lb.index];
+    if (!p) return;
+    pbPost({ photo_id: p.id, target: "cover" }, function (err) {
+      toast(err ? t("Failed to set cover") : t("Cover updated"));
+    });
+  }
+
+  function setAvatar() {
+    var p = lb.photos[lb.index];
+    if (!p) return;
+    pbPost({ photo_id: p.id, target: "avatar" }, function (err) {
+      toast(err ? t("Failed to set avatar") : t("Avatar updated"));
+    });
+  }
 
   function paintBackdrop() {
     if (!lb.el) return;
@@ -1320,7 +1360,7 @@ window.PC = (function () {
         open({
           photos: data.photos,
           index: Number(tile.dataset.photoIndex),
-          title: data.title + " — " + (data.model_name || ""),
+          title: data.model_name ? data.title + " — " + data.model_name : data.title,
           collection: data.slug
         });
       });
