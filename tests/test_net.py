@@ -264,6 +264,56 @@ def test_misskon_parse_via_dispatch():
     assert t.model_name == "Lee Ahrin"   # buondua 解析器在此 HTML 上取不到 tag
 
 
+MISSKON_LEGACY_URL = "https://misskon.com/xiuren-no-962-model-xiao-reba-44-photos"
+MISSKON_LEGACY_HTML = """
+<html><head><title>XIUREN No.962: Model Xiao Reba (小热巴) (44 photos) – MissKon.com</title></head>
+<body class="post-template-default single single-post postid-25634">
+  <h1 class="name post-title entry-title">XIUREN No.962: Model Xiao Reba (小热巴) (44 photos)</h1>
+  <div class="entry">
+    <strong>Password unrar:</strong> <span style="color: #2cbb6b">misskon.com</span>
+    <a href="https://ouo.io/F3FYal">Download link: MediaFire</a>
+  </div>
+  <p class="post-tag">Tags<a href="https://misskon.com/tag/xiuren/" rel="tag">XIUREN</a> <a href="https://misskon.com/tag/xiao-reba/" rel="tag">Xiao Reba</a></p>
+</body></html>
+"""
+
+
+def test_misskon_legacy_url_serial_from_postid(monkeypatch):
+    """老帖 slug 无 <序号>- 前缀 → 序号回退页面 body 的 postid-N。"""
+    monkeypatch.setattr(net, "fetch_html",
+                        lambda url, **kw: MISSKON_LEGACY_HTML)
+    assert net.serial_from_url(MISSKON_LEGACY_URL) == 25634
+
+
+def test_misskon_legacy_parse_detail(monkeypatch):
+    """老式 URL 详情解析:序号来自页面,标题/模特/密码/短链同新式。"""
+    t = net.parse_detail_page(MISSKON_LEGACY_URL,
+                              existing_html=MISSKON_LEGACY_HTML)
+    assert t.serial == 25634
+    assert t.title == "XIUREN No.962: Model Xiao Reba (小热巴) (44 photos)"
+    assert t.model_name == "Xiao Reba"
+    assert t.password == "misskon.com"
+    assert t.shortlinks == ["https://ouo.io/F3FYal"]
+
+
+def test_misskon_legacy_unzip_password_variant():
+    """老帖密码写法是 "Unzip password:</strong> <input value=...>"。"""
+    html = MISSKON_LEGACY_HTML.replace(
+        '<strong>Password unrar:</strong> <span style="color: #2cbb6b">misskon.com</span>',
+        '<strong>Unzip password:</strong> <input type="text" size="11" readonly value="mrcong.com">')
+    t = net.parse_misskon_detail_page(MISSKON_LEGACY_URL, existing_html=html)
+    assert t.password == "mrcong.com"
+
+
+def test_misskon_legacy_no_postid_raises(monkeypatch):
+    """既无 slug 序号又无 postid → 仍报 ValueError(回中文消息)。"""
+    monkeypatch.setattr(
+        net, "fetch_html",
+        lambda url, **kw: "<html><body><h1>404</h1></body></html>")
+    with pytest.raises(ValueError):
+        net.serial_from_url(MISSKON_LEGACY_URL)
+
+
 def test_misskon_scan_list_page(monkeypatch):
     """列表扫描:只取 article.item-list 正文卡片(侧栏热门不算),分页 /page/N/。"""
     html = """

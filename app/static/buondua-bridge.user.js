@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua/misskon/nicesss → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.3.0
+// @version      1.3.1
 // @description  在 buondua.com / misskon.com / nicesss.com 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -175,7 +175,11 @@
       const m = location.pathname.match(/\/(\d+)\.html?$/);
       return m ? m[1] : null;
     }
-    if (IS_MISSKON) return misskonSerialFromPath(location.pathname);
+    // 老帖 slug 无序号前缀(如 /xiuren-no-962-…/),回退 body class 的 postid-N
+    if (IS_MISSKON) {
+      return misskonSerialFromPath(location.pathname)
+        || (document.body.className.match(/postid-(\d+)/) || [])[1] || null;
+    }
     const m = location.pathname.match(/-(\d+)\/?$/);
     return m ? m[1] : null;
   }
@@ -215,6 +219,8 @@
     }
     if (IS_MISSKON) {
       const a = card.querySelector("a[href*='://misskon.com/']");
+      // 老帖卡片链接也无序号,回退卡片自身(列表卡片在 body.postid-N 的详情页
+      // 不成立,这里只能取链接;取不到就空,由服务端按 URL 解析)
       return a ? (misskonSerialFromPath(a.pathname) || "") : "";
     }
     return card.dataset.id;
@@ -337,6 +343,8 @@
       function (ok, data) {
         delete el.dataset.busy;
         const item = data && data.items && data.items[0];
+        // 老帖卡片本地取不到序号 → 用服务端从 URL 解析出的序号刷新徽标
+        if (item && item.serial) serial = item.serial;
         if (ok && item && item.ok) {
           pending.add(String(serial));
           setTimeout(() => { pending.delete(String(serial)); queryAndRender(); }, 1200);

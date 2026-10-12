@@ -162,11 +162,15 @@ def _serial_from_url(url: str) -> int:
 
 
 def serial_from_url(url: str) -> int:
-    """按站点分派的序号提取:buondua 尾段数字 / misskon slug 前缀 / nicesss <id>.html。"""
+    """按站点分派的序号提取:buondua 尾段数字 / misskon slug 前缀或 postid /
+    nicesss <id>.html。"""
     if is_nicesss_url(url):
         return _serial_from_nicesss_url(url)
     if is_misskon_url(url):
-        return _serial_from_misskon_url(url)
+        try:
+            return _serial_from_misskon_url(url)
+        except ValueError:
+            return _misskon_serial_from_page(url)   # 老帖 slug 无序号
     return _serial_from_url(url)
 
 
@@ -336,13 +340,18 @@ MISSKON_HOST = "misskon.com"
 # - 列表链接绝对 URL: https://misskon.com/119420-bluecake-lee-ahrin-red-night-255-photos/
 # - 详情页无 og:title,标题在 <h1 class="name post-title entry-title">
 # - tag 容器: <p class="post-tag">Tags<a rel="tag">BLUECAKE</a>…(模特名/出品方顺序不定)
-# - 密码: "Password unrar:</strong> <span>misskon.com</span>" 或 <input value="misskon.com">
+# - 密码两种写法: 新帖 "Password unrar:</strong> <span>misskon.com</span>",
+#   老帖 "Unzip password:</strong> <input value="mrcong.com">(转载源自 mrcong)
 MISSKON_H1_RE = re.compile(
     r'<h1[^>]*class="[^"]*(?:post-title|entry-title)[^"]*"[^>]*>(.*?)</h1>', re.S)
 MISSKON_TAG_ROW_RE = re.compile(r'<p class="post-tag">Tags(.*?)</p>', re.S)
 MISSKON_TAG_LINK_RE = re.compile(r'href="https://misskon\.com/tag/[^"]*"[^>]*>([^<]+)<')
 MISSKON_PASSWORD_RE = re.compile(
-    r'Password unrar:?</strong>\s*(?:<span[^>]*>([^<]+)</span>|<input[^>]*value="([^"]+)")')
+    r'(?:Password unrar|Unzip password):?</strong>\s*'
+    r'(?:<span[^>]*>([^<]+)</span>|<input[^>]*value="([^"]+)")')
+# 老帖 slug 无 <序号>- 前缀(如 /xiuren-no-962-model-…/),序号取 body class
+# 的 WordPress post id;已验证与新式 URL 序号同源(postid-119420 ↔ /119420-…/)
+MISSKON_POSTID_RE = re.compile(r'\bpostid-(\d+)')
 
 
 def is_misskon_url(url: str) -> bool:
@@ -354,12 +363,22 @@ def _serial_from_misskon_url(url: str) -> int:
     """…/119420-bluecake-lee-ahrin-red-night-255-photos/ → 119420。
 
     分卷文章尾段是 /2/ /3/(无序号),前一段 slug 里的序号才是本体。
+    老帖 slug 无序号前缀 → 抛 ValueError,由 serial_from_url 抓页面补取。
     """
     clean = url.split("?")[0].split("#")[0].rstrip("/")
     clean = re.sub(r"/\d+$", "", clean)          # 掉尾段纯数字分页段
     m = re.search(r"/(\d{3,})(?:-|$)", clean)
     if not m:
         raise ValueError(f"URL 无序号: {url}")
+    return int(m.group(1))
+
+
+def _misskon_serial_from_page(url: str) -> int:
+    """老式 URL(slug 无序号)从详情页 body class 的 postid-N 取序号。"""
+    html = fetch_html(url)
+    m = MISSKON_POSTID_RE.search(html)
+    if not m:
+        raise ValueError(f"URL 无序号且页面无 postid: {url}")
     return int(m.group(1))
 
 
@@ -377,7 +396,13 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
     from .filters import pick_model_name
 
     html = existing_html if existing_html is not None else fetch_html(url)
-    serial = _serial_from_misskon_url(url)
+    try:
+        serial = _serial_from_misskon_url(url)
+    except ValueError:
+        idm = MISSKON_POSTID_RE.search(html)
+        if not idm:
+            raise ValueError(f"URL 无序号且页面无 postid: {url}")
+        serial = int(idm.group(1))
 
     title = _misskon_title(html)
 
