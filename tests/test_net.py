@@ -32,6 +32,12 @@ DETAIL_HTML = """
 <html><head><meta property="og:title" content="Yeha – School Nurse (219 photos)"></head>
 <body>
 <article>
+<div class="article-info">
+    <strong><small>Buondua</small></strong>
+    -
+    <small>
+        09:10 29-10-2017            </small>
+</div>
 <div class="item-tags tags"><a class="tag" href="/tag/cosplay-10688"><span>Cosplay</span></a></div>
 <div class="article-fulltext">
 <p>Password: mrcong.com</p>
@@ -73,6 +79,8 @@ def test_parse_detail_page_fields():
     assert t.password == "mrcong.com"
     # 短链去重保序
     assert t.shortlinks == ["https://ouo.io/AbCdEf", "https://ouo.press/XyZ123"]
+    # Joomla article-info 的发布时间(日-月-年)→ YYYY.MM.DD
+    assert t.published == "2017.10.29"
 
 
 def test_model_name_ignores_related_card_tags():
@@ -128,6 +136,7 @@ NICESSS_HTML = """
 <title>[Xiuren秀人网]2026.01.30 NO.11301 妲己_Toxic[70+1P／959MB] - 呦糖社</title>
 <meta name="description" content="[解壓密碼-Password]：sssins.com [下載網盤]：MediaFire">
 <meta property="og:title" content="[Xiuren秀人网]2026.01.30 NO.11301 妲己_Toxic[70+1P／959MB] - 呦糖社">
+<script type="application/ld+json">{"@context":"http:\\/\\/schema.org","@type":"Article","datePublished":"2026-01-30T18:00:00+08:00"}</script>
 </head><body>
 <article class="article-content">
 <h1 class="entry-title"><a href="URL">[Xiuren秀人网]2026.01.30 NO.11301 妲己_Toxic[70+1P／959MB]</a></h1>
@@ -165,6 +174,17 @@ def test_nicesss_parse_detail_fields():
     assert t.password == "sssins.com"
     # 短链正文挂两遍,去重保序
     assert t.shortlinks == ["https://ouo.io/GA80ao5"]
+    # JSON-LD datePublished(斜杠转义)→ YYYY.MM.DD
+    assert t.published == "2026.01.30"
+
+
+def test_nicesss_password_plain_text_variant():
+    """老帖密码无 <font> 包裹:简体纯文本 "[解压密码]：xxx<br />"。"""
+    html = NICESSS_HTML.replace(
+        '<font color="#FFB6C1">[解壓密碼-Password]：sssins.com</font>',
+        '[解压密码]：vx666878787<br />')
+    t = net.parse_nicesss_detail_page(NICESSS_URL, existing_html=html)
+    assert t.password == "vx666878787"
 
 
 def test_nicesss_parse_xingyan_vol_title():
@@ -198,7 +218,8 @@ def test_serial_from_url_dispatch():
 MISSKON_URL = "https://misskon.com/119420-bluecake-lee-ahrin-red-night-255-photos/"
 
 MISSKON_HTML = """
-<html><head><title>[BLUECAKE] Lee Ahrin: RED NIGHT (255 photos) – MissKon.com</title></head>
+<html><head><title>[BLUECAKE] Lee Ahrin: RED NIGHT (255 photos) – MissKon.com</title>
+<script type="application/ld+json">{"@context":"http:\\/\\/schema.org","@type":"Article","datePublished":"2026-10-12T06:51:19+08:00"}</script></head>
 <body>
 <article class="item-list">
   <div class="post-thumbnail"><a href="https://misskon.com/119420-bluecake-lee-ahrin-red-night-255-photos/"><img src="cover.jpg"></a></div>
@@ -247,6 +268,8 @@ def test_misskon_parse_detail_fields():
     assert t.password == "misskon.com"
     # 直挂的 TeraBox 备份链不是 ouo 域,天然滤掉;只留锚文本 MediaFire 的 ouo 链
     assert t.shortlinks == ["https://ouo.io/F3FYal"]
+    # JSON-LD datePublished → YYYY.MM.DD
+    assert t.published == "2026.10.12"
 
 
 def test_misskon_password_input_variant():
@@ -303,6 +326,16 @@ def test_misskon_legacy_unzip_password_variant():
         '<strong>Unzip password:</strong> <input type="text" size="11" readonly value="mrcong.com">')
     t = net.parse_misskon_detail_page(MISSKON_LEGACY_URL, existing_html=html)
     assert t.password == "mrcong.com"
+
+
+def test_misskon_direct_mediafire_link():
+    """老帖不挂 ouo 短链,直接放 MediaFire 链接 → 进 shortlinks。"""
+    html = MISSKON_HTML.replace(
+        '<a href="https://ouo.io/F3FYal" target="_blank" class="shortc-button"><i class="fa fa-download"></i>Download link: MediaFire</a>',
+        '<a href="http://www.mediafire.com/file/abc123/XIUREN_No.1577.rar/file" target="_blank">Download</a>')
+    t = net.parse_misskon_detail_page(MISSKON_URL, existing_html=html)
+    assert t.shortlinks == [
+        "http://www.mediafire.com/file/abc123/XIUREN_No.1577.rar/file"]
 
 
 def test_misskon_legacy_no_postid_raises(monkeypatch):

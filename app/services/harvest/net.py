@@ -79,6 +79,7 @@ class HarvestTarget:
     password: str = ""
     shortlinks: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)  # 详情页自己的 tag(显示名,保序)
+    published: str = ""  # 源站发布日期(YYYY.MM.DD);空 = 页面未提供,导入时回退当天
 
 
 def fetch_html(url: str, *, timeout: float = 30.0) -> str:
@@ -129,6 +130,12 @@ SHORTLINK_RE = re.compile(
 # 极少部分 Terabox 链的锚文本也标着 MediaFire, 由 resolve_ouo 落地后兜底识别。
 ANCHOR_LABEL_RE = re.compile(r'Download link:\s*([A-Za-z]+)')
 
+# 老帖不挂 ouo 短链,直接放 MediaFire 文件/文件夹页
+# (如 http://www.mediafire.com/file/xxx/Name.rar/file)。与 SHORTLINK_RE 同域
+# 白名单思路:只要 MF 文件/文件夹页形态就收,worker 侧按域跳过 ouo 解析。
+MEDIAFIRE_LINK_RE = re.compile(
+    r'href="(https?://(?:www\.)?mediafire\.com/(?:file|folder)/[^"]+)')
+
 # 文章自己的 tag 容器:
 #   <div class="article-tags"><div class="tags"><a href="/tag/x-123"><span>X</span></a>…
 # 注意:页面上还有大量「相关推荐」卡片的 .item-tags,那是别的写真集的 tag,
@@ -159,6 +166,37 @@ def _serial_from_url(url: str) -> int:
     if not m:
         raise ValueError(f"URL 末尾无序号: {url}")
     return int(m.group(1))
+
+
+# WordPress(misskon/nicesss)在 ld+json 里给 datePublished;JSON 字符串里
+# 斜杠可能被转义(\/),先归一再取。发布时间带时区,取日期段不做时区换算 ——
+# 与源站页面上展示的日期一致即可。
+DATE_PUBLISHED_RE = re.compile(r'"datePublished":"(\d{4}-\d{2}-\d{2})')
+
+
+def _date_published_iso(html: str) -> str:
+    m = DATE_PUBLISHED_RE.search(html.replace("\\/", "/"))
+    return m.group(1) if m else ""
+
+
+def _to_dotted(iso: str) -> str:
+    """YYYY-MM-DD → YYYY.MM.DD(与 published_at 存储格式一致)。"""
+    return iso.replace("-", ".")
+
+
+def _collect_mediafire_links(html: str) -> list[str]:
+    """详情页直挂的 MediaFire 文件/文件夹链接(去重保序)。
+
+    老帖不挂 ouo 短链而是直接放 MF 链接;链接进 shortlinks 与 ouo 短链混排,
+    worker 按域分流(ouo → resolve_ouo,mediafire → 直接取直链)。
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for link in MEDIAFIRE_LINK_RE.findall(html):
+        if link not in seen:
+            seen.add(link)
+            out.append(link)
+    return out
 
 
 def serial_from_url(url: str) -> int:
@@ -223,8 +261,16 @@ def _parse_buondua_detail_page(url: str, existing_html: str | None = None,      
         if link not in seen:
             seen.add(link)
             shortlinks.append(link)
+    for link in _collect_mediafire_links(html):
+        if link not in seen:
+            seen.add(link)
+            shortlinks.append(link)
+    # Joomla article-info: <small>09:10 29-10-2017</small>(发布时间,时间在前)
+    dm = re.search(r'<small>\s*(\d{2}:\d{2})\s+(\d{2})-(\d{2})-(\d{4})\s*</small>', html)
+    published = (f"{dm.group(4)}.{dm.group(3)}.{dm.group(2)}" if dm else "")
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
-                         password=password, shortlinks=shortlinks, tags=tags)
+                         password=password, shortlinks=shortlinks, tags=tags,
+                         published=published)
 
 
 def download_archive_urls(target: HarvestTarget) -> list[dict]:
@@ -252,9 +298,13 @@ NICESSS_HOST = "nicesss.com"
 NICESSS_TITLE_RE = re.compile(
     r'^\[([^]]+)\]\s*(?:\d{4}\.\d{2}\.\d{2}\s*)?'
     r'(?:NO\.|VOL\.|Vol\.)?\s*\d*\s*(.+?)\[')
-# 密码只取正文 <font> 标签里的(meta description 也含这段文字,裸匹配会串进来)
+# 密码优先取正文 <font> 标签里的(meta description 也含这段文字,裸匹配会串进来)。
+# 老帖(2022 采样 37628)没有 <font> 包裹,是纯文本 "[解压密码]：xxx<br />",
+# 简体且无 -Password 后缀 → 第二条裸文本正则兜底。冒号全角/半角都收。
 NICESSS_PASSWORD_RE = re.compile(
     r'<font[^>]*>\[?解壓密碼-Password\]?\s*[：:]\s*([^<]+)')
+NICESSS_PASSWORD_PLAIN_RE = re.compile(
+    r'\[解压密码\]\s*[：:]\s*([^\s<]+)')
 # 下载按钮: <a href="https://ouo.io/xxx" ...><span>Download</span>…,正文挂两遍,去重
 NICESSS_SHORTLINK_RE = re.compile(r'href="(https?://ouo\.(?:io|press)/[^"]+)"')
 
@@ -292,7 +342,7 @@ def parse_nicesss_detail_page(url: str, existing_html: str | None = None) -> Har
     if tm:
         publisher, model_name = tm.group(1).strip(), tm.group(2).strip()
 
-    pm = NICESSS_PASSWORD_RE.search(html)
+    pm = NICESSS_PASSWORD_RE.search(html) or NICESSS_PASSWORD_PLAIN_RE.search(html)
     password = pm.group(1).strip() if pm else ""
 
     shortlinks: list[str] = []
@@ -308,7 +358,8 @@ def parse_nicesss_detail_page(url: str, existing_html: str | None = None) -> Har
     if publisher:
         tags = [publisher, *tags]
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
-                         password=password, shortlinks=shortlinks, tags=tags)
+                         password=password, shortlinks=shortlinks, tags=tags,
+                         published=_to_dotted(_date_published_iso(html)))
 
 
 # ---- misskon 列表页 ----------------------------------------------------------
@@ -421,7 +472,8 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
     password = (pm.group(1) or pm.group(2)).strip() if pm else ""
 
     # ouo 短链 + 锚文本 MediaFire 过滤:与 buondua 同构(直挂的 terabox 链
-    # 不是 ouo 域,SHORTLINK_RE 天然滤掉),去重保序
+    # 不是 ouo 域,SHORTLINK_RE 天然滤掉),去重保序。老帖直挂 MediaFire
+    # 链接(无 ouo 短链)也一并收。
     shortlinks: list[str] = []
     seen_links: set[str] = set()
     for link, anchor in SHORTLINK_RE.findall(html):
@@ -431,8 +483,13 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
         if link not in seen_links:
             seen_links.add(link)
             shortlinks.append(link)
+    for link in _collect_mediafire_links(html):
+        if link not in seen_links:
+            seen_links.add(link)
+            shortlinks.append(link)
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
-                         password=password, shortlinks=shortlinks, tags=tags)
+                         password=password, shortlinks=shortlinks, tags=tags,
+                         published=_to_dotted(_date_published_iso(html)))
 
 
 # ---- ouo.io 跳转链(已验证;2026-09 起为两段式) -------------------------------

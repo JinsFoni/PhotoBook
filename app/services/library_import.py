@@ -181,6 +181,8 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
     ``tags``:采集详情页解析到的显示名 tag(None = 无),建合集后一并挂上。
     ``thumbs``:True = 入库后同步入队缩略图生成(完成前 status=processing,
     前台不可见);False = 调用方自管(采集 worker 拿到 slug 后自己入队)。
+    ``today``:写进 published_at 的日期(YYYY.MM.DD);采集链路传源站详情页
+    的发布日期,None 回退导入当天(手动目录导入无源站日期)。
     """
     album_dir = Path(album_dir)
     parent = album_dir.parent
@@ -241,7 +243,7 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
             shutil.move(str(src), str(target))
             moved.append((src, target))
 
-        published = today or datetime.now().strftime("%Y.%m.%d")
+        published = today or datetime.now().strftime("%Y.%m.%d")  # 采集传源站发布日期
         # 缩略图就绪前不前台可见: thumbs=True 直接 processing, 生成完自动发布;
         # thumbs=False(采集 worker)调用方随后自己入队(同样会置 processing)
         initial = "processing" if thumbs else "published"

@@ -228,16 +228,20 @@ def _run_job(job_id: int) -> None:
             return
         infos = []
         for link in target.shortlinks:
-            try:
-                direct_page = net.resolve_ouo(link)
-            except net.UnsupportedHostError as e:
-                _finish(s, job, "failed", str(e))
-                s.commit()
-                return
-            if not direct_page:
-                _finish(s, job, "failed", f"短链解析失败: {link}")
-                s.commit()
-                return
+            # 直挂 MediaFire 链接(老帖无 ouo 短链):跳过 ouo 解析直接取直链
+            if "mediafire.com/" in link:
+                direct_page = link
+            else:
+                try:
+                    direct_page = net.resolve_ouo(link)
+                except net.UnsupportedHostError as e:
+                    _finish(s, job, "failed", str(e))
+                    s.commit()
+                    return
+                if not direct_page:
+                    _finish(s, job, "failed", f"短链解析失败: {link}")
+                    s.commit()
+                    return
             if net.MF_FOLDER_RE.search(direct_page):
                 # 落地是 MediaFire 文件夹(分卷包发布方把所有卷放一夹): API 展开逐卷
                 folder_files = net.mediafire_folder_files(direct_page)
@@ -329,7 +333,8 @@ def _run_job(job_id: int) -> None:
             r = library_import.import_album(
                 s, final_dir, app_settings.media_dir, library_root=library_root,
                 unsorted_dir=str(conf["harvest.unsorted_dir"]),
-                tags=target.tags, thumbs=False)
+                tags=target.tags, thumbs=False,
+                today=target.published or None)
             if r["skipped"]:
                 job.error = "→ 已导入过,跳过"
             else:
