@@ -410,13 +410,13 @@ STRINGS: dict[str, dict[str, str]] = {
     "stopped": {"zh-CN": "已停止", "zh-TW": "已停止"},
 
     # ---- Admin:采集下载页 -----------------------------------------------------------
-    "从 buondua.com 抓取写真 → ouo 链接解析 → MediaFire 下载 → 7zz 解压归档。串行队列,一次一个。": {
-        "zh-CN": "从 buondua.com 抓取写真 → ouo 链接解析 → MediaFire 下载 → 7zz 解压归档。串行队列,一次一个。",
-        "zh-TW": "從 buondua.com 擷取寫真 → ouo 連結解析 → MediaFire 下載 → 7zz 解壓歸檔。序列佇列,一次一個。"},
+    "从 buondua.com / misskon.com / nicesss.com 抓取写真 → ouo 链接解析 → MediaFire 下载 → 7zz 解压归档。串行队列,一次一个。": {
+        "zh-CN": "从 buondua.com / misskon.com / nicesss.com 抓取写真 → ouo 链接解析 → MediaFire 下载 → 7zz 解压归档。串行队列,一次一个。",
+        "zh-TW": "從 buondua.com / misskon.com / nicesss.com 擷取寫真 → ouo 連結解析 → MediaFire 下載 → 7zz 解壓歸檔。序列佇列,一次一個。"},
     "手动提交": {"zh-CN": "手动提交", "zh-TW": "手動提交"},
-    "粘贴写真详情页地址(buondua.com 域名),按序号自动去重。": {
-        "zh-CN": "粘贴写真详情页地址(buondua.com 域名),按序号自动去重。",
-        "zh-TW": "貼上寫真詳情頁地址(buondua.com 網域),按序號自動去重。"},
+    "粘贴写真详情页地址(buondua.com / misskon.com / nicesss.com 域名),按序号自动去重。": {
+        "zh-CN": "粘贴写真详情页地址(buondua.com / misskon.com / nicesss.com 域名),按序号自动去重。",
+        "zh-TW": "貼上寫真詳情頁地址(buondua.com / misskon.com / nicesss.com 網域),按序號自動去重。"},
     "加入队列": {"zh-CN": "加入队列", "zh-TW": "加入佇列"},
     "扫描新写真": {"zh-CN": "扫描新写真", "zh-TW": "掃描新寫真"},
     "自动扫描列表页发现新条目(白/黑名单过滤)。定时任务 {on},每 {h}h,从第 {s} 页扫 {p} 页/轮。": {
@@ -461,9 +461,9 @@ STRINGS: dict[str, dict[str, str]] = {
     "该状态下没有任务": {
         "zh-CN": "该状态下没有任务",
         "zh-TW": "該狀態下沒有任務"},
-    "仅支持 buondua.com 详情页链接": {
-        "zh-CN": "仅支持 buondua.com 详情页链接",
-        "zh-TW": "僅支援 buondua.com 詳情頁連結"},
+    "仅支持 {sites} 详情页链接": {
+        "zh-CN": "仅支持 {sites} 详情页链接",
+        "zh-TW": "僅支援 {sites} 詳情頁連結"},
     "URL 末尾无序号: {url}": {
         "zh-CN": "URL 末尾无序号: {url}",
         "zh-TW": "URL 結尾沒有序號:{url}"},
@@ -631,11 +631,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "zh-TW": "補錄完成:匹配 {m} 個,新關聯 {n} 條,跳過 {k} 個"},
 
     # ---- 浏览器联动 ----------------------------------------------------------
-    "浏览器联动(BuonDua 助手)": {
-        "zh-CN": "浏览器联动(BuonDua 助手)", "zh-TW": "瀏覽器聯動(BuonDua 助手)"},
-    "在油猴(Tampermonkey)安装 BuonDua 助手脚本后,浏览 buondua.com 时卡片右下角会出现下载按钮,点击即可推送到本站任务队列;已在库中的写真显示「已入库」。": {
-        "zh-CN": "在油猴(Tampermonkey)安装 BuonDua 助手脚本后,浏览 buondua.com 时卡片右下角会出现下载按钮,点击即可推送到本站任务队列;已在库中的写真显示「已入库」。",
-        "zh-TW": "在油猴(Tampermonkey)安裝 BuonDua 助手腳本後,瀏覽 buondua.com 時卡片右下角會出現下載按鈕,點擊即可推送到本站任務佇列;已在庫中的寫真顯示「已入庫」。"},
+    "浏览器联动(采集助手)": {
+        "zh-CN": "浏览器联动(采集助手)", "zh-TW": "瀏覽器聯動(採集助手)"},
+    "在油猴(Tampermonkey)安装助手脚本后,浏览 buondua.com / misskon.com / nicesss.com 时卡片上会出现下载按钮,点击即可推送到本站任务队列;已在库中的写真显示「已入库」。": {
+        "zh-CN": "在油猴(Tampermonkey)安装助手脚本后,浏览 buondua.com / misskon.com / nicesss.com 时卡片上会出现下载按钮,点击即可推送到本站任务队列;已在库中的写真显示「已入库」。",
+        "zh-TW": "在油猴(Tampermonkey)安裝助手腳本後,瀏覽 buondua.com / misskon.com / nicesss.com 時卡片上會出現下載按鈕,點擊即可推送到本站任務佇列;已在庫中的寫真顯示「已入庫」。"},
     "安装脚本:": {"zh-CN": "安装脚本:", "zh-TW": "安裝腳本:"},
     "(用安装了 Tampermonkey 的浏览器打开此链接,按提示安装;脚本随本站自动更新)": {
         "zh-CN": "(用安装了 Tampermonkey 的浏览器打开此链接,按提示安装;脚本随本站自动更新)",
@@ -651,8 +651,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "API Key 已重置: {k}(请立即复制,之后只显示尾号)": {
         "zh-CN": "API Key 已重置: {k}(请立即复制,之后只显示尾号)",
         "zh-TW": "API Key 已重設: {k}(請立即複製,之後只顯示尾號)"},
-    "仅支持 buondua.com 详情页链接": {
-        "zh-CN": "仅支持 buondua.com 详情页链接", "zh-TW": "僅支援 buondua.com 詳情頁連結"},
+    "仅支持 {sites} 详情页链接": {
+        "zh-CN": "仅支持 {sites} 详情页链接", "zh-TW": "僅支援 {sites} 詳情頁連結"},
     "已入库,无需重复下载": {"zh-CN": "已入库,无需重复下载", "zh-TW": "已入庫,無需重複下載"},
     "上次{what},如需重试请使用重推": {
         "zh-CN": "上次{what},如需重试请使用重推", "zh-TW": "上次{what},如需重試請使用重推"},

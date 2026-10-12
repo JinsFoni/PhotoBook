@@ -12,6 +12,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
 from curl_cffi import requests as cr
 
@@ -160,8 +161,28 @@ def _serial_from_url(url: str) -> int:
     return int(m.group(1))
 
 
+def serial_from_url(url: str) -> int:
+    """按站点分派的序号提取:buondua 尾段数字 / misskon slug 前缀 / nicesss <id>.html。"""
+    if is_nicesss_url(url):
+        return _serial_from_nicesss_url(url)
+    if is_misskon_url(url):
+        return _serial_from_misskon_url(url)
+    return _serial_from_url(url)
+
+
 def parse_detail_page(url: str, existing_html: str | None = None,
                       model_exclude: str | None = None) -> HarvestTarget:
+    """按站点分派的详情页解析(nicesss 不需要 model_exclude)。"""
+    if is_nicesss_url(url):
+        return parse_nicesss_detail_page(url, existing_html=existing_html)
+    if is_misskon_url(url):
+        return parse_misskon_detail_page(url, existing_html=existing_html,
+                                         model_exclude=model_exclude)
+    return _parse_buondua_detail_page(url, existing_html=existing_html,
+                                      model_exclude=model_exclude)
+
+
+def _parse_buondua_detail_page(url: str, existing_html: str | None = None,                               model_exclude: str | None = None) -> HarvestTarget:
     """解析详情页:标题/标签/模特名/密码/短链。
 
     模特名 = article-tags 里第一个未被 model_exclude(模特名排除词)命中的 tag,
@@ -213,6 +234,180 @@ def download_archive_urls(target: HarvestTarget) -> list[dict]:
         info["page_url"] = direct
         results.append(info)
     return results
+
+
+# ---- nicesss 详情页 ----------------------------------------------------------
+# 与 buondua 不同:页面没有本页专属 tag 容器(侧边栏标签云是全站热门,与文章
+# 无关),模特名只能从标题提取。标题格式非常规整(2026-10 全站采样):
+#   [Xiuren秀人网]2026.01.30 NO.11301 妲己_Toxic[70+1P／959MB] - 呦糖社
+#   [XINGYAN星颜社]2026.01.21 VOL.456 时安安[82+1P／910MB] - 呦糖社
+# 出品方放 tags[0],模特名 = 方括号日期编号后、体积方括号前的那段。
+
+NICESSS_HOST = "nicesss.com"
+
+NICESSS_TITLE_RE = re.compile(
+    r'^\[([^]]+)\]\s*(?:\d{4}\.\d{2}\.\d{2}\s*)?'
+    r'(?:NO\.|VOL\.|Vol\.)?\s*\d*\s*(.+?)\[')
+# 密码只取正文 <font> 标签里的(meta description 也含这段文字,裸匹配会串进来)
+NICESSS_PASSWORD_RE = re.compile(
+    r'<font[^>]*>\[?解壓密碼-Password\]?\s*[：:]\s*([^<]+)')
+# 下载按钮: <a href="https://ouo.io/xxx" ...><span>Download</span>…,正文挂两遍,去重
+NICESSS_SHORTLINK_RE = re.compile(r'href="(https?://ouo\.(?:io|press)/[^"]+)"')
+
+
+def is_nicesss_url(url: str) -> bool:
+    host = urlparse(url).netloc.lower() if url else ""
+    return host == NICESSS_HOST or host.endswith("." + NICESSS_HOST)
+
+
+def _serial_from_nicesss_url(url: str) -> int:
+    """…/archives/xr/xiurw/464006.html → 464006。"""
+    m = re.search(r"/(\d+)\.html?(?:[?#]|$)", url)
+    if not m:
+        raise ValueError(f"URL 末尾无序号: {url}")
+    return int(m.group(1))
+
+
+def parse_nicesss_detail_page(url: str, existing_html: str | None = None) -> HarvestTarget:
+    """解析 nicesss 详情页:标题 → 出品方 + 模特名,模特名同时作为唯一 tag。
+
+    (用户需求:解析到的模特名作为 tag,直接进黑白名单过滤与 import_album
+    的标签关联。)
+    """
+    html = existing_html if existing_html is not None else fetch_html(url)
+    serial = _serial_from_nicesss_url(url)
+
+    # og:title 带 "- 呦糖社" 后缀(另一个无后缀的 og:title 在 JSON-LD 里)
+    m = OG_TITLE_RE.search(html)
+    title = m.group(1).strip() if m else ""
+    title = re.sub(r"\s*-\s*呦糖社\s*$", "", title)
+
+    publisher = ""
+    model_name = ""
+    tm = NICESSS_TITLE_RE.match(title)
+    if tm:
+        publisher, model_name = tm.group(1).strip(), tm.group(2).strip()
+
+    pm = NICESSS_PASSWORD_RE.search(html)
+    password = pm.group(1).strip() if pm else ""
+
+    shortlinks: list[str] = []
+    seen: set[str] = set()
+    for link in NICESSS_SHORTLINK_RE.findall(html):
+        if link not in seen:
+            seen.add(link)
+            shortlinks.append(link)
+
+    # nicesss 只挂 MediaFire 备份(页面明确标注「下載網盤:MediaFire」),
+    # 锚文本没有网盘名,无法像 buondua 那样按锚文本过滤。
+    tags = [model_name] if model_name else []
+    if publisher:
+        tags = [publisher, *tags]
+    return HarvestTarget(serial=serial, title=title, model_name=model_name,
+                         password=password, shortlinks=shortlinks, tags=tags)
+
+
+# ---- misskon 列表页 ----------------------------------------------------------
+# WordPress 形态: 绝对 URL /<serial>-<slug>/,分页 /page/2/(buondua 是相对路径
+# + ?start=N)。LIST_LINK_RE(相对路径正则)不适用,单独一条。
+
+MISSKON_LIST_LINK_RE = re.compile(
+    r'href="(https://misskon\.com/(\d{3,})-[^"/]*/?)"')
+# 正文卡片容器(侧栏 widget 的「热门文章」也是同形态链接,必须只在 article 里找)
+MISSKON_CARD_RE = re.compile(
+    r'<article class="item-list">(.*?)</article>', re.S)
+
+
+def scan_misskon_list_page(base_url: str) -> tuple[list[tuple[int, str]], bool]:
+    """解析 misskon 列表页,返回 ([(序号, 详情绝对 URL)...], 有无下一页)。"""
+    html = fetch_html(base_url)
+    found: dict[int, str] = {}
+    for card in MISSKON_CARD_RE.findall(html):
+        for url, serial in MISSKON_LIST_LINK_RE.findall(card):
+            found.setdefault(int(serial), url)
+    links = sorted(found.items())
+    has_next = bool(re.search(r'href="https://misskon\.com/page/\d+/"', html))
+    return links, has_next
+
+
+MISSKON_HOST = "misskon.com"
+
+# WordPress(Tie 主题)结构,与 buondua(Joomla)不同但语义一致:
+# - 列表链接绝对 URL: https://misskon.com/119420-bluecake-lee-ahrin-red-night-255-photos/
+# - 详情页无 og:title,标题在 <h1 class="name post-title entry-title">
+# - tag 容器: <p class="post-tag">Tags<a rel="tag">BLUECAKE</a>…(模特名/出品方顺序不定)
+# - 密码: "Password unrar:</strong> <span>misskon.com</span>" 或 <input value="misskon.com">
+MISSKON_H1_RE = re.compile(
+    r'<h1[^>]*class="[^"]*(?:post-title|entry-title)[^"]*"[^>]*>(.*?)</h1>', re.S)
+MISSKON_TAG_ROW_RE = re.compile(r'<p class="post-tag">Tags(.*?)</p>', re.S)
+MISSKON_TAG_LINK_RE = re.compile(r'href="https://misskon\.com/tag/[^"]*"[^>]*>([^<]+)<')
+MISSKON_PASSWORD_RE = re.compile(
+    r'Password unrar:?</strong>\s*(?:<span[^>]*>([^<]+)</span>|<input[^>]*value="([^"]+)")')
+
+
+def is_misskon_url(url: str) -> bool:
+    host = urlparse(url).netloc.lower() if url else ""
+    return host == MISSKON_HOST or host.endswith("." + MISSKON_HOST)
+
+
+def _serial_from_misskon_url(url: str) -> int:
+    """…/119420-bluecake-lee-ahrin-red-night-255-photos/ → 119420。
+
+    分卷文章尾段是 /2/ /3/(无序号),前一段 slug 里的序号才是本体。
+    """
+    clean = url.split("?")[0].split("#")[0].rstrip("/")
+    clean = re.sub(r"/\d+$", "", clean)          # 掉尾段纯数字分页段
+    m = re.search(r"/(\d{3,})(?:-|$)", clean)
+    if not m:
+        raise ValueError(f"URL 无序号: {url}")
+    return int(m.group(1))
+
+
+def _misskon_title(html: str) -> str:
+    m = MISSKON_H1_RE.search(html)
+    if m:
+        return re.sub(r"<[^>]+>", "", m.group(1)).strip()
+    return ""
+
+
+def parse_misskon_detail_page(url: str, existing_html: str | None = None,
+                              model_exclude: str | None = None) -> HarvestTarget:
+    """解析 misskon 详情页:结构语义与 buondua 一致(标题/tag/密码/ouo 短链),
+    选择器不同;模特名同样从 tag 里按排除词挑。"""
+    from .filters import pick_model_name
+
+    html = existing_html if existing_html is not None else fetch_html(url)
+    serial = _serial_from_misskon_url(url)
+
+    title = _misskon_title(html)
+
+    tags: list[str] = []
+    seen: set[str] = set()
+    tm = MISSKON_TAG_ROW_RE.search(html)
+    if tm:
+        for name in MISSKON_TAG_LINK_RE.findall(tm.group(1)):
+            label = name.strip()
+            if label and label.lower() not in seen:
+                seen.add(label.lower())
+                tags.append(label)
+    model_name = pick_model_name(tags, model_exclude)
+
+    pm = MISSKON_PASSWORD_RE.search(html)
+    password = (pm.group(1) or pm.group(2)).strip() if pm else ""
+
+    # ouo 短链 + 锚文本 MediaFire 过滤:与 buondua 同构(直挂的 terabox 链
+    # 不是 ouo 域,SHORTLINK_RE 天然滤掉),去重保序
+    shortlinks: list[str] = []
+    seen_links: set[str] = set()
+    for link, anchor in SHORTLINK_RE.findall(html):
+        label = ANCHOR_LABEL_RE.search(re.sub(r"<[^>]+>", "", anchor))
+        if label and label.group(1).lower() != "mediafire":
+            continue
+        if link not in seen_links:
+            seen_links.add(link)
+            shortlinks.append(link)
+    return HarvestTarget(serial=serial, title=title, model_name=model_name,
+                         password=password, shortlinks=shortlinks, tags=tags)
 
 
 # ---- ouo.io 跳转链(已验证;2026-09 起为两段式) -------------------------------

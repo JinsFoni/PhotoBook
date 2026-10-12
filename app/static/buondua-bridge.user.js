@@ -1,11 +1,15 @@
 // ==UserScript==
-// @name         BuonDua → PhotoBook 助手
+// @name         BuonDua/misskon/nicesss → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.1.1
-// @description  在 buondua.com 卡片右下角与详情页标签行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列
+// @version      1.3.0
+// @description  在 buondua.com / misskon.com / nicesss.com 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列
 // @author       PhotoBook
 // @match        https://buondua.com/*
 // @match        https://www.buondua.com/*
+// @match        https://misskon.com/*
+// @match        https://www.misskon.com/*
+// @match        https://www.nicesss.com/*
+// @match        https://nicesss.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -141,27 +145,59 @@
   const CLS = { new: "", queued: "is-busy", done: "is-done", failed: "is-off", skipped: "is-skip" };
 
   // ---- 卡片发现 ---------------------------------------------------------------
-  // 列表页卡片: div.items-row[data-id="<serial>"],封面容器 .item-thumb(相对定位)
-  // 详情页: URL 尾段 serial,封面容器 .post-image 或第一张 .item-thumb
+  // buondua 列表页卡片: div.items-row[data-id="<serial>"],封面容器 .item-thumb
+  // misskon 列表页卡片: article.item-list(无 id, 序号取自详情链接 /<serial>-…/),
+  //                     封面容器 .post-thumbnail
+  // nicesss 列表页卡片: article.post[id="post-<id>"],封面容器 .entry-media
+  //                     (卡片序号 = 详情 URL 的 <id>.html,与 post id 一致)
+  // 详情页: URL 尾段 serial,封面容器 .post-image / 标题行(.entry-title, nicesss)
+  const IS_NICESSS = /(^|\.)nicesss\.com$/.test(location.hostname);
+  const IS_MISSKON = /(^|\.)misskon\.com$/.test(location.hostname);
+
   function cardNodes() {
+    if (IS_NICESSS) {
+      return Array.from(document.querySelectorAll("article.post[id^='post-']"));
+    }
+    if (IS_MISSKON) {
+      return Array.from(document.querySelectorAll("article.item-list"));
+    }
     return Array.from(document.querySelectorAll("div.items-row[data-id]"));
   }
 
+  // misskon 详情 URL: /<serial>-<slug>/(分卷尾段 /2/ /3/ 无 serial,取前段)
+  function misskonSerialFromPath(path) {
+    const m = path.replace(/\/\d+\/?$/, "").match(/\/(\d{3,})(?:-|$)/);
+    return m ? m[1] : null;
+  }
+
   function serialFromLocation() {
+    if (IS_NICESSS) {
+      const m = location.pathname.match(/\/(\d+)\.html?$/);
+      return m ? m[1] : null;
+    }
+    if (IS_MISSKON) return misskonSerialFromPath(location.pathname);
     const m = location.pathname.match(/-(\d+)\/?$/);
     return m ? m[1] : null;
   }
 
-  // 详情页判定: 必须真的有详情 DOM。tag 筛选页 URL 也是 -<数字> 结尾
-  // (那是标签 id), 不能凭 URL 尾号当详情页, 否则会兜底抓到第一张卡片的
+  // 详情页判定: 必须真的有详情 DOM。tag 筛选页 URL 也可能以数字结尾
+  // (buondua 是标签 id), 不能凭 URL 尾号当详情页, 否则会兜底抓到第一张卡片的
   // 封面并把它的徽标覆盖成标签 id 的状态。
   function isDetailPage() {
+    if (IS_NICESSS) {
+      return Boolean(document.querySelector(".article-content .entry-title"));
+    }
+    if (IS_MISSKON) {
+      // 详情页有 h1.post-title + p.post-tag;列表页两者皆无
+      return Boolean(document.querySelector("h1.post-title, p.post-tag"));
+    }
     return Boolean(document.querySelector(".article-tags, .post-image"));
   }
 
   function ensureHost(card) {
-    // .item-thumb 需要 position:relative 才能挂绝对定位按钮
-    const host = card.querySelector(".item-thumb");
+    const sel = IS_NICESSS ? ".entry-media"
+      : IS_MISSKON ? ".post-thumbnail" : ".item-thumb";
+    const host = card.querySelector(sel);
     if (!host) return null;
     if (getComputedStyle(host).position === "static") {
       host.style.position = "relative";
@@ -169,7 +205,46 @@
     return host;
   }
 
+  function cardSerial(card) {
+    if (IS_NICESSS) {
+      // 卡片序号取详情链接尾段 id(post id 与之一致,链接更权威)
+      const a = card.querySelector("a[href*='.html']");
+      const m = a ? a.href.match(/\/(\d+)\.html?(?:[?#]|$)/) : null;
+      if (m) return m[1];
+      return card.id.replace(/^post-/, "");
+    }
+    if (IS_MISSKON) {
+      const a = card.querySelector("a[href*='://misskon.com/']");
+      return a ? (misskonSerialFromPath(a.pathname) || "") : "";
+    }
+    return card.dataset.id;
+  }
+
   function ensureDetailHost() {
+    if (IS_NICESSS) {
+      // 标题 h1 行(.entry-title),徽标内联挂标题右侧
+      const title = document.querySelector(".article-content .entry-title");
+      if (title) {
+        title.style.display = "flex";
+        title.style.flexWrap = "wrap";
+        title.style.alignItems = "center";
+        title.style.gap = "8px";
+        return title;
+      }
+      return null;
+    }
+    if (IS_MISSKON) {
+      // tag 行 p.post-tag,徽标内联挂行尾(与 buondua 的 .tags 行同款布局)
+      const tagsRow = document.querySelector("p.post-tag");
+      if (tagsRow) {
+        tagsRow.style.display = "flex";
+        tagsRow.style.flexWrap = "wrap";
+        tagsRow.style.alignItems = "center";
+        tagsRow.style.gap = "6px";
+        return tagsRow;
+      }
+      return null;
+    }
     // 首选: 标签行(.article-tags > .tags), 徽标挂行最右侧;
     // 找不到再退回封面容器(.post-image / .item-thumb)
     const tagsRow = document.querySelector(".article-tags .tags");
@@ -190,7 +265,8 @@
   function setBadge(host, serial, state, pending) {
     const st = pending || state;
     const text = pending === "pending" ? "…" : (LABEL[st] || st);
-    const inline = host.classList.contains("tags");  // 标签行内联布局, 非封面绝对定位
+    // 标签行内联布局(标记类含 tags / post-tag), 非封面绝对定位
+    const inline = /(^|\s)(tags|post-tag)(\s|$)/.test(host.className);
     let el = host.querySelector(".pb-badge");
     if (!el) {
       el = document.createElement("button");
@@ -210,6 +286,7 @@
       (inline ? "pb-badge--inline " : "") +
       (pending === "pending" ? "is-wait" : CLS[st] || "");
     el.textContent = text;
+    if (inline) el.style.marginLeft = "auto";
     // 已入库/队列中的按钮不响应点击
   }
 
@@ -220,7 +297,7 @@
   function queryAndRender() {
     lastQuery = Date.now();
     const cards = cardNodes();
-    const serials = new Set(cards.map(c => c.dataset.id));
+    const serials = new Set(cards.map(cardSerial));
     const ds = isDetailPage() ? serialFromLocation() : null;
     if (ds) serials.add(ds);
     if (!serials.size) return;
@@ -231,8 +308,9 @@
         data.items.forEach(i => { map[i.serial] = i.state; });
         cards.forEach(c => {
           const host = ensureHost(c);
-          if (host) setBadge(host, c.dataset.id, map[c.dataset.id] || "new",
-            pending.has(c.dataset.id) ? "pending" : null);
+          const serial = cardSerial(c);
+          if (host) setBadge(host, serial, map[serial] || "new",
+            pending.has(serial) ? "pending" : null);
         });
         if (ds) {
           const host = ensureDetailHost();
@@ -246,8 +324,11 @@
     if (!pingOk) { alert("PhotoBook 未连接,请在脚本菜单重新设置"); return; }
     const state = el.dataset.state;
     if (state === "done" || state === "queued" || el.dataset.busy) return;
-    // 列表页卡片自带 a.item-link; 详情页本身就是详情 URL, 直接用
-    const link = host.querySelector("a.item-link");
+    // 列表页卡片自带详情链接(a.item-link / misskon 的详情链接 / nicesss 的
+    // a[href*='.html']); 详情页本身就是详情 URL, 直接用
+    const linkSel = IS_NICESSS ? "a[href*='.html']"
+      : IS_MISSKON ? "a[href*='://misskon.com/']" : "a.item-link";
+    const link = host.querySelector(linkSel);
     const realUrl = link ? link.href : location.href;
     el.dataset.busy = "1";
     setBadge(host, serial, state, "pending");

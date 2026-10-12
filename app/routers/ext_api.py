@@ -102,11 +102,16 @@ class PushBody(BaseModel):
     force: bool = False
 
 
+SUPPORTED_HOSTS = ("buondua.com", net.NICESSS_HOST, net.MISSKON_HOST)
+
+
 def _serial_from_url(url: str) -> int:
     from urllib.parse import urlparse
-    if "buondua.com" not in urlparse(url).netloc.lower():
-        raise ValueError(t("仅支持 buondua.com 详情页链接"))
-    return net._serial_from_url(url)  # ValueError: 无法解析序号
+    host = urlparse(url).netloc.lower()
+    if not any(h in host for h in SUPPORTED_HOSTS):
+        raise ValueError(t("仅支持 {sites} 详情页链接",
+                           sites=" / ".join(SUPPORTED_HOSTS)))
+    return net.serial_from_url(url)  # ValueError: 无法解析序号
 
 
 def _push_one(s: Session, url: str, force: bool) -> dict[str, Any]:

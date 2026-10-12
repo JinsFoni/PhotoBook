@@ -165,6 +165,17 @@ def test_push_rejects_non_buondua(ext_key, client):
     assert item["ok"] is False and item["state"] == "rejected"
 
 
+def test_push_accepts_misskon(ext_key, client):
+    """misskon URL 也走同一推送入口(序号体系独立,取 slug 前缀)。"""
+    url = "https://misskon.com/994020-misskon-ext-test-photos/"
+    try:
+        r = client.post("/api/ext/harvest", json={"url": url}, headers=H(ext_key))
+        item = r.json()["items"][0]
+        assert item["ok"] is True and item["serial"] == 994020
+    finally:
+        _cleanup_serial(994020)
+
+
 def test_push_force_requeues_failed(ext_key, client):
     _hist(9990011, "failed")
     url = URL.format(serial=9990011)

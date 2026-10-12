@@ -8,7 +8,7 @@
     <div class="wrap">
       <div class="page-head">
         <h1 class="page-head__title">{{ t('Harvest') }}</h1>
-        <p class="page-head__sub">{{ t('从 buondua.com 抓取写真 → ouo 链接解析 → MediaFire 下载 → 7zz 解压归档。串行队列,一次一个。') }}</p>
+        <p class="page-head__sub">{{ t('从 buondua.com / misskon.com / nicesss.com 抓取写真 → ouo 链接解析 → MediaFire 下载 → 7zz 解压归档。串行队列,一次一个。') }}</p>
       </div>
 
       <div class="panel-grid">
@@ -32,10 +32,10 @@
           <div class="grid grid--2" style="gap:var(--s5)">
             <section style="border:1px solid var(--line);padding:var(--s5)">
               <h2 class="t-h3">{{ t('手动提交') }}</h2>
-              <p class="t-small" style="margin:var(--s2) 0 var(--s4)">{{ t('粘贴写真详情页地址(buondua.com 域名),按序号自动去重。') }}</p>
+              <p class="t-small" style="margin:var(--s2) 0 var(--s4)">{{ t('粘贴写真详情页地址(buondua.com / misskon.com / nicesss.com 域名),按序号自动去重。') }}</p>
               <form method="post" action="/admin/harvest/submit" style="display:flex;gap:var(--s3)">
                 <input class="input" type="url" name="url" required
-                       placeholder="https://buondua.com/…-12345" style="flex:1">
+                       placeholder="https://www.nicesss.com/archives/xr/xiurw/123456.html" style="flex:1">
                 <button class="btn" type="submit">{{ t('加入队列') }}</button>
               </form>
             </section>

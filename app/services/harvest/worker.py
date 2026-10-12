@@ -70,10 +70,12 @@ def enqueue_manual(url: str) -> tuple[bool, str]:
     from ...i18n import t
 
     host = urlparse(url).netloc.lower()
-    if "buondua.com" not in host:
-        return False, t("仅支持 buondua.com 详情页链接")
+    supported = ("buondua.com", net.NICESSS_HOST, net.MISSKON_HOST)
+    if not any(h in host for h in supported):
+        return False, t("仅支持 {sites} 详情页链接",
+                        sites=" / ".join(supported))
     try:
-        serial = net._serial_from_url(url)
+        serial = net.serial_from_url(url)
     except ValueError as e:
         return False, str(e)
     s = SessionLocal()
@@ -92,33 +94,38 @@ def enqueue_manual(url: str) -> tuple[bool, str]:
 # ---- 扫描 -------------------------------------------------------------------
 
 def scan_once(pages: int | None = None) -> dict:
-    """扫一轮列表页 → 新序号入队。返回统计。"""
+    """扫一轮列表页(buondua + misskon)→ 新序号入队。返回统计。"""
     with _scan_lock:
         s = SessionLocal()
         stats = {"scanned_pages": 0, "seen": 0, "enqueued": 0, "stopped_early": False}
         try:
             conf = settings_store.harvest_conf(s)
-            base = "https://buondua.com"
             max_pages = pages if pages is not None else int(conf["harvest.pages_per_round"])
             start = int(conf.get("harvest.start", 0))
-            for _ in range(max_pages):
-                url = base + "/" if start == 0 else f"{base}/?start={start}"
-                links, _has_next = net.scan_list_page(url)
-                stats["scanned_pages"] += 1
-                stats["seen"] += len(links)
-                new_count = 0
-                for serial, path in links:
-                    job = enqueue(s, serial, base + path, source="auto")
-                    if job:
-                        new_count += 1
-                stats["enqueued"] += new_count
-                # 整页均为已处理 → 提前停止(§29)
-                if new_count == 0 and links:
-                    stats["stopped_early"] = True
+            scanners = (
+                ("buondua", net.scan_list_page, _buondua_page_url),
+                ("https://misskon.com", net.scan_misskon_list_page,
+                 lambda base, n: base if n == 0 else f"{base}/page/{n + 1}/"),
+            )
+            for base, scan, page_url in scanners:
+                for n in range(max_pages):
+                    links, _has_next = scan(page_url(base, n))
+                    stats["scanned_pages"] += 1
+                    stats["seen"] += len(links)
+                    new_count = 0
+                    for serial, link in links:
+                        job = enqueue(s, serial, link, source="auto")
+                        if job:
+                            new_count += 1
+                    stats["enqueued"] += new_count
+                    # 整页均为已处理 → 提前停止(§29)
+                    if new_count == 0 and links:
+                        stats["stopped_early"] = True
+                        break
+                    if not links:
+                        break
+                if stats["stopped_early"]:
                     break
-                if not links:
-                    break
-                start += 20
             return stats
         except Exception as e:
             log.warning("scan failed: %s", e)
@@ -127,6 +134,13 @@ def scan_once(pages: int | None = None) -> dict:
         finally:
             s.commit()
             s.close()
+
+
+def _buondua_page_url(base: str, n: int) -> str:
+    """buondua(Joomla)第 n 页 URL: 首页无参数,之后 ?start=N。"""
+    if base == "buondua":
+        base = "https://buondua.com"
+    return base + "/" if n == 0 else f"{base}/?start={n * 20 + 20}"
 
 
 # ---- 任务执行 ---------------------------------------------------------------
