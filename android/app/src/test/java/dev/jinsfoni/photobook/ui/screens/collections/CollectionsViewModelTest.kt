@@ -105,11 +105,24 @@ class CollectionsViewModelTest {
         vm.start(null)
         waitUntil { vm.state.value.items.isNotEmpty() }
         page("b")
-        vm.toggleSort()
+        vm.setSort(dev.jinsfoni.photobook.ui.screens.collections.CollectionSort.PUBLISHED_OLDEST)
         waitUntil { vm.state.value.items.firstOrNull()?.slug == "b" }
         server.takeRequest()            // 第一次(sort=latest)
         val p2 = server.takeRequest()   // 重载请求
         assertTrue(p2.path!!.contains("sort=oldest"))
+    }
+
+    @Test
+    fun `added sort passes added_ params`() = runTest(dispatcher.scheduler) {
+        page("a")
+        vm.start(null)
+        waitUntil { vm.state.value.items.isNotEmpty() }
+        page("b")
+        vm.setSort(dev.jinsfoni.photobook.ui.screens.collections.CollectionSort.ADDED_OLDEST)
+        waitUntil { vm.state.value.items.firstOrNull()?.slug == "b" }
+        server.takeRequest()            // 第一次(sort=latest)
+        val p2 = server.takeRequest()   // 重载请求
+        assertTrue(p2.path!!.contains("sort=added_oldest"))
     }
 
     @Test

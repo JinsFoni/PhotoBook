@@ -256,12 +256,18 @@ async def mobile_discover(s: Session = Depends(get_db),
 async def mobile_collections(s: Session = Depends(get_db), tag: str = "",
                              page: int = Query(1, ge=1),
                              page_size: int = Query(20, ge=1, le=100, alias="pageSize"),
-                             sort: str = Query("latest", pattern="^(latest|oldest)$")):
+                             sort: str = Query("latest",
+                                               pattern="^(latest|oldest|added_latest|added_oldest)$")):
     cols = _published_collections(s)
     if tag:
         cols = [c for c in cols if any(t.name == tag for t in c.tags)]
     if sort == "oldest":
         cols = list(reversed(cols))
+    elif sort == "added_latest":
+        # 入库日期:created_at 新→旧,同刻按 id 稳定
+        cols = sorted(cols, key=lambda c: (c.created_at, c.id), reverse=True)
+    elif sort == "added_oldest":
+        cols = sorted(cols, key=lambda c: (c.created_at, c.id))
     total = len(cols)
     start = (page - 1) * page_size
     items = cols[start:start + page_size]

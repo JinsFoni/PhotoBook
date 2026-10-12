@@ -17,16 +17,23 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -112,7 +119,8 @@ fun CollectionsScreen(
             }
         }
 
-        // 筛选行:排序图标 + 计数(原型 .filterrow;标签筛选由进入参数决定,M1 不做抽屉)
+        // 筛选行:排序菜单(发布/入库 × 最新/最早四档)+ 计数
+        //(原型 .filterrow;标签筛选由进入参数决定,M1 不做抽屉)
         Row(
             Modifier
                 .fillMaxWidth()
@@ -120,14 +128,7 @@ fun CollectionsScreen(
                 .padding(bottom = 15.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            dev.jinsfoni.photobook.ui.icons.StrokeIcon(
-                if (state.sort == "latest") dev.jinsfoni.photobook.ui.icons.SortLatestIcon else dev.jinsfoni.photobook.ui.icons.SortOldestIcon,
-                size = 20.dp,
-                tint = colors.ink2,
-                modifier = Modifier
-                    .photoClickable(vm::toggleSort)
-                    .padding(4.dp),
-            )
+            SortMenu(state.sort, vm::setSort, colors.ink2)
             Spacer(Modifier.weight(1f))
             Text(
                 state.countText,
@@ -205,6 +206,75 @@ private fun GridSkeleton() {
         Row(horizontalArrangement = Arrangement.spacedBy(13.dp)) {
             SkeletonBox(Modifier.weight(1f))
             SkeletonBox(Modifier.weight(1f))
+        }
+    }
+}
+
+/**
+ * 排序菜单:锚点图标随方向翻转(箭头朝下=最新、朝上=最早),弹层按
+ * 日期轴分组(发布/入库),每行右侧 [轴 + 方向] 的组合选中态打勾。
+ */
+@Composable
+private fun SortMenu(sort: CollectionSort, onSelect: (CollectionSort) -> Unit, tint: Color) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        dev.jinsfoni.photobook.ui.icons.StrokeIcon(
+            if (sort == CollectionSort.PUBLISHED_LATEST || sort == CollectionSort.ADDED_LATEST) {
+                dev.jinsfoni.photobook.ui.icons.SortLatestIcon
+            } else {
+                dev.jinsfoni.photobook.ui.icons.SortOldestIcon
+            },
+            size = 20.dp,
+            tint = tint,
+            modifier = Modifier
+                .photoClickable { expanded = true }
+                .padding(4.dp),
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            val axes = listOf(
+                stringResource(R.string.sort_by_published) to listOf(
+                    CollectionSort.PUBLISHED_LATEST, CollectionSort.PUBLISHED_OLDEST),
+                stringResource(R.string.sort_by_added) to listOf(
+                    CollectionSort.ADDED_LATEST, CollectionSort.ADDED_OLDEST),
+            )
+            axes.forEachIndexed { ai, (label, options) ->
+                if (ai > 0) HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text(label, style = PhotoType.caption) },
+                    onClick = {},
+                    enabled = false,
+                )
+                options.forEach { s ->
+                    val selected = s == sort
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    stringResource(if (s.name.endsWith("_LATEST")) R.string.sort_latest else R.string.sort_earliest),
+                                    style = PhotoType.caption,
+                                    color = if (selected) tint else tint.copy(alpha = 0.6f),
+                                )
+                                Spacer(Modifier.weight(1f))
+                                if (selected) {
+                                    dev.jinsfoni.photobook.ui.icons.StrokeIcon(
+                                        dev.jinsfoni.photobook.ui.icons.CheckIcon,
+                                        size = 14.dp,
+                                        tint = tint,
+                                    )
+                                }
+                            }
+                        },
+                        onClick = {
+                            expanded = false
+                            onSelect(s)
+                        },
+                    )
+                }
+            }
         }
     }
 }

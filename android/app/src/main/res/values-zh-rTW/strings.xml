@@ -17,6 +17,8 @@
     <string name="tags_count_fmt">標籤 %d</string>
     <string name="sort_latest">最新</string>
     <string name="sort_earliest">最早</string>
+    <string name="sort_by_published">按發布日期</string>
+    <string name="sort_by_added">按入庫日期</string>
     <string name="empty_collections">還沒有寫真</string>
     <string name="empty_collections_pull">還沒有寫真,下拉重新整理試試</string>
     <string name="empty_models">還沒有模特兒</string>

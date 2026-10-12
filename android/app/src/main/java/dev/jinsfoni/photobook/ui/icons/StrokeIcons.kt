@@ -163,6 +163,10 @@ val SortOldestIcon = part {
     moveTo(13.5f, 9.5f); lineTo(17f, 6f); lineTo(20.5f, 9.5f)
 }
 
+val CheckIcon = part {
+    moveTo(5f, 12.5f); lineToRelative(4.5f, 4.5f); lineToRelative(9f, -10f)
+}
+
 val HeartIcon = part {
     moveTo(12f, 21f)
     // s-7.5-4.7-10-9.3(无前曲,反射控制点=当前点 → 退化为普通相对曲线)

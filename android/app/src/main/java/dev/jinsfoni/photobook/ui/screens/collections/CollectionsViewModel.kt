@@ -12,6 +12,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * S2 排序四档:日期轴(发布 published_at / 入库 created_at)× 方向(最新/最早)。
+ * 服务端 sort 参数:latest|oldest(发布)、added_latest|added_oldest(入库)。
+ */
+enum class CollectionSort(val apiValue: String) {
+    PUBLISHED_LATEST("latest"),
+    PUBLISHED_OLDEST("oldest"),
+    ADDED_LATEST("added_latest"),
+    ADDED_OLDEST("added_oldest"),
+}
+
 data class CollectionsUiState(
     val loading: Boolean = true,       // 首载骨架
     val loadingMore: Boolean = false,  // 追加页
@@ -19,7 +30,7 @@ data class CollectionsUiState(
     val items: List<CollectionCard> = emptyList(),
     val total: Int = 0,
     val tag: String? = null,
-    val sort: String = "latest",       // latest | oldest
+    val sort: CollectionSort = CollectionSort.PUBLISHED_LATEST,
     val error: String? = null,
     val endReached: Boolean = false,
 ) {
@@ -50,8 +61,9 @@ class CollectionsViewModel @Inject constructor(
         loadFirst()
     }
 
-    fun toggleSort() {
-        _state.value = _state.value.copy(sort = if (_state.value.sort == "latest") "oldest" else "latest")
+    fun setSort(sort: CollectionSort) {
+        if (sort == _state.value.sort) return
+        _state.value = _state.value.copy(sort = sort)
         loadFirst()
     }
 
@@ -68,7 +80,7 @@ class CollectionsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val st = _state.value
-                val (items, total) = repo.collections(st.tag, 1, pageSize, st.sort)
+                val (items, total) = repo.collections(st.tag, 1, pageSize, st.sort.apiValue)
                 page = 1
                 _state.value = _state.value.copy(
                     refreshing = false, items = items, total = total,
@@ -86,7 +98,7 @@ class CollectionsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val s = _state.value
-                val (items, total) = repo.collections(s.tag, 1, pageSize, s.sort)
+                val (items, total) = repo.collections(s.tag, 1, pageSize, s.sort.apiValue)
                 _state.value = _state.value.copy(
                     loading = false, items = items, total = total,
                     endReached = items.size >= total,
@@ -105,7 +117,7 @@ class CollectionsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val next = page + 1
-                val (items, total) = repo.collections(s.tag, next, pageSize, s.sort)
+                val (items, total) = repo.collections(s.tag, next, pageSize, s.sort.apiValue)
                 page = next
                 _state.value = _state.value.copy(
                     loadingMore = false,
