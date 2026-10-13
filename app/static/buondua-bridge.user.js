@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BuonDua/misskon/nicesss → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.3.1
-// @description  在 buondua.com / misskon.com / nicesss.com 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列
+// @version      1.4.0
+// @description  在 buondua.com / misskon.com / nicesss.com 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列(同一本写真跨站转载也判已入库)
 // @author       PhotoBook
 // @match        https://buondua.com/*
 // @match        https://www.buondua.com/*
@@ -298,7 +298,21 @@
 
   // ---- 状态查询 ---------------------------------------------------------------
   const pending = new Set();   // 本页刚点过、等待变"队列中"的 serial
-  let queryTimer = null;
+
+  // 本地取不到序号的卡片/详情页(misskon 老帖 slug 无 <序号>- 前缀):
+  // 徽标没有 serial 可查, 交给服务端按详情 URL 解析后再回填。
+  // 收集本页所有这类详情 URL: 卡片链接 + 详情页自身。
+  function unknownUrls() {
+    const urls = new Set();
+    if (IS_MISSKON) {
+      cardNodes().forEach(c => {
+        const a = c.querySelector("a[href*='://misskon.com/']");
+        if (a && !misskonSerialFromPath(a.pathname)) urls.add(a.href);
+      });
+      if (isDetailPage() && !serialFromLocation()) urls.add(location.href);
+    }
+    return Array.from(urls);
+  }
 
   function queryAndRender() {
     lastQuery = Date.now();
@@ -306,7 +320,15 @@
     const serials = new Set(cards.map(cardSerial));
     const ds = isDetailPage() ? serialFromLocation() : null;
     if (ds) serials.add(ds);
-    if (!serials.size) return;
+    serials.delete("");
+    const unknown = unknownUrls();
+    if (!serials.size && !unknown.length) return;
+
+    // 无序号可查(整页都是老帖): 直接走 URL 解析通道
+    if (!serials.size && unknown.length) {
+      resolveUnknown(unknown, cards);
+      return;
+    }
     api("GET", "/api/ext/status?serials=" + Array.from(serials).join(","), null,
       function (ok, data) {
         if (!ok || !data || !data.items) return;
@@ -321,6 +343,42 @@
         if (ds) {
           const host = ensureDetailHost();
           if (host) setBadge(host, ds, map[ds] || "new", pending.has(ds) ? "pending" : null);
+        }
+      });
+  }
+
+  // 老帖通道: POST /api/ext/status-by-url 让服务端按 URL 解析序号并判态。
+  // 返回的 serial 同时回填徽标(后续轮询就能按序号查, 不再走这条通道)。
+  function resolveUnknown(urls, cards) {
+    api("POST", "/api/ext/status-by-url",
+      { urls: urls },
+      function (ok, data) {
+        if (!ok || !data || !data.items) return;
+        const byUrl = {};
+        data.items.forEach(i => { byUrl[i.url] = i; });
+        cards.forEach(c => {
+          const a = c.querySelector("a[href*='://misskon.com/']");
+          if (!a) return;
+          const item = byUrl[a.href];
+          const host = ensureHost(c);
+          if (!host) return;
+          if (!item || item.serial == null) {
+            setBadge(host, "", item && item.state ? item.state : "new", null);
+            return;
+          }
+          setBadge(host, String(item.serial), item.state,
+            pending.has(String(item.serial)) ? "pending" : null);
+        });
+        if (isDetailPage() && !serialFromLocation()) {
+          const item = byUrl[location.href];
+          const host = ensureDetailHost();
+          if (!host) return;
+          if (!item || item.serial == null) {
+            setBadge(host, "", item && item.state ? item.state : "new", null);
+          } else {
+            setBadge(host, String(item.serial), item.state,
+              pending.has(String(item.serial)) ? "pending" : null);
+          }
         }
       });
   }

@@ -95,8 +95,13 @@ class Collection(Base):
     status: Mapped[str] = mapped_column(String(20), default="published")  # processing|draft|published|hidden
     featured: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_weight: Mapped[int] = mapped_column(Integer, default=0)
-    # 源站(buondua)序号:采集导入时写入,浏览器联动脚本用它精确判定「已入库」
+    # 源站序号:采集导入时写入,浏览器联动脚本用它精确判定「已入库」。
+    # source_serial = 入库时那一站的序号;source_serials(JSON 数组)额外收录
+    # 同一本写真在其他站的序号 —— 三站转载同一作品时序号体系各自独立
+    # (buondua 56556 ↔ misskon 117727),只有单序号会让另外两站的链接
+    # 永远显示「可下载」,点了重复下一遍已入库的包。
     source_serial: Mapped[int | None] = mapped_column(Integer, index=True, default=None)
+    source_serials: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 

@@ -21,6 +21,7 @@ from ...db import Collection, HarvestHistory, HarvestJob
 from ...database import SessionLocal
 from . import net, pipeline
 from .filters import check_title
+from .titlematch import titles_match
 
 log = logging.getLogger("harvest")
 
@@ -89,6 +90,41 @@ def enqueue_manual(url: str) -> tuple[bool, str]:
     finally:
         s.commit()
         s.close()
+
+
+def _link_cross_site_serials(s, col) -> None:
+    """把同一本写真在其他源站的序号补到 col.source_serials。
+
+    三站(buondua / misskon / nicesss)转载同一作品时序号体系各自独立
+    (buondua 56556 ↔ misskon 117727),入库时只写下当前站的序号,另外
+    两站的油猴链接就会显示「可下载」→ 点了重复下一遍已入库的包。
+    这里扫 harvest_history 已处理记录,按跨站标题等价比对收序号。
+
+    与 database._backfill_cross_site_serials 同一判据;那次管存量,
+    这次管新增。失败只记日志,不阻断入库。
+    """
+    import json
+
+    try:
+        known = {col.source_serial}
+        try:
+            known |= set(json.loads(col.source_serials or "[]"))
+        except (ValueError, TypeError):
+            pass
+        extra = []
+        for serial, title in s.execute(
+                select(HarvestHistory.serial, HarvestHistory.title)).all():
+            if serial in known:
+                continue
+            if titles_match(title, col.title):
+                extra.append(serial)
+        if extra:
+            col.source_serials = json.dumps(sorted(known | set(extra)))
+            log.info("cross-site serials for %s: %s", col.slug, sorted(extra))
+        elif col.source_serials is None:
+            col.source_serials = json.dumps(sorted(known - {None}))
+    except Exception:
+        log.exception("link cross-site serials failed for %s", col.slug)
 
 
 # ---- 扫描 -------------------------------------------------------------------
@@ -344,6 +380,7 @@ def _run_job(job_id: int) -> None:
                 col = s.scalar(select(Collection).where(Collection.slug == r["slug"]))
                 if col is not None:
                     col.source_serial = job.serial
+                    _link_cross_site_serials(s, col)
                 s.commit()  # 先落库释放写锁: queue_import_thumbs 用独立连接写状态
                 nq = media.queue_import_thumbs(r["slug"])
                 job = s.get(HarvestJob, job_id)

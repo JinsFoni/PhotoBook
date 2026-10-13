@@ -117,6 +117,105 @@ def test_status_done_by_source_serial(ext_key, client):
         _rm_collection("ext-done-album")
 
 
+def _mk_collection_with_serials(slug: str, own: int, others: list[int]):
+    """入库时那一站的序号 + 同本写真在其他站的序号。"""
+    import json
+
+    from app.database import SessionLocal
+    from app.db import Collection
+
+    s = SessionLocal()
+    try:
+        c = Collection(slug=slug, title=slug, status="published",
+                       source_serial=own,
+                       source_serials=json.dumps(others))
+        s.add(c)
+        s.commit()
+    finally:
+        s.close()
+
+
+def test_status_done_by_cross_site_serial(ext_key, client):
+    """同一本写真从没下过的那一站查 → 也判已入库。
+
+    用户报的实例: 写真从 buondua(序号 56556)入库, 在 misskon
+    (序号 117727)打开链接应显示「已入库」而不是「可下载」。
+    """
+    _mk_collection_with_serials("ext-cross-album", 56556, [117727, 496839])
+    try:
+        r = client.get("/api/ext/status?serials=117727,496839,56556",
+                       headers=H(ext_key))
+        states = {i["serial"]: i["state"] for i in r.json()["items"]}
+        assert states == {117727: "done", 496839: "done", 56556: "done"}
+    finally:
+        _rm_collection("ext-cross-album")
+
+
+def test_status_cross_site_serial_no_false_positive(ext_key, client):
+    """source_serials 里的数字不能按子串误命中(1234 ≠ 21234)。"""
+    _mk_collection_with_serials("ext-cross-album-2", 1234, [5678])
+    try:
+        r = client.get("/api/ext/status?serials=21234,56781,12345",
+                       headers=H(ext_key))
+        states = {i["serial"]: i["state"] for i in r.json()["items"]}
+        assert all(v == "new" for v in states.values()), states
+    finally:
+        _rm_collection("ext-cross-album-2")
+
+
+def test_status_empty_cross_site_serials(ext_key, client):
+    """source_serials = [] 与 NULL 等价, 不影响 source_serial 判定。"""
+    _mk_collection_with_serials("ext-cross-album-3", 777, [])
+    try:
+        r = client.get("/api/ext/status?serials=777,778", headers=H(ext_key))
+        states = {i["serial"]: i["state"] for i in r.json()["items"]}
+        assert states == {777: "done", 778: "new"}
+    finally:
+        _rm_collection("ext-cross-album-3")
+
+
+def test_push_duplicate_by_cross_site_serial(ext_key, client):
+    """跨站序号命中 → 推送直接判 duplicate, 不会重复入队下载。"""
+    _mk_collection_with_serials("ext-cross-album-4", 56556, [117727])
+    try:
+        r = client.post("/api/ext/harvest",
+                        json={"url": "https://misskon.com/117727-yeonyu-yeon-yu-blue-101-photos-6-videos/",
+                              "force": True},
+                        headers=H(ext_key))
+        item = r.json()["items"][0]
+        assert item["ok"] is False and item["state"] == "duplicate", item
+    finally:
+        _rm_collection("ext-cross-album-4")
+
+
+def test_status_by_url_resolves_misskon_serial(ext_key, client):
+    """老帖 slug 无序号 → 服务端按 URL 解析(misskon 抓 postid 前先用 URL)。"""
+    _mk_collection_with_serials("ext-cross-album-5", 117727, [])
+    try:
+        r = client.post("/api/ext/status-by-url",
+                        json={"urls": ["https://misskon.com/117727-yeonyu-yeon-yu-blue-101-photos-6-videos/",
+                                       "https://buondua.com/x-y-88-photos-abc-9990777"]},
+                        headers=H(ext_key))
+        items = {i["url"]: i for i in r.json()["items"]}
+        assert items["https://misskon.com/117727-yeonyu-yeon-yu-blue-101-photos-6-videos/"] == \
+            {"url": "https://misskon.com/117727-yeonyu-yeon-yu-blue-101-photos-6-videos/",
+             "serial": 117727, "state": "done"}
+        # buondua URL 序号不在库 → new
+        assert items["https://buondua.com/x-y-88-photos-abc-9990777"]["state"] == "new"
+    finally:
+        _rm_collection("ext-cross-album-5")
+
+
+def test_status_by_url_requires_key(client):
+    r = client.post("/api/ext/status-by-url", json={"urls": ["https://misskon.com/1-a/"]})
+    assert r.status_code == 401
+
+
+def test_status_by_url_requires_urls(ext_key, client):
+    r = client.post("/api/ext/status-by-url", json={"urls": []}, headers=H(ext_key))
+    assert r.status_code == 422
+
+
 def test_status_deleted_collection_becomes_new(ext_key, client):
     """历史 done 但合集已删 → 可重新下载(不是已入库)。"""
     _hist(9990003, "done")

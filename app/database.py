@@ -46,6 +46,7 @@ def _migrate() -> None:
         "ALTER TABLE harvest_jobs ADD COLUMN collection_slug VARCHAR(220)",
         "ALTER TABLE harvest_jobs ADD COLUMN updated_at TIMESTAMP",
         "ALTER TABLE collections ADD COLUMN source_serial INTEGER",
+        "ALTER TABLE collections ADD COLUMN source_serials TEXT",
         "ALTER TABLE storages ADD COLUMN username VARCHAR(120) NOT NULL DEFAULT ''",
         "ALTER TABLE storages ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE storages ADD COLUMN manual_upload BOOLEAN NOT NULL DEFAULT 0",
@@ -60,6 +61,7 @@ def _migrate() -> None:
                 pass  # 列已存在
     _backfill_collection_slug()
     _backfill_source_serial()
+    _backfill_cross_site_serials()
     _fix_url_unsafe_slugs()
 
 
@@ -173,6 +175,55 @@ def _backfill_source_serial() -> None:
                 "backfilled source_serial on %d collections", fixed)
     except Exception:
         logging.getLogger("photobook").exception("source_serial backfill failed")
+    finally:
+        s.close()
+
+
+def _backfill_cross_site_serials() -> None:
+    """一次性回填:同一本写真在其他源站的序号(见 Collection.source_serials)。
+
+    三站转载同一作品时序号体系各自独立(buondua 56556 ↔ misskon 117727),
+    入库时只写下当前站的序号,另外两站的油猴链接因此永远显示「可下载」。
+    这里按 harvest_history 的 title 与 collections.title 做跨站标题比对,
+    把命中的其他站序号补进 source_serials。
+
+    幂等: 只补 source_serials 为空的行;标题比对只在本次启动做一次,
+    新增写真走 worker 的实时匹配(见 harvest.worker._link_cross_site_serials)。
+    """
+    import json
+
+    from sqlalchemy import select
+
+    from .db import Collection, HarvestHistory
+    from .services.harvest.titlematch import titles_match
+
+    s = SessionLocal()
+    try:
+        cols = s.scalars(select(Collection).where(
+            Collection.source_serial.is_not(None),
+            Collection.source_serials.is_(None))).all()
+        if not cols:
+            return
+        hist = s.scalars(select(HarvestHistory)).all()
+        if not hist:
+            return
+        fixed = 0
+        for col in cols:
+            own = {col.source_serial}
+            extra = [h.serial for h in hist
+                     if h.serial not in own and titles_match(h.title, col.title)]
+            if not extra:
+                # 无跨站序号也要落个空数组, 避免每次启动重跑全量比对
+                col.source_serials = json.dumps([])
+                continue
+            col.source_serials = json.dumps(sorted(extra))
+            fixed += 1
+        s.commit()
+        if fixed:
+            logging.getLogger("photobook").info(
+                "backfilled cross-site serials on %d collections", fixed)
+    except Exception:
+        logging.getLogger("photobook").exception("cross-site serial backfill failed")
     finally:
         s.close()
 
