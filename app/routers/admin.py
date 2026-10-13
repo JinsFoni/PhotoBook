@@ -12,7 +12,7 @@ from urllib.parse import quote, urlencode, unquote as _unquote
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ..services import media, tagging
+from ..services import media, settings_store, tagging, video as video_service
 from . import ext_api
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
@@ -20,15 +20,17 @@ from sqlalchemy.orm import Session
 from ..auth import hash_password, require_admin
 from ..config import settings
 from ..db import (Collection, Favorite, HarvestHistory, HarvestJob, local_dt, Model, Photo,
-                  PhotoUpload, Session as DbSession, Setting, Storage, Tag, UploadJob, User)
+                  PhotoUpload, Session as DbSession, Setting, Storage, Tag, UploadJob, User,
+                  Video, VideoAlbum, VideoUpload, VideoUploadJob)
 from ..database import get_db
 from ..i18n import t
 from ..templating import templates
 from ..services import settings_store
 from ..services.harvest import worker as harvest_worker
+from ..services.harvest.worker import ACTIVE_JOB_STATES, TERMINAL_JOB_STATES
 from ..services.storage import worker as storage_worker
 from ..services.storage.base import StorageError, get_backend as _get_backend
-from ..services.storage import purge_remote_of_collection
+from ..services.storage import purge_remote_of_collection, purge_remote_of_video_album
 
 log = logging.getLogger("photobook.admin")
 
@@ -39,6 +41,7 @@ JOB_STATUS_GROUPS: dict[str, tuple[str, ...]] = {
     "done": ("done", "exists"),
     "skipped": ("skipped",),
     "failed": ("failed",),
+    "cancelled": ("cancelled",),
 }
 
 
@@ -157,6 +160,8 @@ async def dashboard(request: Request, s: Session = Depends(get_db)):
         "models": s.scalar(select(func.count(Model.id))) or 0,
         "collections": s.scalar(select(func.count(Collection.id))) or 0,
         "photos": s.scalar(select(func.count(Photo.id))) or 0,
+        "video_albums": s.scalar(select(func.count(VideoAlbum.id))) or 0,
+        "videos": s.scalar(select(func.count(Video.id))) or 0,
         "users": s.scalar(select(func.count(User.id))) or 0,
         "tags": s.scalar(select(func.count(Tag.id))) or 0,
         "jobs_active": s.scalar(select(func.count(HarvestJob.id)).where(
@@ -165,6 +170,9 @@ async def dashboard(request: Request, s: Session = Depends(get_db)):
             HarvestJob.status.in_(["done", "exists"]))) or 0,
         "jobs_failed": s.scalar(select(func.count(HarvestJob.id)).where(
             HarvestJob.status == "failed")) or 0,
+        # ffmpeg 缺失时全链路降级(视频照常导入播放, 只是没有封面帧);
+        # 后台提示一次, 管理员能立刻明白为什么封面是空的
+        "ffmpeg": video_service.ffmpeg_available(),
     }
     recent = s.scalars(select(HarvestJob).order_by(desc(HarvestJob.id)).limit(8)).all()
     return templates.TemplateResponse(request, "admin/dashboard.html", {
@@ -483,6 +491,210 @@ async def admin_collection_delete(request: Request, col_id: int, s: Session = De
                                  "/admin/collections", back, flash)
 
 
+# ---- 视频专辑 CRUD(写真视频模块,与写真集平行) ----------------------------------
+
+@router.get("/videos")
+async def admin_video_albums(request: Request, s: Session = Depends(get_db),
+                             q: str = "", page: int = 1):
+    q = q.strip()[:100]
+    query = _search_q(VideoAlbum, q, VideoAlbum.title, VideoAlbum.slug)
+    albums, page, total_pages, total = _paged_items(
+        s, query, page, ADMIN_PAGE_SIZE, desc(VideoAlbum.id))
+    models = s.scalars(select(Model).order_by(Model.name)).all()
+    payload = _video_albums_upload_ctx(s, albums)
+    return templates.TemplateResponse(request, "admin/videos.html", {
+        "page": "admin", "albums": albums, "models": models,
+        "upload_storages": payload["storages"],
+        "upload_map": payload["upload_map"],
+        "error": request.query_params.get("error", ""),
+        "q": q, "cur_page": page, "total_pages": total_pages, "total_count": total,
+        "flash": request.query_params.get("flash", ""),
+    })
+
+
+def _video_albums_upload_ctx(s: Session, albums: list) -> dict:
+    """视频专辑上传列渲染上下文(与写真集版同构, 换 VideoUploadJob/VideoUpload)。
+
+    upload_map: {album_id: {storage_id: {status, done, total, storageName}}}
+    """
+    storages = s.scalars(select(Storage).where(Storage.enabled == True)  # noqa: E712
+                         .order_by(Storage.id)).all()
+    active_jobs = s.execute(
+        select(VideoUploadJob.album_id, VideoUploadJob.storage_id, VideoUploadJob.status,
+               VideoUploadJob.files_done, VideoUploadJob.files_total)
+        .where(VideoUploadJob.status.in_(("queued", "running")))).all()
+    active = {(aid, sid): (status, done, total)
+              for aid, sid, status, done, total in active_jobs}
+    upload_map: dict[int, dict[int, dict]] = {}
+    for a in albums:
+        video_ids = [v.id for v in a.videos]
+        entries: dict[int, dict] = {}
+        for st in storages:
+            n_up = s.query(VideoUpload).filter(
+                VideoUpload.storage_id == st.id,
+                VideoUpload.video_id.in_(video_ids or [0])).count() if video_ids else 0
+            entry: dict = {"storageName": st.name, "done": n_up,
+                           "total": len(video_ids)}
+            act = active.get((a.id, st.id))
+            if act:
+                status, done, tot = act
+                entry.update({"status": status, "done": done, "total": tot})
+            elif n_up == 0:
+                entry["status"] = "none"
+            elif n_up >= len(video_ids) > 0:
+                entry["status"] = "done"
+            elif n_up > 0:
+                entry["status"] = "partial"
+            else:
+                entry["status"] = "none"
+            entries[st.id] = entry
+        upload_map[a.id] = entries
+    return {"storages": [{"id": st.id, "name": st.name} for st in storages],
+            "upload_map": upload_map}
+
+
+@router.get("/api/videos")
+async def admin_video_albums_api(s: Session = Depends(get_db), q: str = "", page: int = 1):
+    """视频专辑列表翻页端点:与写真集同模式,前端拦截翻页链接原地重绘。"""
+    return _video_albums_list_payload(s, q, page)
+
+
+def _video_albums_list_payload(s: Session, q: str, page: int) -> dict:
+    q = q.strip()[:100]
+    query = _search_q(VideoAlbum, q, VideoAlbum.title, VideoAlbum.slug)
+    albums, page, total_pages, total = _paged_items(
+        s, query, page, ADMIN_PAGE_SIZE, desc(VideoAlbum.id))
+
+    ctx = _video_albums_upload_ctx(s, albums)
+    items = []
+    for a in albums:
+        uploads = ctx["upload_map"].get(a.id, {})
+        items.append({"id": a.id, "title": a.title or "", "slug": a.slug,
+                      "model": a.model.name if a.model else "",
+                      "publishedAt": str(a.published_at or ""),
+                      "status": a.status,
+                      "videoCount": sum(e["total"] for e in uploads.values())
+                                    if uploads else len(a.videos),
+                      "uploads": {str(sid): e for sid, e in uploads.items()}})
+    return {"albums": items, "storages": ctx["storages"],
+            "page": page, "totalPages": total_pages, "total": total}
+
+
+@router.get("/videos/new")
+async def admin_video_album_new(request: Request, s: Session = Depends(get_db)):
+    models = s.scalars(select(Model).order_by(Model.name)).all()
+    return templates.TemplateResponse(request, "admin/video_album_form.html", {
+        "page": "admin", "a": None, "models": models,
+        "action": "/admin/videos/new", "error": "",
+    })
+
+
+@router.post("/videos/new")
+async def admin_video_album_create(request: Request, s: Session = Depends(get_db),
+                                   title: str = Form(...), slug: str = Form(""),
+                                   model_id: str = Form(""), published_at: str = Form(""),
+                                   status: str = Form("published"), featured: str = Form("")):
+    slug = (slug or title).strip().lower().replace(" ", "-")
+    if s.scalar(select(VideoAlbum).where(VideoAlbum.slug == slug)):
+        return RedirectResponse("/admin/videos/new?error=slug-exists", 303)
+    a = VideoAlbum(title=title.strip(), slug=slug,
+                   model_id=int(model_id) if model_id.isdigit() else None,
+                   published_at=published_at or datetime.now().strftime("%Y.%m.%d"),
+                   status=status, featured=bool(featured))
+    s.add(a)
+    s.commit()
+    return RedirectResponse(f"/admin/videos/{a.id}/edit", 303)
+
+
+@router.get("/videos/{album_id}/edit")
+async def admin_video_album_edit(request: Request, album_id: int, s: Session = Depends(get_db)):
+    a = s.get(VideoAlbum, album_id)
+    if not a:
+        raise HTTPException(404)
+    models = s.scalars(select(Model).order_by(Model.name)).all()
+    return templates.TemplateResponse(request, "admin/video_album_form.html", {
+        "page": "admin", "a": a, "models": models,
+        "action": f"/admin/videos/{album_id}/edit", "error": "",
+    })
+
+
+@router.post("/videos/{album_id}/edit")
+async def admin_video_album_update(request: Request, album_id: int, s: Session = Depends(get_db),
+                                   title: str = Form(...), slug: str = Form(""),
+                                   model_id: str = Form(""), published_at: str = Form(""),
+                                   status: str = Form("published"), featured: str = Form("")):
+    a = s.get(VideoAlbum, album_id)
+    if not a:
+        raise HTTPException(404)
+    a.title = title.strip()
+    if slug:
+        a.slug = slug.strip().lower().replace(" ", "-")
+    a.model_id = int(model_id) if model_id.isdigit() else None
+    a.published_at = published_at or None
+    a.status = status
+    a.featured = bool(featured)
+    s.commit()
+    return RedirectResponse(f"/admin/videos/{album_id}/edit", 303)
+
+
+@router.post("/videos/{album_id}/delete")
+async def admin_video_album_delete(request: Request, album_id: int, s: Session = Depends(get_db),
+                                   back: str = Form("")):
+    a = s.get(VideoAlbum, album_id)
+    flash = ""
+    if a:
+        slug, filenames = a.slug, [v.filename for v in a.videos]
+        posters = [v.poster for v in a.videos if v.poster]
+        model_id = a.model_id
+        try:
+            purge_remote_of_video_album(album_id)
+        except Exception:
+            log.exception("remote purge failed: video album %s", album_id)
+        s.delete(a)
+        # 名下写真与视频都删光才删模特(前台模特两边皆无即不可见)
+        if model_id is not None:
+            m = s.get(Model, model_id)
+            if (m
+                    and not s.scalar(select(Collection.id).where(Collection.model_id == model_id).limit(1))
+                    and not s.scalar(select(VideoAlbum.id).where(VideoAlbum.model_id == model_id).limit(1))):
+                s.delete(m)
+        s.commit()
+        video_service.purge_video_album_files(slug, filenames, posters)
+        tagging.prune_empty_tags(s)
+        flash = t("写真视频已删除: {t}", t=a.title or slug)
+    return _list_action_response(request, s, _video_albums_list_payload,
+                                 "/admin/videos", back, flash)
+
+
+@router.post("/videos/{album_id}/tags")
+async def admin_video_album_tag_add(album_id: int, tag: str = Form(...), s: Session = Depends(get_db)):
+    a = s.get(VideoAlbum, album_id)
+    if not a:
+        raise HTTPException(404)
+    name = tag.strip()
+    if name:
+        slug = name.lower().replace(" ", "-")
+        tg = s.scalar(select(Tag).where(Tag.slug == slug))
+        if not tg:
+            tg = Tag(name=name, slug=slug)
+            s.add(tg)
+            s.flush()
+        if tg not in a.tags:
+            a.tags.append(tg)
+        s.commit()
+    return RedirectResponse(f"/admin/videos/{album_id}/edit", 303)
+
+
+@router.post("/videos/{album_id}/tags/{tag_id}/delete")
+async def admin_video_album_tag_remove(album_id: int, tag_id: int, s: Session = Depends(get_db)):
+    a = s.get(VideoAlbum, album_id)
+    tg = s.get(Tag, tag_id)
+    if a and tg and tg in a.tags:
+        a.tags.remove(tg)
+        s.commit()
+    return RedirectResponse(f"/admin/videos/{album_id}/edit", 303)
+
+
 # ---- Tags ----------------------------------------------------------------------
 
 @router.get("/tags")
@@ -635,13 +847,15 @@ async def admin_harvest(request: Request, s: Session = Depends(get_db),
     conf = settings_store.harvest_conf(s)
     status_icon = {"queued": "clock", "parsing": "search", "downloading": "download",
                    "extracting": "archive", "done": "check-circle", "exists": "check-circle",
-                   "skipped": "minus", "failed": "close"}
+                   "skipped": "minus", "failed": "close", "cancelled": "close"}
     return templates.TemplateResponse(request, "admin/harvest.html", {
         "page": "admin", "jobs": jobs, "history_count": history_count,
         "display_errors": display_errors,
         "conf": conf, "harvest_keys": settings_store.HARVEST_KEYS,
         "status_icon": status_icon,
         "job_status_groups": JOB_STATUS_GROUPS,
+        "terminal_statuses": TERMINAL_JOB_STATES,
+        "active_statuses": ACTIVE_JOB_STATES,
         "cur_status": status, "cur_page": page,
         "total_count": total, "total_pages": total_pages,
         "chip_counts": chip_counts, "active_count": active_count,
@@ -668,20 +882,25 @@ async def admin_harvest_scan(request: Request):
 
 @router.post("/harvest/import")
 async def admin_harvest_import(s: Session = Depends(get_db)):
-    """扫描归档库(library)导入平台:移动图片到 /media + 建库,导入即发布。"""
+    """扫描归档库(library)导入平台:移动图片到 /media + 建库,导入即发布。
+    含视频的目录会另建一个视频专辑(文件移到 /video),与写真集分开存放。"""
     from ..services import library_import
     conf = settings_store.harvest_conf(s)
     stats = library_import.import_library(
         s, Path(str(conf["library.dir"])), settings.media_dir,
         unsorted_dir=str(conf["harvest.unsorted_dir"]))
+    n_va, n_vf = stats.get("video_albums", 0), stats.get("video_files", 0)
+    video_part = t(",{v} 个写真视频({f} 个文件)", v=n_va, f=n_vf) if n_va else ""
     if stats["errors"]:
-        msg = t("导入 {n} 个写真({p} 张),失败 {e} 个",
-                n=stats["imported"], p=stats["photos"], e=len(stats["errors"]))
-    elif stats["albums"] == 0:
+        msg = t("导入 {n} 个写真({p} 张){vp},失败 {e} 个",
+                n=stats["imported"], p=stats["photos"], vp=video_part,
+                e=len(stats["errors"]))
+    elif stats["albums"] == 0 and not n_va:
         msg = t("归档库为空 — 没有可导入的写真")
     else:
-        msg = t("导入 {n} 个写真({p} 张照片),跳过 {s} 个",
-                n=stats["imported"], p=stats["photos"], s=stats["skipped"])
+        msg = t("导入 {n} 个写真({p} 张照片),跳过 {s} 个{vp}",
+                n=stats["imported"], p=stats["photos"], s=stats["skipped"],
+                vp=video_part)
     return RedirectResponse(f"/admin/harvest?flash={quote(msg)}", 303)
 
 
@@ -738,7 +957,7 @@ def _back_params(back: str) -> tuple[str, int]:
 
     仅接受本方 _back_qs 生成的形态: ?status=<组>&page=<n> / 子集。
     """
-    m = re.fullmatch(r"\?status=(active|done|skipped|failed)(?:&page=(\d+))?"
+    m = re.fullmatch(r"\?status=(active|done|skipped|failed|cancelled)(?:&page=(\d+))?"
                      r"|\?page=(\d+)", back or "")
     if not m:
         return "", 1
@@ -767,12 +986,10 @@ async def admin_harvest_retry(request: Request, job_id: int, s: Session = Depend
 @router.post("/harvest/{job_id}/cancel")
 async def admin_harvest_cancel(request: Request, job_id: int, s: Session = Depends(get_db),
                                back: str = Form("")):
-    job = s.get(HarvestJob, job_id)
-    if job and job.status == "queued":
-        s.delete(job)
-        s.commit()
+    """取消任务:排队中直接删,运行中标记 cancelled 并解堵下载线程(.part 保留可续传)。"""
+    ok, msg = harvest_worker.cancel_job(job_id)
     status, page = _back_params(back)
-    return _action_response(request, s, status, page, back, "")
+    return _action_response(request, s, status, page, back, msg)
 
 
 @router.post("/harvest/{job_id}/delete")
@@ -791,7 +1008,7 @@ async def admin_harvest_delete(request: Request, job_id: int, s: Session = Depen
     job = s.get(HarvestJob, job_id)
     if not job:
         return _action_response(request, s, status, page, back, "")
-    if job.status not in ("done", "exists", "skipped", "failed"):
+    if job.status not in TERMINAL_JOB_STATES:
         # 运行中/排队中不能用删除(应走取消/等完成), 防误删进行中的任务记录
         return _action_response(request, s, status, page, back, t("任务进行中,不能删除"))
     if job.archive_dir:
@@ -1106,6 +1323,31 @@ async def admin_collection_upload(request: Request, col_id: int, s: Session = De
     return RedirectResponse(f"/admin/collections?flash={quote(t('上传任务已创建'))}", 303)
 
 
+# ---- 手动上传(写真视频列表) ------------------------------------------------------
+
+@router.post("/videos/{album_id}/upload")
+async def admin_video_album_upload(request: Request, album_id: int, s: Session = Depends(get_db)):
+    """手动上传视频专辑:与写真集版同构, 走 VideoUploadJob(断点续传)。"""
+    a = s.get(VideoAlbum, album_id)
+    if not a:
+        raise HTTPException(404)
+    if not a.videos:
+        if _is_ajax(request):
+            return {"ok": False, "message": t("该写真视频下还没有视频文件")}
+        return RedirectResponse(f"/admin/videos?error=no-videos", 303)
+    targets = [st.id for st in s.scalars(select(Storage).where(
+        Storage.enabled == True,  # noqa: E712
+        Storage.manual_upload == True)).all()]  # noqa: E712
+    if not targets:
+        if _is_ajax(request):
+            return {"ok": False, "message": t("没有可手动上传的存储,请到存储管理为至少一个启用的存储勾选「参与手动上传」")}
+        return RedirectResponse(f"/admin/storages?error=no-target", 303)
+    n = storage_worker.enqueue_video_album(album_id, targets)
+    if _is_ajax(request):
+        return {"ok": True, "queued": n}
+    return RedirectResponse(f"/admin/videos?flash={quote(t('上传任务已创建'))}", 303)
+
+
 @router.get("/api/upload/jobs")
 async def admin_upload_jobs_api(s: Session = Depends(get_db)):
     """活跃(queued/running)与最近完成(failed,各 20 条)上传任务,列表页轮询用。"""
@@ -1116,8 +1358,17 @@ async def admin_upload_jobs_api(s: Session = Depends(get_db)):
                        .where(UploadJob.status.in_(("done", "failed")))
                        .order_by(desc(UploadJob.updated_at), desc(UploadJob.id))
                        .limit(20)).all()
+    v_active = s.scalars(select(VideoUploadJob)
+                         .where(VideoUploadJob.status.in_(("queued", "running")))
+                         .order_by(VideoUploadJob.id)).all()
+    v_recent = s.scalars(select(VideoUploadJob)
+                         .where(VideoUploadJob.status.in_(("done", "failed")))
+                         .order_by(desc(VideoUploadJob.updated_at), desc(VideoUploadJob.id))
+                         .limit(20)).all()
     return {"jobs": [_upload_job_payload(s, j) for j in active] +
-                    [_upload_job_payload(s, j) for j in recent]}
+                    [_upload_job_payload(s, j) for j in recent] +
+                    [_video_upload_job_payload(s, j) for j in v_active] +
+                    [_video_upload_job_payload(s, j) for j in v_recent]}
 
 
 def _upload_job_payload(s: Session, j: UploadJob) -> dict:
@@ -1128,5 +1379,18 @@ def _upload_job_payload(s: Session, j: UploadJob) -> dict:
             "collectionTitle": (col.title or col.slug) if col else "",
             "storageName": st.name if st else "",
             "status": j.status, "done": j.photos_done, "total": j.photos_total,
+            "error": j.error or ""}
+
+
+def _video_upload_job_payload(s: Session, j: VideoUploadJob) -> dict:
+    """视频上传任务的 payload:键名与写真版一致(前端上传列轮询复用同一段代码),
+    另带 video:true 与 albumId 供区分两类任务。"""
+    a = s.get(VideoAlbum, j.album_id)
+    st = s.get(Storage, j.storage_id)
+    return {"id": j.id, "albumId": j.album_id, "video": True,
+            "collectionId": j.album_id,
+            "collectionTitle": (a.title or a.slug) if a else "",
+            "storageName": st.name if st else "",
+            "status": j.status, "done": j.files_done, "total": j.files_total,
             "error": j.error or ""}
 

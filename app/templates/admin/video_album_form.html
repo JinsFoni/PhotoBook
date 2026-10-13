@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('Edit') if a else t('New') }} — Photo Collection{% endblock %}
+{% block body %}
+<div class="shell">
+  <header data-header></header>
+  <main class="main" id="main">
+    <div class="wrap">
+      <div class="page-head">
+        <h1 class="page-head__title">{{ t('编辑视频') if a else t('新建视频') }}</h1>
+        <p class="page-head__sub">{% if a %}{{ a.title }}{% else %}{{ t('创建后可再编辑视频文件与标签') }}{% endif %}</p>
+      </div>
+      <div class="panel-grid">
+        <nav class="side-nav" aria-label="Admin">
+          <a class="side-nav__item" href="/admin/videos">← {{ t('Videos') }}</a>
+        </nav>
+        <div>
+          {% if error %}<div class="state" style="padding:var(--s3) var(--s4);margin-bottom:var(--s4)"><p class="state__text" style="margin:0">{{ error }}</p></div>{% endif %}
+          <form method="post" action="{{ action }}" style="max-width:640px">
+            <label class="field"><span class="field__label">{{ t('标题 *') }}</span>
+              <input class="input" name="title" required value="{{ a.title if a else '' }}"></label>
+            <label class="field"><span class="field__label">{{ t('Slug(留空自动)') }}</span>
+              <input class="input" name="slug" value="{{ a.slug if a else '' }}" placeholder="auto-from-title"></label>
+            <label class="field"><span class="field__label">{{ t('模特') }}</span>
+              <select class="select" name="model_id">
+                <option value="">—</option>
+                {% for m in models %}<option value="{{ m.id }}" {% if a and a.model_id == m.id %}selected{% endif %}>{{ m.name }}</option>{% endfor %}
+              </select></label>
+            <label class="field"><span class="field__label">{{ t('发布日期(YYYY.MM.DD)') }}</span>
+              <input class="input" name="published_at" value="{{ a.published_at if a and a.published_at else '' }}" placeholder="2026.02.14"></label>
+            <label class="field"><span class="field__label">{{ t('状态') }}</span>
+              <select class="select" name="status">
+                {% for st in ('published', 'processing', 'draft', 'hidden') %}
+                <option value="{{ st }}" {% if a and a.status == st %}selected{% endif %}>{{ st }}</option>
+                {% endfor %}
+              </select></label>
+            <label class="field" style="flex-direction:row;align-items:center;gap:var(--s3)">
+              <input type="checkbox" name="featured" {% if a and a.featured %}checked{% endif %} style="accent-color:var(--accent)">
+              <span class="field__label" style="margin:0">{{ t('首页推荐') }}</span></label>
+            <div style="display:flex;gap:var(--s3);margin-top:var(--s5)">
+              <button class="btn" type="submit">{{ t('保存') }}</button>
+              <a class="btn btn--ghost" href="/admin/videos">{{ t('取消') }}</a>
+              {% if a %}<a class="btn btn--quiet" href="/videos/{{ a.slug }}">{{ t('前台查看') }}</a>{% endif %}
+            </div>
+          </form>
+
+          {% if a %}
+          <div style="margin-top:var(--s8);border-top:1px solid var(--line);padding-top:var(--s5)">
+            <h2 class="t-h3">{{ t('标签') }}</h2>
+            <form method="post" action="/admin/videos/{{ a.id }}/tags" style="display:flex;gap:var(--s3);margin:var(--s3) 0;max-width:480px">
+              <input class="input" name="tag" placeholder="{{ t('输入标签名') }}" required>
+              <button class="btn btn--sm" type="submit">{{ t('添加') }}</button>
+            </form>
+            <div class="chip-row">
+              {% for tag in a.tags %}
+              <form method="post" action="/admin/videos/{{ a.id }}/tags/{{ tag.id }}/delete" style="display:inline">
+                <button class="chip" type="submit" title="{{ t('点击移除') }}">{{ tag.name }} ×</button>
+              </form>
+              {% endfor %}
+              {% if not a.tags %}<p class="t-small" style="color:var(--ink-3)">{{ t('暂无标签') }}</p>{% endif %}
+            </div>
+
+            <h2 class="t-h3" style="margin-top:var(--s7)">{{ t('视频文件({n})', n=a.videos | length) }}</h2>
+            {% if a.videos %}
+            <p class="t-small" style="color:var(--ink-3)">{{ t('文件位于 /video 下,按顺序排序。导入管线(归档库导入)自动追加。') }}</p>
+            <table style="width:100%;border-collapse:collapse;margin-top:var(--s3)">
+              <thead><tr class="t-small" style="text-align:left;color:var(--ink-3);border-bottom:1px solid var(--line)">
+                <th style="padding:var(--s2) 0">#</th><th>{{ t('文件') }}</th><th>{{ t('尺寸') }}</th><th>{{ t('时长') }}</th><th>{{ t('封面帧') }}</th>
+              </tr></thead>
+              <tbody>
+                {% for v in a.videos %}
+                <tr style="border-bottom:1px solid var(--line-2)">
+                  <td class="num" style="padding:var(--s2) 0">{{ loop.index }}</td>
+                  <td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ v.filename }}">{{ v.filename }}</td>
+                  <td class="num">{{ (v.width ~ '×' ~ v.height) if v.width else '—' }}</td>
+                  <td class="num">{% if v.duration %}{{ '%d:%02d' | format(v.duration // 60, v.duration % 60) }}{% else %}—{% endif %}</td>
+                  <td class="t-small" style="color:var(--ink-3)">{{ '✓' if v.poster else t('无(ffmpeg 缺失或抽帧失败)') }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <p class="t-small" style="color:var(--ink-3)">{{ t('暂无视频文件 — 由归档库导入管线或手动上传添加。') }}</p>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer data-footer></footer>
+</div>
+<div class="drawer" data-drawer data-open="false"></div>
+<div class="search" data-search data-open="false"></div>
+{% endblock %}

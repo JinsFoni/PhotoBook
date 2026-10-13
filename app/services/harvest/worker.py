@@ -17,7 +17,7 @@ from sqlalchemy import select
 from pathlib import Path
 
 from .. import media, settings_store
-from ...db import Collection, HarvestHistory, HarvestJob
+from ...db import Collection, HarvestHistory, HarvestJob, VideoAlbum
 from ...database import SessionLocal
 from . import net, pipeline
 from .filters import check_title
@@ -49,6 +49,9 @@ def _now():
 
 # 未落终态的任务状态(浏览器联动判定「下载中」也用它)
 ACTIVE_JOB_STATES = ("queued", "parsing", "downloading", "extracting")
+# 可删除/可重试的终态。cancelled 是手动取消的终态:与 failed 一样可清理,
+# 但不写 HarvestHistory —— 那个 serial 之后还能重新入队续传(.part 仍在)
+TERMINAL_JOB_STATES = ("done", "exists", "skipped", "failed", "cancelled")
 
 
 def enqueue(s, serial: int, url: str, source: str = "auto") -> HarvestJob | None:
@@ -63,6 +66,49 @@ def enqueue(s, serial: int, url: str, source: str = "auto") -> HarvestJob | None
     s.add(job)
     s.flush()
     return job
+
+
+def cancel_job(job_id: int) -> tuple[bool, str]:
+    """取消任务。
+
+    - queued:直接删记录(还没跑, 无产物)
+    - parsing/downloading/extracting:标记 cancelled 终态 + close 下载流解堵
+      + 撤销运行所有权(线程复苏后不得再写状态/清文件)
+
+    线程多半阻塞在网络读上, join 不动:只置终态 + 解堵, 放任它自己退出。
+    .part 保留 —— 用户反悔了还能重新入队续传( watchdog 会照看不丢)。
+    """
+    from ...i18n import t
+
+    s = SessionLocal()
+    try:
+        job = s.get(HarvestJob, job_id)
+        if not job:
+            return False, t("任务不存在")
+        if job.status == "queued":
+            s.delete(job)
+            s.commit()
+            return True, t("已取消排队的任务")
+        if job.status not in ("parsing", "downloading", "extracting"):
+            return False, t("任务已结束,无需取消")
+        # 直接写终态,不走 _finish:那会合并 HarvestHistory(serial 为主键),
+        # 之后 scan 就再也入队不了这个序号 —— 取消必须保留可重试。
+        job.status = "cancelled"
+        job.error = t("已手动取消")
+        job.finished_at = _now()
+        s.commit()
+        # 解堵:close 卡在网络读上的下载流(实测立即抛异常退出);
+        # 撤销所有权:复苏的旧线程 token 不匹配, finally 里不会清 .part
+        pipeline.close_stream(job_id)
+        _run_tokens.pop(job_id, None)
+        log.info("cancelled job #%s (%s)", job_id, job.serial)
+        return True, t("已取消任务,已下载部分保留可续传")
+    except Exception:
+        s.rollback()
+        log.exception("cancel job failed: %s", job_id)
+        return False, t("取消失败")
+    finally:
+        s.close()
 
 
 def enqueue_manual(url: str) -> tuple[bool, str]:
@@ -359,22 +405,43 @@ def _run_job(job_id: int) -> None:
         job.error = f"→ {file_count} 个文件"
         s.commit()
 
-        # 7. 导入平台(library → media + 建库)。导入后写真置 processing
+        # 7. 导入平台(library → media/video + 建库)。导入后写真置 processing
         #    (前台不可见),缩略图队列生成 900/2400 两档后才翻转 published。
+        #    同一归档目录里的视频走独立模块(与 import_library 同一套图文分流),
+        #    否则这批视频会永远留在 library 里,任务提示也只剩「跳过 N 个视频」。
         #    导入失败 → 任务判 failed 并记录归档残留路径:删除该任务时
         #    会连带清理(残留未入库, 不删就是孤儿);重试也能走 failed 重跑路径
         try:
             from ...config import settings as app_settings
             from .. import library_import
+            images, n_videos = library_import.list_images(final_dir)
             r = library_import.import_album(
                 s, final_dir, app_settings.media_dir, library_root=library_root,
                 unsorted_dir=str(conf["harvest.unsorted_dir"]),
                 tags=target.tags, thumbs=False,
                 today=target.published or None)
-            if r["skipped"]:
+            extra = ""
+            if n_videos:
+                # 视频侧标签单独挂(tagging.apply_tags 写真/视频两条线,互不影响)
+                vr = library_import.import_video_album(
+                    s, final_dir, library_root=library_root,
+                    unsorted_dir=str(conf["harvest.unsorted_dir"]),
+                    today=target.published or None)
+                if vr["skipped"]:
+                    if not images:
+                        job.error = "→ 已导入过,跳过"
+                else:
+                    extra = f",{vr['videos']} 段视频入库"
+                    if target.tags:
+                        va = s.scalar(select(VideoAlbum).where(
+                            VideoAlbum.slug == vr["slug"]))
+                        if va is not None:
+                            from .. import tagging
+                            tagging.apply_tags(s, va, va.model, target.tags)
+                            s.commit()
+            if r["skipped"] and not extra:
                 job.error = "→ 已导入过,跳过"
             else:
-                extra = f",跳过 {r['videos']} 个视频" if r["videos"] else ""
                 job.collection_slug = r["slug"]
                 # 序号落到写真集上: 浏览器联动脚本按 source_serial 精确判定「已入库」
                 col = s.scalar(select(Collection).where(Collection.slug == r["slug"]))
@@ -390,6 +457,9 @@ def _run_job(job_id: int) -> None:
             s.commit()
         except Exception as e:
             log.exception("import failed for %s", final_dir)
+            # 取消/看门狗已接管(token 被撤销)→ 交给外层静默退出,不覆盖终态
+            if _run_tokens.get(job_id) != token:
+                raise
             job = s.get(HarvestJob, job_id)
             if job:
                 _finish(s, job, "failed", f"→ 入库失败: {str(e)[:80]}")

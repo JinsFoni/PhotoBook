@@ -13,6 +13,7 @@ import dev.jinsfoni.photobook.data.remote.dto.ModelDto
 import dev.jinsfoni.photobook.data.repo.FavoritesRepository
 import dev.jinsfoni.photobook.data.repo.toModel
 import dev.jinsfoni.photobook.data.repo.toCard
+import dev.jinsfoni.photobook.data.repo.toVideoCard
 import dev.jinsfoni.photobook.ui.models.CollectionCard
 import dev.jinsfoni.photobook.ui.models.ModelCard
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,8 +22,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** 三段 Tab(照片在最右,写真/模特保持原相对顺序,写真段默认选中)。 */
-enum class FavTab { COLLECTIONS, MODELS, PHOTOS }
+/** 五段 Tab(写真视频两个 tab 与写真平行,追加在最右)。 */
+enum class FavTab { COLLECTIONS, MODELS, PHOTOS, VIDEO_ALBUMS, VIDEOS }
 
 data class FavPhotoItem(
     val slug: String,
@@ -32,6 +33,14 @@ data class FavPhotoItem(
     val aspect: Float = 2f / 3f,
 )
 
+/** 收藏的单条视频:thumbUrl 为封面帧(ffmpeg 缺失时为空 → 播放器黑屏兜底)。 */
+data class FavVideoItem(
+    val slug: String,
+    val idx: Int,
+    val posterUrl: String?,
+    val aspect: Float = 16f / 9f,
+)
+
 data class FavoritesUiState(
     val tab: FavTab = FavTab.COLLECTIONS,
     val loading: Boolean = true,
@@ -39,12 +48,16 @@ data class FavoritesUiState(
     val models: List<ModelCard> = emptyList(),
     val collections: List<CollectionCard> = emptyList(),
     val photos: List<FavPhotoItem> = emptyList(),
+    val videoAlbums: List<CollectionCard> = emptyList(),
+    val videos: List<FavVideoItem> = emptyList(),
     val error: String? = null,
 ) {
     fun countText(): String = when (tab) {
         FavTab.MODELS -> "${models.size} 位"
         FavTab.COLLECTIONS -> "${collections.size} 本"
         FavTab.PHOTOS -> "${photos.size} 张"
+        FavTab.VIDEO_ALBUMS -> "${videoAlbums.size} 部"
+        FavTab.VIDEOS -> "${videos.size} 段"
     }
 
     /** Tab 内联计数(原型 .seg .s .n):纯数字,选中态由 UI 变色。 */
@@ -52,12 +65,16 @@ data class FavoritesUiState(
         FavTab.MODELS -> models.size.toString()
         FavTab.COLLECTIONS -> collections.size.toString()
         FavTab.PHOTOS -> photos.size.toString()
- }
+        FavTab.VIDEO_ALBUMS -> videoAlbums.size.toString()
+        FavTab.VIDEOS -> videos.size.toString()
+    }
 
     fun isEmpty(): Boolean = when (tab) {
         FavTab.MODELS -> models.isEmpty()
         FavTab.COLLECTIONS -> collections.isEmpty()
         FavTab.PHOTOS -> photos.isEmpty()
+        FavTab.VIDEO_ALBUMS -> videoAlbums.isEmpty()
+        FavTab.VIDEOS -> videos.isEmpty()
     }
 }
 
@@ -83,7 +100,8 @@ class FavoritesViewModel @Inject constructor(
 
     fun refresh() {
         val first = _state.value.models.isEmpty() && _state.value.collections.isEmpty() &&
-            _state.value.photos.isEmpty()
+            _state.value.photos.isEmpty() && _state.value.videoAlbums.isEmpty() &&
+            _state.value.videos.isEmpty()
         _state.value = _state.value.copy(loading = first, refreshing = !first, error = null)
         viewModelScope.launch {
             try {
@@ -103,6 +121,18 @@ class FavoritesViewModel @Inject constructor(
                             idx = p.idx,
                             thumbUrl = MediaUrls.fromPrefixed(base, p.thumb ?: ""),
                             aspect = if (w > 0 && h > 0) w.toFloat() / h else 2f / 3f,
+                        )
+                    },
+                    // 写真视频两段(与写真段平行)
+                    videoAlbums = dto.videoAlbums.map { it.toVideoCard(base) },
+                    videos = dto.videos.map { v ->
+                        val w = v.w ?: 16
+                        val h = v.h ?: 9
+                        FavVideoItem(
+                            slug = v.slug,
+                            idx = v.idx,
+                            posterUrl = v.thumb?.let { MediaUrls.fromPrefixed(base, it) },
+                            aspect = if (w > 0 && h > 0) w.toFloat() / h else 16f / 9f,
                         )
                     },
                 )

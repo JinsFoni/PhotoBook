@@ -8,7 +8,7 @@ import threading
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
-from ...db import Photo, PhotoUpload, Storage
+from ...db import Photo, PhotoUpload, Storage, Video, VideoUpload
 
 log = logging.getLogger("pb.storage")
 
@@ -16,6 +16,11 @@ log = logging.getLogger("pb.storage")
 _MIME_BY_EXT = {
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
     ".webp": "image/webp", ".gif": "image/gif", ".avif": "image/avif",
+    # 视频(serve_video 流式代理兜底路径用)
+    ".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/quicktime",
+    ".mkv": "video/x-matroska", ".webm": "video/webm", ".avi": "video/x-msvideo",
+    ".wmv": "video/x-ms-wmv", ".flv": "video/x-flv", ".ts": "video/mp2t",
+    ".mpg": "video/mpeg", ".mpeg": "video/mpeg",
 }
 
 
@@ -159,23 +164,34 @@ def _resolve_final_url(url: str) -> str | None:
 def remote_urls(rel: str) -> list[str]:
     """开启直链的启用存储的公开 URL,按优先级从高到低(优先级相同按存储 id 新者优先)。
 
-    本地原图缺失时的回源地址:serve_media 流式代理与 serve_thumb 回源生成
-    都按此顺序尝试,高优先级失败自动落到下一级。direct_link 关闭的存储是
-    纯备份,不参与回源。
+    本地原图/原片缺失时的回源地址:serve_media/serve_video 流式代理与
+    serve_thumb 回源生成都按此顺序尝试,高优先级失败自动落到下一级。
+    direct_link 关闭的存储是纯备份,不参与回源。
+
+    图片与视频各查各的表(rel 在两个模块里都唯一,不会串)。
     """
     from ...database import SessionLocal
 
     s = SessionLocal()
     try:
         photo_id = s.scalar(select(Photo.id).where(Photo.filename == rel))
-        if photo_id is None:
-            return []
-        rows = s.execute(
-            select(PhotoUpload.remote_path, Storage)
-            .join(Storage, Storage.id == PhotoUpload.storage_id)
-            .where(PhotoUpload.photo_id == photo_id, Storage.enabled == True,  # noqa: E712
-                   Storage.direct_link == True)  # noqa: E712
-            .order_by(Storage.priority.desc(), Storage.id.desc())).all()
+        if photo_id is not None:
+            rows = s.execute(
+                select(PhotoUpload.remote_path, Storage)
+                .join(Storage, Storage.id == PhotoUpload.storage_id)
+                .where(PhotoUpload.photo_id == photo_id, Storage.enabled == True,  # noqa: E712
+                       Storage.direct_link == True)  # noqa: E712
+                .order_by(Storage.priority.desc(), Storage.id.desc())).all()
+        else:
+            video_id = s.scalar(select(Video.id).where(Video.filename == rel))
+            if video_id is None:
+                return []
+            rows = s.execute(
+                select(VideoUpload.remote_path, Storage)
+                .join(Storage, Storage.id == VideoUpload.storage_id)
+                .where(VideoUpload.video_id == video_id, Storage.enabled == True,  # noqa: E712
+                       Storage.direct_link == True)  # noqa: E712
+                .order_by(Storage.priority.desc(), Storage.id.desc())).all()
         urls: list[str] = []
         for remote_path, st in rows:
             from .base import get_backend
@@ -222,6 +238,42 @@ def purge_remote_of_collection(collection_id: int) -> None:
         s.query(PhotoUpload).filter(
             PhotoUpload.photo_id.in_(
                 select(Photo.id).where(Photo.collection_id == collection_id))
+        ).delete(synchronize_session=False)
+        s.commit()
+    finally:
+        s.close()
+
+
+def purge_remote_of_video_album(album_id: int) -> None:
+    """删除视频专辑时同步清理远端文件(与 purge_remote_of_collection 平行)。"""
+    from ...database import SessionLocal
+
+    s = SessionLocal()
+    try:
+        rows = s.execute(
+            select(VideoUpload.remote_path, VideoUpload.storage_id)
+            .join(Video, Video.id == VideoUpload.video_id)
+            .where(Video.album_id == album_id)).all()
+        if not rows:
+            return
+        by_storage: dict[int, list[str]] = {}
+        for remote_path, sid in rows:
+            by_storage.setdefault(sid, []).append(remote_path)
+        for sid, paths in by_storage.items():
+            st = s.get(Storage, sid)
+            if not st:
+                continue
+            try:
+                from .base import get_backend
+                get_backend(st).delete_batch(st, paths)
+                log.info("purged %d remote files of video album %s from %s",
+                         len(paths), album_id, st.name)
+            except Exception:
+                log.exception("remote purge failed: video album %s storage %s"
+                              " (%d files left behind)", album_id, sid, len(paths))
+        s.query(VideoUpload).filter(
+            VideoUpload.video_id.in_(
+                select(Video.id).where(Video.album_id == album_id))
         ).delete(synchronize_session=False)
         s.commit()
     finally:

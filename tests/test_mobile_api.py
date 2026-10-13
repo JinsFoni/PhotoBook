@@ -225,7 +225,9 @@ def test_collection_detail_not_found(client):
 def test_favorites_anonymous_empty(client):
     r = client.get("/api/mobile/favorites")
     assert r.status_code == 200
-    assert r.json() == {"model": [], "collection": [], "photo": []}
+    # 五个桶:写真/视频两个平行模块各两个(视频键带 v 前缀)
+    assert r.json() == {"model": [], "collection": [], "photo": [],
+                        "video_album": [], "video": []}
 
 
 def test_favorites_roundtrip(client, token):
@@ -299,7 +301,7 @@ def test_model_detail_not_found(client):
 
 def test_search_empty_q(client):
     data = client.get("/api/mobile/search", params={"q": "  "}).json()
-    assert data == {"q": "", "models": [], "collections": [], "tags": []}
+    assert data == {"q": "", "models": [], "collections": [], "tags": [], "videos": []}
 
 
 def test_search_by_collection_title(client):
@@ -350,6 +352,83 @@ def test_favorites_resolve_roundtrip(client, token):
                 json={"type": "photo", "key": f"{slug}:{idx}", "added": False})
     data = client.get("/api/mobile/favorites/resolve", headers=h).json()
     assert data["collections"] == [] and data["photos"] == []
+
+
+# ---- 写真视频(与写真集平行的独立模块) ----------------------------------------
+
+def _seed_video_album():
+    """造一个已发布的视频专辑(无真实文件, poster=None 也可序列化)。"""
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.db import Video, VideoAlbum
+    s = SessionLocal()
+    try:
+        if s.scalar(select(VideoAlbum).where(VideoAlbum.slug == "m-clip-set")):
+            return
+        a = VideoAlbum(slug="m-clip-set", title="Mobile Clip Set",
+                       status="published", published_at="2026-10-02 09:00:00")
+        s.add(a)
+        s.flush()
+        for i in range(2):
+            s.add(Video(album_id=a.id, filename=f"demo/m-clip-set/clip{i}.mp4",
+                        width=1280, height=720, duration=8.0 + i, sort_order=i))
+        a.cover_video_id = s.scalar(select(Video.id).where(
+            Video.album_id == a.id).order_by(Video.sort_order).limit(1))
+        s.commit()
+    finally:
+        s.close()
+
+
+def test_videos_list_and_detail(client):
+    _seed_video_album()
+    r = client.get("/api/mobile/videos")
+    assert r.status_code == 200
+    body = r.json()
+    assert "items" in body and "total" in body
+    card = next((a for a in body["items"] if a["slug"] == "m-clip-set"), None)
+    assert card, "种子视频专辑应出现在列表里"
+    for k in ("slug", "title", "cover", "coverThumb", "count", "tags"):
+        assert k in card
+
+    d = client.get("/api/mobile/videos/m-clip-set").json()
+    assert d["slug"] == "m-clip-set"
+    assert d["videos"] and d["videos"][0]["idx"] == 0
+    assert d["videos"][0]["file"].endswith(".mp4")
+    assert d["count"] == 2
+
+
+def test_video_detail_404(client):
+    r = client.get("/api/mobile/videos/nope-nope")
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "not_found"
+
+
+def test_video_favorites_roundtrip(client, token):
+    """video_album 与 video 两种新类型的收藏往返 + resolve 出实体。"""
+    _seed_video_album()
+    h = _auth(token)
+    client.post("/api/mobile/favorites", headers=h,
+                json={"type": "video_album", "key": "m-clip-set", "added": True})
+    client.post("/api/mobile/favorites", headers=h,
+                json={"type": "video", "key": "m-clip-set:v1", "added": True})
+    favs = client.get("/api/mobile/favorites", headers=h).json()
+    assert "m-clip-set" in favs["video_album"]
+    assert "m-clip-set:v1" in favs["video"]
+
+    d = client.get("/api/mobile/favorites/resolve", headers=h).json()
+    assert [a["slug"] for a in d["videoAlbums"]] == ["m-clip-set"]
+    assert d["videos"][0]["key"] == "m-clip-set:v1"
+    assert d["videos"][0]["idx"] == 1
+    assert d["videos"][0]["file"].endswith("clip1.mp4")
+
+    # 取消后两桶都空
+    client.post("/api/mobile/favorites", headers=h,
+                json={"type": "video_album", "key": "m-clip-set", "added": False})
+    client.post("/api/mobile/favorites", headers=h,
+                json={"type": "video", "key": "m-clip-set:v1", "added": False})
+    favs = client.get("/api/mobile/favorites", headers=h).json()
+    assert favs["video_album"] == [] and favs["video"] == []
 
 
 def test_models_sort_latest_then_oldest(client):

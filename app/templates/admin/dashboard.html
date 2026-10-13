@@ -15,6 +15,7 @@
           <a class="side-nav__item" href="/admin" aria-current="page">{{ t('Dashboard') }}</a>
           <a class="side-nav__item" href="/admin/harvest">{{ t('Harvest') }} <span class="num">{{ t('{n} active', n=stats.jobs_active) }}</span></a>
           <a class="side-nav__item" href="/admin/collections">{{ t('Collections') }}</a>
+          <a class="side-nav__item" href="/admin/videos">{{ t('Videos') }}</a>
           <a class="side-nav__item" href="/admin/models">{{ t('Models') }}</a>
           <a class="side-nav__item" href="/admin/tags">{{ t('Tags') }}</a>
           <a class="side-nav__item" href="/admin/users">{{ t('Users') }}</a>
@@ -26,10 +27,17 @@
         <div>
           <div class="stat-row">
             <div><p class="stat__v num">{{ stats.collections }}</p><p class="stat__k">{{ t('Collections') }}</p></div>
+            <div><p class="stat__v num">{{ stats.video_albums }}</p><p class="stat__k">{{ t('Video sets') }}</p></div>
             <div><p class="stat__v num">{{ stats.models }}</p><p class="stat__k">{{ t('Models') }}</p></div>
             <div><p class="stat__v num">{{ stats.photos }}</p><p class="stat__k">{{ t('Photos') }}</p></div>
+            <div><p class="stat__v num">{{ stats.videos }}</p><p class="stat__k">{{ t('Videos') }}</p></div>
             <div><p class="stat__v num">{{ stats.users }}</p><p class="stat__k">{{ t('Users') }}</p></div>
           </div>
+          {% if not stats.ffmpeg %}
+          <div class="state" style="padding:var(--s3) var(--s4);margin-top:var(--s4)">
+            <p class="state__text" style="margin:0">{{ t('未检测到 ffmpeg:视频可正常导入与播放,但无法抽取封面帧(列表与详情页封面为空)。安装 ffmpeg 后重启即可恢复。') }}</p>
+          </div>
+          {% endif %}
 
           <div class="stat-row" style="margin-top:var(--s4)">
             <div><p class="stat__v num">{{ stats.jobs_active }}</p><p class="stat__k">{{ t('Harvest queue') }}</p></div>

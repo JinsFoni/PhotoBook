@@ -41,7 +41,9 @@ window.PC = (function () {
     logout: '<path d="M9 4H5v16h4M14 8l4 4-4 4M18 12H9"/>',
     expand: '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>',
     compress: '<path d="M9 4v5H4M15 4v5h5M20 15h-5v5M4 15h5v5"/>',
-    blur: '<circle cx="12" cy="12" r="4.2"/><path d="M12 3.2v2.2M12 18.6v2.2M3.2 12h2.2M18.6 12h2.2M5.8 5.8l1.6 1.6M16.6 16.6l1.6 1.6M18.2 5.8l-1.6 1.6M7.4 16.6l-1.6 1.6" stroke-dasharray="1.5 2.4"/>'
+    blur: '<circle cx="12" cy="12" r="4.2"/><path d="M12 3.2v2.2M12 18.6v2.2M3.2 12h2.2M18.6 12h2.2M5.8 5.8l1.6 1.6M16.6 16.6l1.6 1.6M18.2 5.8l-1.6 1.6M7.4 16.6l-1.6 1.6" stroke-dasharray="1.5 2.4"/>',
+    /* 播放三角(填充形, 由使用方给 svg 加 fill:currentColor) */
+    play: '<path d="M9 6.2v11.6L19 12z"/>'
   };
 
   function icon(name, cls) {
@@ -56,7 +58,7 @@ window.PC = (function () {
   var LB_BG_KEY = "pc.lbBg.v1";  /* 灯箱背景: solid / blur, 全局持久化 */
   var lbBg = "solid";
   try { var _lb = localStorage.getItem(LB_BG_KEY); if (_lb === "blur" || _lb === "solid") lbBg = _lb; } catch (e) {}
-  var state = { theme: "dark", favs: { model: [], collection: [], photo: [] } };
+  var state = { theme: "dark", favs: { model: [], collection: [], photo: [], video_album: [], video: [] } };
 
   try {
     var saved = localStorage.getItem(THEME_KEY);
@@ -248,7 +250,11 @@ window.PC = (function () {
     },
     list: function (type) { return state.favs[type].slice(); },
     counts: function () {
-      return { model: state.favs.model.length, collection: state.favs.collection.length, photo: state.favs.photo.length };
+      return {
+        model: state.favs.model.length, collection: state.favs.collection.length,
+        photo: state.favs.photo.length, video_album: state.favs.video_album.length,
+        video: state.favs.video.length
+      };
     },
     bind: function (root) {
       (root || document).querySelectorAll("[data-fav]").forEach(function (btn) {
@@ -287,7 +293,8 @@ window.PC = (function () {
     });
     var dot = document.querySelector("[data-fav-dot]");
     if (dot) {
-      var total = fav.counts().model + fav.counts().collection + fav.counts().photo;
+      var c = fav.counts();
+      var total = c.model + c.collection + c.photo + c.video_album + c.video;
       dot.hidden = total === 0;
     }
   }
@@ -297,7 +304,7 @@ window.PC = (function () {
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d) return;
-        ["model", "collection", "photo"].forEach(function (k) {
+        ["model", "collection", "photo", "video_album", "video"].forEach(function (k) {
           if (Array.isArray(d[k])) state.favs[k] = d[k];
         });
         fav.bind();
@@ -339,7 +346,8 @@ window.PC = (function () {
   var NAV = [
     { href: "/", label: t("Discovery"), key: "discovery" },
     { href: "/models", label: t("Models"), key: "models" },
-    { href: "/collections", label: t("Collections"), key: "collections" }
+    { href: "/collections", label: t("Collections"), key: "collections" },
+    { href: "/videos", label: t("Videos"), key: "videos" }
   ];
 
   function activeKey() {
@@ -347,6 +355,7 @@ window.PC = (function () {
     if (p === "/" || p === "") return "discovery";
     if (p.indexOf("/models") === 0) return "models";
     if (p.indexOf("/collections") === 0) return "collections";
+    if (p.indexOf("/videos") === 0) return "videos";
     if (p.indexOf("/favorites") === 0) return "favorites";
     if (p.indexOf("/profile") === 0) return "profile";
     return "";
@@ -432,7 +441,8 @@ window.PC = (function () {
         '<div><p class="footer__col-title">' + t("Browse") + "</p>" +
         '<a class="footer__link" href="/">' + t("Discovery") + "</a>" +
         '<a class="footer__link" href="/models">' + t("Models") + "</a>" +
-        '<a class="footer__link" href="/collections">' + t("Collections") + "</a></div>" +
+        '<a class="footer__link" href="/collections">' + t("Collections") + "</a>" +
+        '<a class="footer__link" href="/videos">' + t("Videos") + "</a></div>" +
         '<div><p class="footer__col-title">' + t("Your archive") + "</p>" +
         '<a class="footer__link" href="/favorites">' + t("Favourites") + "</a>" +
         '<a class="footer__link" href="/profile">' + t("Profile") + "</a>" +
@@ -467,7 +477,8 @@ window.PC = (function () {
       return;
     }
 
-    var total = payload.models.length + payload.collections.length + payload.tags.length;
+    var total = payload.models.length + payload.collections.length + payload.tags.length +
+      (payload.videos || []).length;
     if (!total) {
       box.innerHTML =
         '<div class="state">' +
@@ -497,6 +508,16 @@ window.PC = (function () {
             '<span><span class="search-row__name">' + escapeHtml(c.title) + "</span>" +
             '<span class="search-row__meta">' + escapeHtml(c.model_name) + " · " + t("{n} photos", { n: c.count }) + "</span></span>" +
             '<span class="search-row__end">' + escapeHtml(c.date || "") + "</span></a>";
+        }).join("") + "</div>";
+    }
+    if (payload.videos && payload.videos.length) {
+      html += '<div class="search__group"><p class="search__group-title">' + t("Videos") + "</p>" +
+        payload.videos.map(function (v) {
+          return '<a class="search-row" href="/videos/' + v.slug + '">' +
+            '<img class="search-row__thumb" src="' + v.thumb + '" alt="" loading="lazy">' +
+            '<span><span class="search-row__name">' + escapeHtml(v.title) + "</span>" +
+            '<span class="search-row__meta">' + escapeHtml(v.model_name) + " · " + t("{n} videos", { n: v.count }) + "</span></span>" +
+            '<span class="search-row__end">' + escapeHtml(v.date || "") + "</span></a>";
         }).join("") + "</div>";
     }
     if (payload.tags.length) {
@@ -545,7 +566,11 @@ window.PC = (function () {
 
   /* ---------- lightbox -------------------------------------------------- */
   var LB_ZOOM = 1.5; /* 放大倍数: fit 尺寸 ×1.5(可调) */
-  var lb = { photos: [], index: 0, title: "", collection: "", zoom: false, hi: false, el: null, bdFront: null, imgFront: null,
+  /* kind: "photo"(默认)|"video"。视频轨道复用同一个灯箱 DOM —— 顶/底栏、
+     氛围层、垫底层、swipe/滚轮切条目全部照旧, 只把主图双缓冲层换成
+     <video>(见 paint 的视频分支) */
+  var lb = { photos: [], index: 0, title: "", collection: "", kind: "photo",
+             zoom: false, hi: false, el: null, bdFront: null, imgFront: null,
              pan: { x: 0, y: 0 }, dragging: false, dragMoved: false, dragStart: null, tstart: null };
   /* 主图双缓冲图层对: a/b 两张 img 交替。front = 最近一次揭示的层 */
   function lbImgPair() {
@@ -566,6 +591,13 @@ window.PC = (function () {
   }
 
   function lightboxSrc(p, w) {
+    /* 视频条目: file 是 /video 下的相对路径, 无缩略图档位概念。
+       播放源取 /video/ 直链(FileResponse 原生支持 Range), 垫底/氛围层
+       取封面帧 poster(普通 webp, 与照片同缓存树) */
+    if (lb.kind === "video" || p.isVideo) {
+      if (!w) return "/video/" + p.file;
+      return p.poster ? "/t/s" + w + "/" + p.poster + ".webp" : "";
+    }
     if (!w) return "/media/" + p.file;             /* 真原图:下载 / 1:1 放大 */
     return "/t/s" + w + "/" + p.file + ".webp";    /* 短边档:竖图钳宽横图钳高,等比不裁 */
   }
@@ -613,6 +645,11 @@ window.PC = (function () {
       '<div class="lightbox__stage">' +
       /* 垫底层: 900 档先上屏撑住画面, 主图就绪后淡入盖住 */
       '<img class="lightbox__under" data-lb-under alt="" aria-hidden="true" decoding="async">' +
+      /* 视频轨: 与图片双缓冲层并列, 默认隐藏;lb.kind==="video" 时启用。
+         controls 原生控件自带进度条/音量/全屏, 拖动走服务端 Range(见
+         services/video.py serve_video);preload=metadata 只下元数据,
+         首帧由 poster(900 档封面帧)垫住, 省默认流量 */
+      '<video class="lightbox__video" data-lb-video controls preload="metadata" playsinline></video>' +
       '<button class="lightbox__nav lightbox__nav--prev" type="button" data-lb-prev aria-label="' + t("Previous photo") + '">' + icon("left") + "</button>" +
       /* 主图双缓冲(轮播同款定框结构): figure 定框(overflow:hidden, 按照片
          ar 取 contain 矩形, 永不缩放) + 内层 img 只做 settle 缩放 ≥1,
@@ -776,21 +813,28 @@ window.PC = (function () {
     lb.index = opts.index || 0;
     lb.title = opts.title || "";
     lb.collection = opts.collection || "";
+    lb.kind = opts.kind || "photo";
     lb.zoom = false;
     lbShownUrl = "";   /* 重开不沿用上次舞台上的图, 走入场淡入 */
     el.dataset.open = "true";
     document.body.classList.add("is-locked");
     paint();
     /* 打开即预取 ±1(Immich initializePreloads): 用户浏览首图的 1~2s 里
-       邻图 2400 已在下载, 首次翻页直接命中 */
-    lbPrefetch();
-    bdPrefetch();
+       邻图 2400 已在下载, 首次翻页直接命中。视频条目不预取(播放器自己
+       按需 Range 拉流, 提前下整个文件纯浪费带宽) */
+    if (lb.kind !== "video") {
+      lbPrefetch();
+      bdPrefetch();
+    } else {
+      bdPrefetch();
+    }
     el.querySelector("[data-lb-close]").focus();
   }
 
   function close() {
     if (!lb.el) return;
     if (fullscreenEl()) document.exitFullscreen();
+    stopVideo();
     lb.el.dataset.open = "false";
     document.body.classList.remove("is-locked");
     lbShownUrl = "";
@@ -802,8 +846,11 @@ window.PC = (function () {
     lb.zoom = false;
     paint();
     /* 导航瞬间沿方向补预取(Immich updateAfterNavigation), 不等当前图上屏
-       —— 连翻时每步都提前一个身位。lbEntry 幂等, 已缓存的邻图零请求 */
-    lbPrefetch();
+       —— 连翻时每步都提前一个身位。lbEntry 幂等, 已缓存的邻图零请求。
+       视频条目不预取: 播放器自行按需 Range 拉流 */
+    if (lb.kind !== "video") {
+      lbPrefetch();
+    }
     bdPrefetch();
   }
 
@@ -954,7 +1001,7 @@ window.PC = (function () {
     var b = lb.el.querySelector('[data-lb-bd="b"]');
     if (!a || !b) return;
     var p = lb.photos[lb.index];
-    if (lbBg !== "blur" || !p) {
+    if (lbBg !== "blur" || !p || !lightboxSrc(p, WALL_W)) {
       a.removeAttribute("src"); b.removeAttribute("src");
       a.dataset.ready = "false"; b.dataset.ready = "false";
       a.style.zIndex = ""; b.style.zIndex = "";
@@ -1129,11 +1176,63 @@ window.PC = (function () {
     });
   }
 
+  /* 视频条目的灯箱绘制: 完全绕开图片的双缓冲/解码/放大体系
+     (那是图片解码专用), 只保留共用的氛围层/垫底层/顶底栏/计数/收藏。
+     <video controls> 自带进度条, 拖动交给服务端 Range(serve_video)。 */
+  function paintVideo() {
+    var el = lb.el;
+    var v = lb.photos[lb.index];
+    if (!v) return;
+    var video = el.querySelector("[data-lb-video]");
+    var src = lightboxSrc(v);
+    if (video.getAttribute("src") !== src) {
+      video.setAttribute("src", src);
+      video.load();
+    }
+    /* 封面帧垫底(与图片同缓存树); 无封面帧时不设 poster, 由控件兜底 */
+    video.poster = v.poster ? "/t/s900/" + v.poster + ".webp" : "";
+    video.alt = "";
+    el.dataset.kind = "video";
+
+    var title = el.querySelector("[data-lb-title]");
+    title.textContent = lb.title || "";
+    el.querySelector("[data-lb-counter]").textContent =
+      String(lb.index + 1).padStart(2, "0") + " / " + String(lb.photos.length).padStart(2, "0");
+    el.querySelector("[data-lb-progress]").style.width =
+      ((lb.index + 1) / lb.photos.length) * 100 + "%";
+    el.querySelector("[data-lb-prev]").disabled = lb.photos.length < 2;
+    el.querySelector("[data-lb-next]").disabled = lb.photos.length < 2;
+
+    /* 收藏键 = "<album_slug>:v<idx>"(v 前缀与照片键 "<slug>:<idx>" 区分);
+       下载指向 /video/ 直链(原文件, 非转码) */
+    var fb = el.querySelector("[data-fav]");
+    fb.dataset.fav = "video";
+    fb.dataset.favKey = lb.collection + ":v" + lb.index;
+    sync(fb, "video", fb.dataset.favKey);
+    var dl = el.querySelector("[data-lb-download]");
+    dl.setAttribute("href", src);
+    dl.setAttribute("download", (v.file || "").split("/").pop());
+  }
+
+  /* 视频轨复位: 从视频切回照片(或关灯箱)时停掉播放并撤 src,
+     否则上一段音频会在照片模式下继续响 */
+  function stopVideo() {
+    if (!lb.el) return;
+    var video = lb.el.querySelector("[data-lb-video]");
+    if (!video) return;
+    try { video.pause(); } catch (e) {}
+    video.removeAttribute("src");
+    video.load();
+    lb.el.dataset.kind = "photo";
+  }
+
   function paint() {
     var el = lb.el;
     if (!el) return;
     var p = lb.photos[lb.index];
     if (!p) return;
+    if (lb.kind === "video") { paintVideo(); paintBackdrop(); return; }
+    stopVideo();
     /* 双缓冲(轮播同款定框结构): 新图载入 idle 定框淡入 + 框内照片缓落
        (1.015→1); 前层(旧画面)转离场 —— 镜像回涨 + 淡化, 交叉无空帧。
        首开(舞台无画面)只走入场, 无交叉。img/fig = 定框 figure,
@@ -1367,6 +1466,31 @@ window.PC = (function () {
     });
   }
 
+  /* 视频详情页瓦片: 与 bindPhotoTiles 平行, 走 kind="video" 分支。
+     收藏页的视频列表也复用(data.videos + data.albums[gi] 由模板提供)。 */
+  function bindVideoTiles(root) {
+    var data = window.PB_DATA;
+    if (!data || !data.videos) return;
+    (root || document).querySelectorAll("[data-video-index]").forEach(function (tile) {
+      if (tile.dataset.tileBound) return;
+      tile.dataset.tileBound = "1";
+      tile.addEventListener("click", function () {
+        lb.returnFocus = tile;
+        var album = data.albums && data.albums[tile.dataset.albumIndex];
+        var slug = data.slug || (album && album.slug) || "";
+        var title = data.model_name ? data.title + " — " + data.model_name : data.title;
+        if (album) title = (album.title || data.title || "") + (data.model_name ? " — " + data.model_name : "");
+        open({
+          photos: data.videos,
+          index: Number(tile.dataset.videoIndex),
+          title: title,
+          collection: slug,
+          kind: "video"
+        });
+      });
+    });
+  }
+
   /* ---------- chrome events --------------------------------------------- */
   function bindChrome() {
     document.addEventListener("click", function (e) {
@@ -1457,6 +1581,7 @@ window.PC = (function () {
     fav.bind();
     syncAll();
     bindPhotoTiles();
+    bindVideoTiles();
     layoutPhotoWall();
     revealImages();
     loadFavs();
@@ -1479,6 +1604,7 @@ window.PC = (function () {
         fav.bind();
         syncAll();
         bindPhotoTiles();
+        bindVideoTiles();
         renderBlurLayer(); /* 设置页选择器等新节点可能带主题钮 */
       });
     });
@@ -1495,6 +1621,7 @@ window.PC = (function () {
     fav: fav,
     lightbox: { open: open, close: close },
     bindPhotoTiles: bindPhotoTiles,
+    bindVideoTiles: bindVideoTiles,
     layoutPhotoWall: layoutPhotoWall,
     revealImages: revealImages,
     escapeHtml: escapeHtml,

@@ -7,7 +7,7 @@ import dev.jinsfoni.photobook.ui.models.SearchResults
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** 站内搜索:三段结果(模特/写真/标签),URL 拼装与列表同规则。 */
+/** 站内搜索:四段结果(模特/写真/标签/写真视频),URL 拼装与列表同规则。 */
 @Singleton
 class SearchRepository @Inject constructor(
     private val api: MobileApi,
@@ -22,6 +22,7 @@ class SearchRepository @Inject constructor(
             models = dto.models.map { it.toSearchCard(base) },
             collections = dto.collections.map { it.toModel(base) },
             tags = dto.tags,
+            videoAlbums = dto.videos.map { it.toVideoCard(base) },
         )
     }
 }

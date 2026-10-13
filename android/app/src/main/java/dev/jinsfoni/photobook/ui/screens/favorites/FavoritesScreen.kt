@@ -54,15 +54,18 @@ import dev.jinsfoni.photobook.ui.components.photoClickable
 import dev.jinsfoni.photobook.ui.nav.LocalGlassBarBottomInset
 
 /**
- * S7 收藏页:三段 Tab(模特/写真/照片)。数据来自 FavoritesRepository.state
+ * S7 收藏页:五段 Tab(模特/写真/照片/视频/片段)。数据来自 FavoritesRepository.state
  * (与详情/灯箱心形同一事实源),进入时 refresh。
  * photo key 约定 "slug:idx";S4 路由由 shell 层转成 (slug, idx)。
+ * video key 约定 "slug:v{idx}"(v 前缀与照片区分)。
  */
 @Composable
 fun FavoritesScreen(
     onOpenModel: (String) -> Unit,
     onOpenCollection: (String) -> Unit,
     onOpenPhoto: (String, Int) -> Unit,
+    onOpenVideoAlbum: (String) -> Unit = {},
+    onOpenVideo: (String, Int) -> Unit = { _, _ -> },
     onOpenSettings: () -> Unit = {},
     vm: FavoritesViewModel = hiltViewModel(),
 ) {
@@ -73,12 +76,14 @@ fun FavoritesScreen(
     LaunchedEffect(Unit) { vm.refresh() }
 
     Box(Modifier.fillMaxSize()) {
-        // 虚化主题垫底:随 Tab 取首张(照片段用缩略图,写真/模特段用卡片封面)
+        // 虚化主题垫底:随 Tab 取首张(照片段用缩略图,写真/模特段用卡片封面,视频段用封面帧)
         BlurBackdrop(
             when (state.tab) {
                 FavTab.PHOTOS -> state.photos.firstOrNull()?.thumbUrl
                 FavTab.COLLECTIONS -> state.collections.firstOrNull()?.imageUrl
                 FavTab.MODELS -> state.models.firstOrNull()?.imageUrl
+                FavTab.VIDEO_ALBUMS -> state.videoAlbums.firstOrNull()?.imageUrl
+                FavTab.VIDEOS -> state.videos.firstOrNull()?.posterUrl
             }
         )
     Column(Modifier.fillMaxSize()) {
@@ -215,6 +220,27 @@ fun FavoritesScreen(
                     photos = state.photos,
                     onOpenPhoto = onOpenPhoto,
                 )
+                FavTab.VIDEO_ALBUMS -> LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
+                    horizontalArrangement = Arrangement.spacedBy(11.dp),
+                    verticalArrangement = Arrangement.spacedBy(11.dp),
+                ) {
+                    items(state.videoAlbums.size) { i ->
+                        val a = state.videoAlbums[i]
+                        CollectionCard(
+                            title = a.title,
+                            subtitle = "${a.modelName} · ${a.count} 段",
+                            imageUrl = a.imageUrl,
+                            onClick = { onOpenVideoAlbum(a.slug) },
+                        )
+                    }
+                }
+                FavTab.VIDEOS -> VideosMasonry(
+                    videos = state.videos,
+                    onOpenVideo = onOpenVideo,
+                )
             }
         }
         }
@@ -279,9 +305,86 @@ private fun PhotoCell(
     )
 }
 
+/**
+ * 视频段(收藏的零散片段):与照片段同款两列瀑布,竖视频按 2:3 借位排布,
+ * 横视频(封面帧 16:9)独占整行。点击进灯箱播放。
+ */
+@Composable
+private fun VideosMasonry(
+    videos: List<FavVideoItem>,
+    onOpenVideo: (String, Int) -> Unit,
+) {
+    val colors = LocalPhotoColors.current
+    val wall = remember(videos) {
+        val order = arrangeTwoColumnWall(videos.map { it.aspect })
+        order.map { videos[it] }
+    }
+    LazyVerticalStaggeredGrid(
+        columns = StaggeredGridCells.Fixed(2),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
+        verticalItemSpacing = 11.dp,
+    ) {
+        items(
+            count = wall.size,
+            span = { i ->
+                if (wall[i].aspect > 1.02f) StaggeredGridItemSpan.FullLine
+                else StaggeredGridItemSpan.SingleLane
+            },
+        ) { i ->
+            val v = wall[i]
+            val ratio = if (v.aspect > 1.02f) v.aspect else 2f / 3f
+            VideoCell(v, ratio, Modifier.fillMaxWidth(), colors, onOpenVideo)
+        }
+    }
+}
+
+@Composable
+private fun VideoCell(
+    v: FavVideoItem,
+    aspect: Float,
+    modifier: Modifier,
+    colors: PhotoColors,
+    onOpenVideo: (String, Int) -> Unit,
+) {
+    Box(
+        modifier
+            .aspectRatio(aspect)
+            .clip(RoundedCornerShape(2.dp))
+            .background(colors.paper2)
+            .photoClickable { onOpenVideo(v.slug, v.idx) },
+    ) {
+        // 封面帧缺失(ffmpeg 缺失)时留深色底 + 播放角标,不显示破图
+        if (v.posterUrl != null) {
+            AsyncImage(
+                model = v.posterUrl,
+                contentDescription = v.slug,
+                contentScale = ContentScale.FillWidth,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        // 中央播放三角:与 Web 端 .video-tile__play 同语义的常显提示
+        Box(Modifier.align(Alignment.Center)) {
+            dev.jinsfoni.photobook.ui.icons.StrokeIcon(
+                dev.jinsfoni.photobook.ui.icons.PlayIcon,
+                size = 30.dp,
+                tint = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.9f),
+                strokeWidth = dev.jinsfoni.photobook.ui.icons.IconWidths.THIN,
+                modifier = Modifier
+                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.38f), androidx.compose.foundation.shape.CircleShape)
+                    .padding(6.dp),
+            )
+        }
+    }
+}
+
 @Composable
 private fun TabSkeleton(tab: FavTab) {
-    val span = if (tab == FavTab.PHOTOS) 3 else 2
+    val span = when (tab) {
+        FavTab.PHOTOS, FavTab.VIDEOS -> 3
+        FavTab.MODELS, FavTab.COLLECTIONS, FavTab.VIDEO_ALBUMS -> 2
+    }
     Row(Modifier.padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
         repeat(span) { SkeletonBox(Modifier.weight(1f)) }
     }
@@ -293,6 +396,8 @@ internal fun FavTab.label(): String = when (this) {
     FavTab.PHOTOS -> stringResource(R.string.photos_noun)
     FavTab.COLLECTIONS -> stringResource(R.string.collections_noun)
     FavTab.MODELS -> stringResource(R.string.models_noun)
+    FavTab.VIDEO_ALBUMS -> stringResource(R.string.video_albums_noun)
+    FavTab.VIDEOS -> stringResource(R.string.videos_noun)
 }
 
 /** 纯 JVM 版空态文案(测试/VM 复用;UI 层请用 emptyText)。 */
@@ -300,6 +405,8 @@ internal fun emptyTextFor(tab: FavTab): String = when (tab) {
     FavTab.MODELS -> "还没有收藏模特"
     FavTab.COLLECTIONS -> "还没有收藏写真"
     FavTab.PHOTOS -> "还没有收藏照片"
+    FavTab.VIDEO_ALBUMS -> "还没有收藏视频专辑"
+    FavTab.VIDEOS -> "还没有收藏视频"
 }
 
 @Composable
@@ -307,4 +414,6 @@ internal fun emptyText(tab: FavTab): String = when (tab) {
     FavTab.MODELS -> stringResource(R.string.empty_fav_models)
     FavTab.COLLECTIONS -> stringResource(R.string.empty_fav_collections)
     FavTab.PHOTOS -> stringResource(R.string.empty_fav_photos)
+    FavTab.VIDEO_ALBUMS -> stringResource(R.string.empty_fav_video_albums)
+    FavTab.VIDEOS -> stringResource(R.string.empty_fav_videos)
 }

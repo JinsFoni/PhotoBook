@@ -1,4 +1,4 @@
-"""SQLAlchemy 模型 — 全部 12 张表。库中只存元数据,文件在磁盘 volume。"""
+"""SQLAlchemy 模型 — 全部 17 张表。库中只存元数据,文件在磁盘 volume。"""
 
 from __future__ import annotations
 
@@ -81,6 +81,7 @@ class Model(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     collections: Mapped[list["Collection"]] = relationship(back_populates="model")
+    video_albums: Mapped[list["VideoAlbum"]] = relationship(back_populates="model")
     tags: Mapped[list["Tag"]] = relationship(secondary="model_tags", lazy="selectin")
 
 
@@ -131,6 +132,58 @@ class Photo(Base):
     __table_args__ = (UniqueConstraint("collection_id", "filename", name="uq_photo_file"),)
 
 
+# ---- 视频模块(与写真集平行的独立模块) --------------------------------------
+
+class VideoAlbum(Base):
+    """写真视频专辑。与 collections 完全平行:独立 slug/目录/状态,
+    文件在 video_dir 下(<模特slug>/<专辑slug尾>/)。"""
+    __tablename__ = "video_albums"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(200), unique=True)
+    model_id: Mapped[int | None] = mapped_column(ForeignKey("models.id", ondelete="SET NULL"), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    cover_video_id: Mapped[int | None] = mapped_column(ForeignKey("videos.id", ondelete="SET NULL"), default=None)
+    published_at: Mapped[str | None] = mapped_column(String(20), default=None)  # YYYY.MM.DD
+    status: Mapped[str] = mapped_column(String(20), default="published")  # processing|draft|published|hidden
+    featured: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_serial: Mapped[int | None] = mapped_column(Integer, index=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    model: Mapped[Model | None] = relationship(back_populates="video_albums")
+    videos: Mapped[list["Video"]] = relationship(
+        back_populates="album", cascade="all, delete-orphan",
+        order_by="Video.sort_order", lazy="selectin",
+        foreign_keys="Video.album_id")
+    tags: Mapped[list["Tag"]] = relationship(secondary="video_album_tags", lazy="selectin")
+
+    __table_args__ = (Index("ix_video_albums_status_date", "status", "published_at"),)
+
+
+class Video(Base):
+    __tablename__ = "videos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    album_id: Mapped[int] = mapped_column(ForeignKey("video_albums.id", ondelete="CASCADE"), index=True)
+    filename: Mapped[str] = mapped_column(String(255))       # /video 相对路径
+    width: Mapped[int | None] = mapped_column(default=None)  # 首帧尺寸(ffprobe)
+    height: Mapped[int | None] = mapped_column(default=None)
+    duration: Mapped[float | None] = mapped_column(default=None)  # 秒
+    poster: Mapped[str | None] = mapped_column(String(400), default=None)  # 封面帧缓存 rel(同 /t 缓存树)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    album: Mapped[VideoAlbum] = relationship(back_populates="videos",
+                                             foreign_keys=[album_id])
+
+    __table_args__ = (UniqueConstraint("album_id", "filename", name="uq_video_file"),)
+
+
+class VideoAlbumTag(Base):
+    __tablename__ = "video_album_tags"
+    album_id: Mapped[int] = mapped_column(ForeignKey("video_albums.id", ondelete="CASCADE"), primary_key=True)
+    tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+
+
 class Tag(Base):
     __tablename__ = "tags"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -139,6 +192,7 @@ class Tag(Base):
 
     models: Mapped[list[Model]] = relationship(secondary="model_tags", back_populates="tags")
     collections: Mapped[list[Collection]] = relationship(secondary="collection_tags", back_populates="tags")
+    video_albums: Mapped[list["VideoAlbum"]] = relationship(secondary="video_album_tags", back_populates="tags")
 
 
 class ModelTag(Base):
@@ -159,8 +213,8 @@ class Favorite(Base):
     __tablename__ = "favorites"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    target_type: Mapped[str] = mapped_column(String(12))  # model | collection | photo
-    target_key: Mapped[str] = mapped_column(String(255))  # slug 或 collection:idx
+    target_type: Mapped[str] = mapped_column(String(12))  # model | collection | photo | video_album | video
+    target_key: Mapped[str] = mapped_column(String(255))  # slug 或 collection:idx / album_slug:v{idx}
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     __table_args__ = (UniqueConstraint("user_id", "target_type", "target_key", name="uq_fav"),)
@@ -176,7 +230,8 @@ class HarvestJob(Base):
     title: Mapped[str | None] = mapped_column(String(255), default=None)
     model_name: Mapped[str | None] = mapped_column(String(120), default=None)
     status: Mapped[str] = mapped_column(String(12), default="queued", index=True)
-    # queued | parsing | downloading | extracting | done | exists | skipped | failed
+    # queued | parsing | downloading | extracting | done | exists | skipped | failed | cancelled
+    # cancelled = 手动取消(终态,不写 HarvestHistory,可重新入队续传)
     bytes_done: Mapped[int] = mapped_column(Integer, default=0)
     bytes_total: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, default=None)
@@ -257,3 +312,32 @@ class PhotoUpload(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     __table_args__ = (UniqueConstraint("photo_id", "storage_id", name="uq_photo_upload"),)
+
+
+class VideoUploadJob(Base):
+    """一个视频专辑 × 一个存储的上传任务(与 upload_jobs 平行,DB 表作队列,重启不丢)。"""
+    __tablename__ = "video_upload_jobs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    album_id: Mapped[int] = mapped_column(ForeignKey("video_albums.id", ondelete="CASCADE"), index=True)
+    storage_id: Mapped[int] = mapped_column(ForeignKey("storages.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(12), default="queued", index=True)
+    # queued | running | done | failed
+    files_done: Mapped[int] = mapped_column(Integer, default=0)
+    files_total: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=utcnow)
+
+    __table_args__ = (Index("ix_video_upload_jobs_status_id", "status", "id"),)
+
+
+class VideoUpload(Base):
+    """单个视频在某存储上的上传结果(与 photo_uploads 平行)。"""
+    __tablename__ = "video_uploads"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    video_id: Mapped[int] = mapped_column(ForeignKey("videos.id", ondelete="CASCADE"), index=True)
+    storage_id: Mapped[int] = mapped_column(ForeignKey("storages.id", ondelete="CASCADE"), index=True)
+    remote_path: Mapped[str] = mapped_column(String(400))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (UniqueConstraint("video_id", "storage_id", name="uq_video_upload"),)

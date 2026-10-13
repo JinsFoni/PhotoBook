@@ -2,15 +2,18 @@
 
 采集归档落在 `<library>/<模特名>/<写真目录>/`(写真目录名取自压缩包自带顶层
 目录名,见 pipeline.archive_collection)。本模块把图片 **移动** 到
-`/media/<模特slug>/<写真slug>/`,并建立 models / collections / photos 记录。
+`/media/<模特slug>/<写真slug>/` 并建立 models / collections / photos 记录;
+同一目录里的视频走平行的视频模块:移动到 `video/<模特slug>/<专辑slug>/`
+并建立 video_albums / videos 记录(两个模块分开存、分开展示)。
 
-约定(2026-09 与用户对齐):
+约定(2026-09 与用户对齐,2026-10 补视频):
 - 一级目录名 = 模特名;等于「未分类目录名」时 model_id 留空 → 前台显示「未分类」
-- 二级目录名 = 写真标题
-- 图片按自然序排序(001…061);跳过 .DS_Store / ._* / __MACOSX / 视频
-- 导入即 `status=published`,立即在写真集页面可见;封面 = 首图
+- 二级目录名 = 写真/专辑标题
+- 图片按自然序排序(001…061);跳过 .DS_Store / ._* / __MACOSX
+- 同一归档目录里图片与视频都存在 → 图片建写真集、视频建视频专辑,两条条目
+- 导入即 `status=published`,立即在页面可见;封面 = 首图 / 首视频抽帧
 - library 是「下载暂存区」:文件移走后清理空目录(保留 _tmp)
-- 幂等键 = collections.slug(由 模特名 + 写真目录名 生成),重复导入自动跳过
+- 幂等键 = collections.slug / video_albums.slug,重复导入自动跳过
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..db import Collection, Model, Photo
+from ..db import Collection, Model, Photo, Video, VideoAlbum
 
 log = logging.getLogger("library_import")
 
@@ -74,7 +77,10 @@ def _is_junk(p: Path, root: Path | None = None) -> bool:
 
 
 def list_images(album_dir: Path, recursive: bool = True) -> tuple[list[Path], int]:
-    """(图片文件[自然序], 视频数)。recursive=False 只数本层(判定是否写真目录用)。"""
+    """(图片文件[自然序], 视频数)。recursive=False 只数本层(判定是否写真目录用)。
+
+    视频只计数不收集 —— 收集是 list_videos 的事(视频走独立模块)。
+    """
     images: list[Path] = []
     videos = 0
     walker = album_dir.rglob("*") if recursive else album_dir.glob("*")
@@ -88,6 +94,19 @@ def list_images(album_dir: Path, recursive: bool = True) -> tuple[list[Path], in
             videos += 1
     images.sort(key=lambda p: _path_key(album_dir, p))
     return images, videos
+
+
+def list_videos(album_dir: Path, recursive: bool = True) -> list[Path]:
+    """视频文件[自然序]。与 list_images 同一套 junk/排序规则。"""
+    out: list[Path] = []
+    walker = album_dir.rglob("*") if recursive else album_dir.glob("*")
+    for p in walker:
+        if not p.is_file() or _is_junk(p, album_dir):
+            continue
+        if p.suffix.lower() in VIDEO_EXTS:
+            out.append(p)
+    out.sort(key=lambda p: _path_key(album_dir, p))
+    return out
 
 
 def _dims(path: Path) -> tuple[int | None, int | None]:
@@ -287,12 +306,121 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
     return stats
 
 
+def import_video_album(s: Session, album_dir: Path,
+                       library_root: Path | None = None,
+                       unsorted_dir: str = "未分类",
+                       today: str | None = None) -> dict:
+    """导入单个视频目录(与 import_album 平行的独立模块)。
+
+    视频移动 → video_dir/<模特slug>/<专辑slug尾>/ + 建 video_albums/videos 记录;
+    首视频抽帧作封面(ffmpeg 缺失则 poster=None,前台回退占位)。
+    中途失败把已移动的文件移回原位,不留半成品。
+    返回 {album, model, videos, skipped, slug}。
+    """
+    from ..config import settings
+    from . import video as video_service
+
+    album_dir = Path(album_dir)
+    parent = album_dir.parent
+    model_name = "" if (library_root is not None and parent == Path(library_root)) else parent.name
+    if model_name in NO_MODEL_DIRS or model_name == unsorted_dir:
+        model_name = ""
+    title = album_dir.name
+    stats = {"album": title, "model": model_name, "videos": 0,
+             "skipped": False, "slug": ""}
+
+    clips = list_videos(album_dir)
+    if not clips:
+        stats["skipped"] = True
+        return stats
+
+    # 幂等:已导入过 → 原样跳过(文件留在 library,不动)
+    if video_album_exists(s, model_name, title, unsorted_dir):
+        stats["skipped"] = True
+        log.info("skip (already imported): %s / %s", model_name or unsorted_dir, title)
+        return stats
+
+    model = _get_or_create_model(s, model_name)
+    owner_slug = model.slug if model else slugify(unsorted_dir, maxlen=120)
+    slug = f"{owner_slug}-{slugify(title, maxlen=160)}"[:200]
+    stats["slug"] = slug
+
+    dest_dir = Path(settings.video_dir) / owner_slug / slugify(title, maxlen=160)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    moved: list[tuple[Path, Path]] = []
+    try:
+        for src in clips:
+            target = dest_dir / src.name
+            n = 2
+            while target.exists():
+                target = dest_dir / f"{src.stem}-{n}{src.suffix}"
+                n += 1
+            shutil.move(str(src), str(target))
+            moved.append((src, target))
+
+        published = today or datetime.now().strftime("%Y.%m.%d")
+        a = VideoAlbum(slug=slug, title=title[:255],
+                       model_id=model.id if model else None,
+                       published_at=published, status="processing")
+        s.add(a)
+        s.flush()
+        for i, (_src, target) in enumerate(moved):
+            w, h, dur = video_service.probe(target)
+            rel = f"{owner_slug}/{dest_dir.name}/{target.name}"
+            v = Video(album_id=a.id,
+                      filename=rel,
+                      width=w, height=h, duration=dur, sort_order=i)
+            s.add(v)
+            s.flush()
+            if i == 0:
+                a.cover_video_id = v.id
+            # 导入时顺手抽首帧落缓存(ffmpeg 缺失/失败则 poster 留空,
+            # 后台 worker 与 /poster 路由都会兜底重试)
+            try:
+                if video_service.ensure_poster_cached(rel):
+                    v.poster = rel
+            except Exception:
+                log.warning("poster generate skipped at import: %s", rel,
+                            exc_info=True)
+        s.commit()
+        stats["videos"] = len(moved)
+    except Exception:
+        s.rollback()
+        for src, target in reversed(moved):
+            try:
+                src.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(target), str(src))
+            except Exception:
+                log.exception("rollback move failed: %s", target)
+        raise
+
+    _prune_empty(album_dir, Path(library_root) if library_root else None)
+    log.info("imported video album %s: %d clips (%s)", title, len(moved), slug)
+    if not stats["skipped"] and stats["slug"]:
+        video_service.queue_video_posters(stats["slug"])
+    return stats
+
+
+def video_album_exists(s: Session, model_name: str, title: str,
+                       unsorted_dir: str) -> bool:
+    """(模特名, 专辑标题)是否已导入(幂等判定,与 collection_exists 平行)。"""
+    owner = _owner_slug(s, model_name, unsorted_dir)
+    slug = f"{owner}-{slugify(title, maxlen=160)}"[:200]
+    return s.scalar(select(VideoAlbum.id).where(VideoAlbum.slug == slug)) is not None
+
+
 def import_library(s: Session, library_root: Path, media_root: Path,
                    unsorted_dir: str = "未分类") -> dict:
-    """扫描归档库,导入所有写真。返回 {albums, imported, skipped, photos, videos, errors}。"""
+    """扫描归档库,导入所有写真与视频专辑。
+
+    返回 {albums, imported, skipped, photos, videos, errors, video_albums, video_files}:
+    photos/videos 是写真侧的图片数与该目录里数到的视频数(历史字段,语义不变);
+    video_albums/video_files 是视频模块实际建成的专辑数与移入的视频文件数。
+    """
     library_root = Path(library_root)
     stats: dict = {"albums": 0, "imported": 0, "skipped": 0,
-                   "photos": 0, "videos": 0, "errors": []}
+                   "photos": 0, "videos": 0, "errors": [],
+                   "video_albums": 0, "video_files": 0}
     if not library_root.is_dir():
         return stats
 
@@ -304,6 +432,12 @@ def import_library(s: Session, library_root: Path, media_root: Path,
         if images:
             albums.append(entry)  # 一级目录下直接是图片 → 无模特写真
             continue
+        # 一级目录下没有图但有视频 → 该目录本身是视频专辑(无模特)
+        if list_videos(entry, recursive=False):
+            albums.append(entry)
+            continue
+        # 其余一级目录一律下沉二级:二级可能是写真、视频专辑、混合或空目录,
+        # 由循环内的 list_images/list_videos 判定(空目录报 skipped,同旧行为)
         for sub in sorted(entry.iterdir(), key=lambda p: _nat_key(p.name)):
             if sub.is_dir() and not _is_junk(sub, library_root):
                 albums.append(sub)
@@ -311,14 +445,29 @@ def import_library(s: Session, library_root: Path, media_root: Path,
     for album in albums:
         stats["albums"] += 1
         try:
-            r = import_album(s, album, media_root, library_root=library_root,
-                             unsorted_dir=unsorted_dir)
-            if r["skipped"]:
-                stats["skipped"] += 1
-            else:
-                stats["imported"] += 1
-                stats["photos"] += r["photos"]
-                stats["videos"] += r["videos"]
+            images, n_videos = list_images(album)
+            if images or not n_videos:
+                # 有图 → 写真集;无图也无视频 → import_album 内部报 skipped
+                # (空目录/全坏图的统计口径不变,见 test_import_skips_empty_album)
+                r = import_album(s, album, media_root, library_root=library_root,
+                                 unsorted_dir=unsorted_dir)
+                if r["skipped"]:
+                    stats["skipped"] += 1
+                else:
+                    stats["imported"] += 1
+                    stats["photos"] += r["photos"]
+                    stats["videos"] += r["videos"]
+            if n_videos:
+                # 同一归档目录里的视频走独立模块(分开存、分开展示);
+                # 纯视频目录 images 为空,上面不会建写真集,这里建专辑
+                vr = import_video_album(s, album, library_root=library_root,
+                                        unsorted_dir=unsorted_dir)
+                if vr["skipped"]:
+                    if not images:
+                        stats["skipped"] += 1
+                else:
+                    stats["video_albums"] += 1
+                    stats["video_files"] += vr["videos"]
         except Exception as e:
             s.rollback()
             stats["errors"].append(f"{album.name}: {e}")

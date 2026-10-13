@@ -37,6 +37,12 @@ async def lifespan(app: FastAPI):
         media.recover_stuck_processing()  # 重启丢内存队列的自愈: 重新入队 processing 集合
     except Exception:
         log.exception("recover stuck processing failed")
+    from .services import video as video_service
+    video_service.ensure_video_worker()  # 入库封面帧队列(daemon)
+    try:
+        video_service.recover_stuck_processing_albums()  # 重启自愈: processing 视频专辑重新入队
+    except Exception:
+        log.exception("recover stuck processing video albums failed")
     from .services.storage import worker as storage_worker
     try:
         storage_worker.recover_stuck_running()  # 上传任务 running → queued 自愈
@@ -94,6 +100,9 @@ async def auth_wall(request: Request, call_next):
     path = request.url.path
     if (path.startswith("/static") or path.startswith("/assets")
             or path.startswith("/media") or path.startswith("/t/")
+            # 视频原片与封面帧:与 /media、/t/ 同级的媒体出口,匿名可看
+            # (视频专辑页本身仍要登录,这里只放行二进制流)
+            or path.startswith("/video/") or path.startswith("/poster/")
             or path.startswith("/admin/api/")
             or path.startswith("/api/ext/")  # 浏览器联动: 走 X-PhotoBook-Key 自鉴权
             or path.startswith("/api/mobile/")):  # 移动端: 走 Bearer 自鉴权
@@ -374,6 +383,23 @@ def media(path: str, request: Request):
 @app.get("/t/{spec:path}")
 def thumb(spec: str, request: Request):
     return serve_thumb(spec, request)
+
+
+# 视频原片 + 封面帧
+# /video/{rel}:FileResponse 自带 Range/206(拖动进度条/断点续传),
+#   同步 def 同 media:回源流式代理是阻塞 IO,交线程池。
+# /poster/{rel}:封面帧(ffmpeg 抽帧 → 与照片同款的两档 WebP 缓存);
+#   900 档卡片/灯箱垫底通用,2400 档由入库 worker 预热。
+@app.get("/video/{path:path}")
+def video_file(path: str, request: Request):
+    from .services import video
+    return video.serve_video(path, request)
+
+
+@app.get("/poster/{path:path}")
+def video_poster(path: str):
+    from .services import video
+    return video.serve_poster(path)
 
 
 # 静态资源(design 系统的 css/js)

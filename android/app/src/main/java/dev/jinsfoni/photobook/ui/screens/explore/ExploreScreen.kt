@@ -57,6 +57,8 @@ import dev.jinsfoni.photobook.ui.models.DiscoverFeed
 fun ExploreScreen(
     onOpenCollection: (slug: String) -> Unit,
     onOpenAllCollections: () -> Unit = {},
+    onOpenAllVideos: () -> Unit = {},
+    onOpenVideoAlbum: (slug: String) -> Unit = {},
     onOpenSearch: () -> Unit = {},
     vm: ExploreViewModel = hiltViewModel(),
 ) {
@@ -81,6 +83,8 @@ fun ExploreScreen(
                 refreshing = state.refreshing,
                 onOpenCollection = onOpenCollection,
                 onOpenAllCollections = onOpenAllCollections,
+                onOpenAllVideos = onOpenAllVideos,
+                onOpenVideoAlbum = onOpenVideoAlbum,
                 onOpenSearch = onOpenSearch,
                 onRetry = vm::retry,
                 onRefresh = vm::refresh,
@@ -138,6 +142,8 @@ private fun ExploreContent(
     refreshing: Boolean,
     onOpenCollection: (String) -> Unit,
     onOpenAllCollections: () -> Unit,
+    onOpenAllVideos: () -> Unit,
+    onOpenVideoAlbum: (String) -> Unit,
     onOpenSearch: () -> Unit,
     onRetry: () -> Unit,
     onRefresh: () -> Unit,
@@ -225,6 +231,25 @@ private fun ExploreContent(
                 imageUrl = c.imageUrl,
                 onClick = { onOpenCollection(c.slug) },
             )
+        }
+        // 写真视频段(与写真平行的独立模块):前 4 部 + 「查看全部」进视频列表
+        if (feed.videoAlbums.isNotEmpty()) {
+            item(span = { GridItemSpan(2) }) {
+                dev.jinsfoni.photobook.ui.components.SectionHeader(
+                    title = stringResource(R.string.video_albums_noun),
+                    actionText = stringResource(R.string.view_all),
+                    onAction = onOpenAllVideos,
+                )
+            }
+            items(feed.videoAlbums.size.coerceAtMost(4)) { i ->
+                val a = feed.videoAlbums[i]
+                CollectionCard(
+                    title = a.title,
+                    subtitle = "${a.modelName} · ${a.count} 段",
+                    imageUrl = a.imageUrl,
+                    onClick = { onOpenVideoAlbum(a.slug) },
+                )
+            }
         }
     }
     }

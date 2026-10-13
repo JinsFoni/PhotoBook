@@ -49,7 +49,7 @@ def boot_json(request: Request) -> str:
         "lang": lang,
         "version": __version__,
         "i18n": i18n.js_strings(lang),
-        "stats": {"collections": None, "models": None},
+        "stats": {"collections": None, "models": None, "videoAlbums": None},
         "tags": [],
         "suggestions": ["Editorial", "Studio", "Outdoor", "Monochrome"],
         "blur_src": _blur_src(request),
@@ -58,13 +58,15 @@ def boot_json(request: Request) -> str:
         from sqlalchemy import func, select
 
         from .database import SessionLocal
-        from .db import Collection, Model, Tag
+        from .db import Collection, Model, Tag, VideoAlbum
         s = SessionLocal()
         try:
             boot["stats"]["collections"] = s.scalar(
                 select(func.count(Collection.id)).where(Collection.status == "published"))
             boot["stats"]["models"] = s.scalar(
                 select(func.count(Model.id)).where(Model.status == "published"))
+            boot["stats"]["videoAlbums"] = s.scalar(
+                select(func.count(VideoAlbum.id)).where(VideoAlbum.status == "published"))
             boot["tags"] = [t.name for t in s.scalars(
                 select(Tag).order_by(Tag.name).limit(8)).all()]
         finally:
@@ -89,7 +91,7 @@ def _blur_src(request: Request) -> str | None:
         from sqlalchemy import select
 
         from .database import SessionLocal
-        from .db import Collection, Model
+        from .db import Collection, Model, VideoAlbum
 
         rel: str | None = None
         s = SessionLocal()
@@ -109,6 +111,20 @@ def _blur_src(request: Request) -> str | None:
                 c = s.scalar(select(Collection).where(Collection.slug == slug))
                 if c and c.photos:
                     rel = c.photos[0].filename
+            elif path.startswith("/videos/"):
+                slug = path.split("/")[2] if len(path.split("/")) > 2 else ""
+                a = s.scalar(select(VideoAlbum).where(VideoAlbum.slug == slug))
+                if a and a.videos:
+                    if a.cover_video_id:
+                        for v in a.videos:
+                            if v.id == a.cover_video_id and v.poster:
+                                rel = v.poster
+                                break
+                    if not rel:
+                        for v in a.videos:
+                            if v.poster:
+                                rel = v.poster
+                                break
             if not rel:
                 c = s.scalar(
                     select(Collection).where(Collection.status == "published",

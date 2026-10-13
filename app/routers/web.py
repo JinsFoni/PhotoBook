@@ -1,4 +1,4 @@
-"""用户端页面 — Discovery / Models / Collection / Favorites / Profile。"""
+"""用户端页面 — Discovery / Models / Collection / Videos / Favorites / Profile。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from ..auth import require_login
-from ..db import Collection, Favorite, Model, Photo, Tag, User
+from ..db import (Collection, Favorite, Model, Photo, Tag, User, Video,
+                  VideoAlbum)
 from ..database import SessionLocal, get_db
 from ..i18n import t
 from ..templating import templates
@@ -20,7 +21,8 @@ router = APIRouter(dependencies=[Depends(require_login)])
 
 def _fav_keys(s: Session, user_id: int) -> dict[str, set[str]]:
     rows = s.scalars(select(Favorite).where(Favorite.user_id == user_id)).all()
-    out: dict[str, set[str]] = {"model": set(), "collection": set(), "photo": set()}
+    out: dict[str, set[str]] = {"model": set(), "collection": set(), "photo": set(),
+                                "video_album": set(), "video": set()}
     for r in rows:
         if r.target_type in out:
             out[r.target_type].add(r.target_key)
@@ -72,6 +74,8 @@ def _collection_payload(s: Session, c: Collection) -> dict:
 def _model_payload(s: Session, m: Model, collections: list[Collection] | None = None) -> dict:
     works = collections if collections is not None else m.collections
     photo_count = sum(len(c.photos) for c in works)
+    albums = [a for a in m.video_albums if a.status == "published"]
+    video_count = sum(len(a.videos) for a in albums)
     # 最新活动日期:作品集里最新的发布日期(模特页「排序:最新」用)
     latest = max((c.published_at or "" for c in works), default="")
     # 头像兜底:没设头像时用第一张合集封面
@@ -89,6 +93,8 @@ def _model_payload(s: Session, m: Model, collections: list[Collection] | None = 
         "since": m.since or "", "featured": m.featured, "latest": latest,
         "tags": [t.name for t in m.tags],
         "count": len(works), "photoCount": photo_count,
+        # 视频模块(独立于写真集的平行模块)
+        "videoAlbumCount": len(albums), "videoCount": video_count,
     }
 
 
@@ -97,6 +103,59 @@ def _published_collections(s: Session) -> list[Collection]:
         select(Collection).where(Collection.status == "published")
         .options()  # photos lazy selectin via relationship
         .order_by(desc(Collection.published_at), desc(Collection.id))).all())
+
+
+# ---- 视频模块(与写真集平行的独立模块) ----------------------------------------
+
+def _video_album_cover(s: Session, a: VideoAlbum) -> str | None:
+    """列表用封面 rel:优先 cover_video 的 poster,回退首个有 poster 的视频。
+
+    封面走 /t/s900/ 缓存(与照片同构),poster 为空(ffmpeg 缺失)时回退 None,
+    前端再兜底占位图。
+    """
+    if a.cover_video_id:
+        v = s.get(Video, a.cover_video_id)
+        if v and v.poster:
+            return v.poster
+    for v in a.videos:
+        if v.poster:
+            return v.poster
+    return None
+
+
+def _video_album_card(s: Session, a: VideoAlbum) -> dict:
+    """视频专辑瘦身条目(与 _collection_card 平行)。"""
+    return {
+        "id": a.id, "slug": a.slug, "title": a.title,
+        "date": a.published_at or "",
+        "created": a.created_at.date().isoformat() if a.created_at else "",
+        "model_slug": a.model.slug if a.model else "",
+        "model_name": a.model.name if a.model else t("未分类"),
+        "cover": _video_album_cover(s, a),
+        "count": len(a.videos),
+        "tags": [t.name for t in a.tags],
+    }
+
+
+def _video_album_payload(s: Session, a: VideoAlbum) -> dict:
+    return {
+        "id": a.id, "slug": a.slug, "title": a.title,
+        "date": a.published_at or "", "featured": a.featured,
+        "model_slug": a.model.slug if a.model else "",
+        "model_name": a.model.name if a.model else t("未分类"),
+        "cover": _video_album_cover(s, a),
+        "videos": [{"id": v.id, "file": v.filename, "w": v.width, "h": v.height,
+                    "duration": v.duration, "poster": v.poster}
+                   for v in a.videos],
+        "tags": [t.name for t in a.tags],
+        "count": len(a.videos),
+    }
+
+
+def _published_video_albums(s: Session) -> list[VideoAlbum]:
+    return list(s.scalars(
+        select(VideoAlbum).where(VideoAlbum.status == "published")
+        .order_by(desc(VideoAlbum.published_at), desc(VideoAlbum.id))).all())
 
 
 # ---- Discovery --------------------------------------------------------------
@@ -187,6 +246,61 @@ async def collection_detail(request: Request, slug: str, s: Session = Depends(ge
     })
 
 
+# ---- Videos(视频模块,与写真集平行) --------------------------------------------
+
+@router.get("/videos")
+async def videos_page(request: Request, s: Session = Depends(get_db),
+                      q: str = "", tag: str = "", model: str = ""):
+    user = request.state.user
+    albums = _published_video_albums(s)
+    models = s.scalars(select(Model).where(Model.status == "published")
+                       .order_by(Model.name)).all()
+    tags = s.scalars(select(Tag).order_by(Tag.name)).all()
+
+    items = [_video_album_card(s, a) for a in albums]
+
+    tag_counts = {}
+    for a in albums:
+        for t in a.tags:
+            tag_counts[t.name] = tag_counts.get(t.name, 0) + 1
+
+    payload = {
+        "albums": items,
+        "models": [{"slug": m.slug, "name": m.name} for m in models],
+        "tags": [{"name": t.name, "albums": tag_counts.get(t.name, 0)} for t in tags],
+        "filters": {"q": q, "tag": tag, "model": model},
+    }
+    return templates.TemplateResponse(request, "videos.html", {
+        "user": user, "page": "videos",
+        "data_json": json.dumps(payload, ensure_ascii=False),
+    })
+
+
+@router.get("/videos/{slug}")
+async def video_detail(request: Request, slug: str, s: Session = Depends(get_db)):
+    user = request.state.user
+    a = s.scalar(select(VideoAlbum).where(VideoAlbum.slug == slug))
+    if not a or a.status != "published":
+        text = t("We couldn't find that {w}. The link may be out of date.", w=t("视频"))
+        return templates.TemplateResponse(request, "notfound.html",
+                                          {"user": user, "page": "videos", "text": text},
+                                          status_code=404)
+    payload = _video_album_payload(s, a)
+    same_model = [x for x in (s.scalars(
+        select(VideoAlbum).where(VideoAlbum.model_id == a.model_id,
+                                 VideoAlbum.status == "published")).all()
+        if a.model_id else []) if x.slug != a.slug]
+    others = [x for x in _published_video_albums(s)
+              if x.slug != a.slug and x.model_id != a.model_id][:5]
+    next_albums = (same_model + others)[:5]
+    payload["next"] = [_video_album_payload(s, x) for x in next_albums]
+    payload["next_aside"] = a.model.name if (same_model and a.model) else ""
+    return templates.TemplateResponse(request, "video.html", {
+        "user": user, "page": "videos",
+        "data_json": json.dumps(payload, ensure_ascii=False),
+    })
+
+
 # ---- Models -------------------------------------------------------------------
 
 @router.get("/models")
@@ -255,10 +369,27 @@ async def favorites_page(request: Request, s: Session = Depends(get_db), tab: st
                                     "w": p.width, "h": p.height, "gi": len(photo_items),
                                     "collection": c.slug, "title": c.title, "index": i})
 
+    # 收藏的视频专辑(键 = album slug)与单个视频(键 = "<album_slug>:v<idx>",
+    # v 前缀与照片的 "<slug>:<idx>" 区分,两个模块的键不会撞)
+    albums = _published_video_albums(s)
+    video_album_items = [_video_album_payload(s, a) for a in albums
+                         if a.slug in favs["video_album"]]
+    video_items = []
+    for a in albums:
+        for i, v in enumerate(a.videos):
+            key = f"{a.slug}:v{i}"
+            if key in favs["video"]:
+                video_items.append({"key": key, "file": v.filename, "id": v.id,
+                                    "w": v.width, "h": v.height, "duration": v.duration,
+                                    "poster": v.poster, "gi": len(video_items),
+                                    "album": a.slug, "title": a.title, "index": i})
+
     payload = {
         "models": model_items, "collections": collection_items, "photos": photo_items,
+        "videoAlbums": video_album_items, "videos": video_items,
         "counts": {"model": len(model_items), "collection": len(collection_items),
-                   "photo": len(photo_items)},
+                   "photo": len(photo_items), "video_album": len(video_album_items),
+                   "video": len(video_items)},
         "tab": tab,
     }
     return templates.TemplateResponse(request, "favorites.html", {

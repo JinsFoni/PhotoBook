@@ -38,6 +38,41 @@ def test_all_languages_complete():
     assert all(v.get("zh-CN") for v in __import__("app.i18n", fromlist=["STRINGS"]).STRINGS.values())
 
 
+def test_video_module_keys_bilingual():
+    """写真视频模块新增的 msgid 三语齐(缺一条导航/灯箱就中英混排)。"""
+    from app.i18n import STRINGS
+
+    keys = [
+        "Videos", "Video sets",                      # chrome:导航
+        "Favourite video set", "Favourite video",
+        "Favourite video albums", "Favourite videos",
+        "No favourite video sets yet.", "No favourite videos yet.",
+        "{n} videos", "{n} video set", "{n} video sets",
+        "Sort: Most videos", "Sort: Fewest videos",
+        "Open video {n} full screen",
+        "No video sets match those filters.",
+        "This video set has been created but the clips have not been uploaded.",
+    ]
+    for k in keys:
+        assert k in STRINGS, f"missing msgid: {k}"
+        assert STRINGS[k].get("zh-CN"), f"missing zh-CN: {k}"
+        assert STRINGS[k].get("zh-TW"), f"missing zh-TW: {k}"
+
+
+def test_admin_video_keys_bilingual():
+    keys = [
+        "Admin Videos", "+ New video set", "编辑视频", "新建视频",
+        "视频文件({n})", "无(ffmpeg 缺失或抽帧失败)", "{n} video sets in total",
+        "写真视频已删除: {t}", "该写真视频下还没有视频文件",
+        ",{v} 个写真视频({f} 个文件)",
+    ]
+    from app.i18n import STRINGS
+
+    for k in keys:
+        assert k in STRINGS, f"missing admin msgid: {k}"
+        assert STRINGS[k].get("zh-CN"), f"missing zh-CN: {k}"
+
+
 # ---- 路由行为 ---------------------------------------------------------------
 
 def test_home_default_simplified(admin_client):

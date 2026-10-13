@@ -15,15 +15,15 @@ router = APIRouter(prefix="/api/favorites")
 
 
 class FavIn(BaseModel):
-    type: str            # model | collection | photo
-    key: str             # slug 或 collection:idx
+    type: str            # model | collection | photo | video_album | video
+    key: str             # slug 或 collection:idx / album_slug:v{idx}
     added: bool
 
 
 @router.get("")
 async def list_favorites(user: User = Depends(require_login), s: Session = Depends(get_db)):
     rows = s.scalars(select(Favorite).where(Favorite.user_id == user.id)).all()
-    out = {"model": [], "collection": [], "photo": []}
+    out = {"model": [], "collection": [], "photo": [], "video_album": [], "video": []}
     for r in rows:
         if r.target_type in out:
             out[r.target_type].append(r.target_key)
@@ -33,7 +33,7 @@ async def list_favorites(user: User = Depends(require_login), s: Session = Depen
 @router.post("")
 async def toggle_favorite(body: FavIn, user: User = Depends(require_login),
                           s: Session = Depends(get_db)):
-    if body.type not in ("model", "collection", "photo"):
+    if body.type not in ("model", "collection", "photo", "video_album", "video"):
         raise HTTPException(400, "bad type")
     row = s.scalar(select(Favorite).where(
         Favorite.user_id == user.id, Favorite.target_type == body.type,

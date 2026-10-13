@@ -95,7 +95,7 @@ app/
 
 采集子系统边界刻意收窄:对内只暴露 `scan_once()` / `enqueue(url)` / 状态查询三个口;网络与文件系统操作集中在 pipeline 单文件,测试时 mock,不需要真联网。
 
-## 五、数据模型(12 张表)
+## 五、数据模型(17 张表)
 
 数据库只存元数据,图片文件本体在磁盘 volume,库里存相对路径。
 
@@ -115,8 +115,22 @@ tags(id, name, slug)
 model_tags(model_id, tag_id)
 collection_tags(collection_id, tag_id)
 
+── 写真视频(M5,与写真集平行的独立模块)──
+video_albums(id, slug, model_id→models, title, cover_video_id→videos,
+             published_at, status[draft|published|hidden], featured,
+             created_at, updated_at)
+videos(id, album_id→video_albums[CASCADE], filename[/video 下 rel],
+       width, height, duration, poster[封面帧 webp rel,同 /t 缓存树],
+       sort_order, created_at)  UNIQUE(album_id, filename)
+video_album_tags(album_id→video_albums[CASCADE], tag_id→tags[CASCADE])
+video_upload_jobs(album_id, storage_id, status, files_done, files_total,
+                  error, created_at, started_at, finished_at)
+video_uploads(video_id→videos[CASCADE], storage_id→storages[CASCADE],
+              remote_path, created_at)  UNIQUE(video_id, storage_id)
+
 ── 用户行为 ──
-favorites(user_id, target_type[model|collection|photo], target_id, created_at)
+favorites(user_id, target_type[model|collection|photo|video_album|video],
+          target_id, created_at)   # video key = album_slug:v{idx}(v 前缀与照片区分)
 
 ── 采集子系统(需求 §29)──
 harvest_jobs(id, serial, url, title, model_name, status, bytes_done,
@@ -127,17 +141,17 @@ harvest_history(serial UNIQUE, status, title, processed_at)
 settings(key, value)
 ```
 
-- `harvest_jobs` 即队列本体(worker 轮询取最早排队任务),状态:排队/解析中/下载中/解压中/完成/已存在/已跳过/失败
+- `harvest_jobs` 即队列本体(worker 轮询取最早排队任务),状态:排队/解析中/下载中/解压中/完成/已存在/已跳过/失败/已取消(`cancelled` = 手动取消,不写 history,serial 可重新入队续传)
 - `harvest_history` 以序号 UNIQUE 保证同一写真永不重复处理——与 §29 的增量判据一一对应
 - `settings` 存下载目录、白/黑名单、采集周期、单轮页数、未分类目录名;管理员后台修改即时生效
 
-明确不进数据库:原图与解压产物(`/library`)、平台图片库与缩略图(`/media`)。
+明确不进数据库:原图与解压产物(`/library`)、平台图片库与缩略图(`/media`)、视频与封面帧(`/video`)。
 
 ## 六、媒体与存储
 
-- **两个存储根分离**:`/library` = 采集下载暂存区(`模特/写真/照片` 目录结构);`/media` = 平台图片库(入库后)+ 缩略图缓存。M4 导入管线(`app/services/library_import.py`)把图片**移动**到 `/media` 并建 photos 记录,library 侧随之后腾空(详见 §十一「归档库导入」)
+- **三个存储根分离**:`/library` = 采集下载暂存区(`模特/写真/照片` 目录结构);`/media` = 平台图片库(入库后)+ 缩略图缓存;`/video` = 平台视频库(M5,独立模块)。M4 导入管线(`app/services/library_import.py`)把图片**移动**到 `/media` 并建 photos 记录,library 侧随之后腾空(详见 §十一「归档库导入」)
 - 缩略图按需生成:首次访问裁剪到版位尺寸(WebP),存缓存目录,URL 带尺寸参数配 srcset——满足 §36「服务端裁剪、无重排」
-- RAR 内混有视频时(实测存在 `-3-videos` 条目),归档照存;导入时跳过视频(留在 library,用户确认暂不做视频)
+- RAR 内混有视频时(实测存在 `-3-videos` 条目),M5 起视频与写真**分开入库**:同一归档目录里图片建 `collections`、视频建 `video_albums`,两个模块各自一条目、各自一个存储根(详见 §十二「视频模块」)
 
 ## 七、安全(对齐需求 §37)
 
@@ -177,8 +191,9 @@ services:
 | **M2 管理端** | Admin 后台框架 + 模特/写真/照片/标签/用户 CRUD + 上传 | P0 |
 | **M3 采集** | 需求 §29 全量:扫描器/队列/管线/黑白名单/设置页/任务页 | P1 |
 | **M4 打通** | 归档库→平台库导入管线 + 统计 + 收藏服务端化收尾 | P1/P2 |
+| **M5 写真视频** | 独立视频模块:video/ 存储根 + 5 张表 + ffmpeg 封面帧 + Range 播放 + 三端(Web/管理/Android) | P2 |
 
-M1/M2 与 M3 几乎无耦合(采集只依赖 settings + 两张表 + 管理员登录),若想先见采集效果,M3 可提前并行。
+M1/M2 与 M3 几乎无耦合(采集只依赖 settings + 两张表 + 管理员登录),若想先见采集效果,M3 可提前并行。M5 同样是纯增量:不改写真集任何现有行为,视频是平行的一套表/目录/页面。
 
 ---
 
@@ -324,3 +339,80 @@ M1/M2 与 M3 几乎无耦合(采集只依赖 settings + 两张表 + 管理员登
   `?status=<组>&page=<n>` 白名单形态(正则校验),防开放重定向
 - 新词条入 i18n STRINGS(上一页/下一页/第 x/y 页/共 n 条/状态名等,zh-CN/zh-TW)
 - 测试:`tests/test_harvest_pagination.py`(分页边界、筛选、API、back 白名单、空态)
+
+### 取消运行中的采集任务(2026-10 新增)
+
+背景:原「取消」只能删 `queued` 的任务;正在下载的大包(GB 级)只能等它跑完或杀进程,
+下到一半反悔没有任何出路。
+
+实现要点(`app/services/harvest/worker.py:cancel_job` + `/admin/harvest/{id}/cancel`):
+
+- 三态分支:`queued` 直接删记录(还没跑,无产物);`parsing/downloading/extracting`
+  置终态 `cancelled` 并解堵;已终态的任务拒绝(提示「任务已结束,无需取消」)
+- **解堵是关键**:下载线程多半阻塞在网络读上,`join` 不动 —— 复用看门狗已有的
+  `pipeline.close_stream(job_id)` 从外部 close 流,实测立刻抛异常退出
+- **取消不毒化 serial**:直接写终态而不走 `_finish`,那会合并 `HarvestHistory`
+  (serial 为主键),之后 scan 再也入队不了这个序号。取消后该 serial 仍可重新入队,
+  `.part` 保留作断点续传基础(用户反悔的退路)
+- **所有权撤销防覆盖**:`_run_tokens.pop(job_id)` 后,复苏的旧线程 token 不匹配,
+  `finally` 里不会删 `.part`,也不会把 `cancelled` 覆盖成 `failed`
+- `cancelled` 归入终态可删(`TERMINAL_JOB_STATES`),但不属 `ACTIVE_JOB_STATES` ——
+  看门狗不会重新排队它,`_prune_tmp` 按 7 天规则清 work 目录
+- 前端:Jinja 行与 JS 重绘都用 `ACTIVE_JOB_STATES`/`TERMINAL_JOB_STATES` 判定按钮,
+  运行中任务的「取消」带 `confirm` 提示(已下载部分保留);新增「已取消」筛选胶囊
+- 测试:`tests/test_worker.py` 三例(运行中取消三件套、排队中删记录、cancelled 后 serial 可重入队)
+
+---
+
+## 十二、写真视频模块(M5,2026-10)
+
+> 定位:视频是与写真集**平行**的独立模块 —— 独立表、独立存储根 `video/`、独立页面、独立管理后台。写真集(Collection/Photo)的任何现有行为零改动,M5 是纯增量。
+
+### 存储与目录
+
+- `settings.video_dir`(默认 `./video`),目录规则与 `media/` 一致:`video/<模特slug>/<写真slug尾>/<文件>`(`app/config.py:ensure_dirs` 一并创建,Docker volume `./data/video:/data/video`)
+- 封面帧(ffmpeg 抽帧)落在**照片同一棵缩略图缓存树**里:`media/_cache/s900q78/{视频rel}.webp`。封面就是一张普通 webp,卡片/灯箱/模糊垫底的图片管线完全复用,URL 与照片同构(`/t/s900/{rel}.webp`)
+- `Video.poster` 记的 rel 与 `filename` 同值(缓存路径由 rel 派生);`VideoAlbum.cover_video_id` 指定封面,缺省回退首个有 poster 的视频
+
+### 视频服务(`app/services/video.py`)
+
+| 能力 | 实现 |
+| --- | --- |
+| 原片 `/video/{rel}` | Starlette `FileResponse` —— **原生支持 Range/206**,拖动进度条零额外代码;MIME 显式映射(mp4/m4v/mov/mkv/webm/ts…),本地缺失 → 302 远端直链 → 远端流式代理(已透传 Range)→ 404 |
+| 封面 `/poster/{rel}?w=` | 缓存命中即回;未命中且本地视频在 → ffmpeg 抽帧 → PIL 同管线两档(900/2400)落缓存;只在 900/2400 两档间服务 |
+| `probe(path)` | ffprobe JSON 读宽高/时长,超时 30s,任何失败返回全 None(元数据缺失不阻塞播放) |
+| `extract_frame(path, at)` | `ffmpeg -ss {at} -i … -frames:v 1 -f image2pipe -vcodec mjpeg -` 管道直出,不落临时文件 |
+| 封面入队 worker | 线程 + 队列(同 media 预热线程):生成两档 → 回写 `Video.poster` → 翻 `published` → 触发自动上传;重启 `recover_stuck_processing_albums()` 自愈 |
+| 删除清理 | `purge_video_album_files` 删本体 + 两档封面缓存 + 空目录 + 收藏记录(`video_album` 键 = slug,`video` 键 = `slug:v{idx}`) |
+
+**ffmpeg 缺失的降级**:`shutil.which("ffmpeg")` 一处开关(进程内缓存),缺失时 probe/抽帧全返空 —— 视频照常导入播放,只是无封面;`_publish_ready_album` 保证无封面的专辑也翻 published(不会永久隐藏);admin 仪表盘显示警告条。镜像内已装 ffmpeg(debian slim 源)。
+
+**删本地视频的门槛比图片多一条**:图片删了还能回源重生成缩略图,视频删了连帧都抽不出来 —— 所以上传 worker 删除本地文件的条件是「已传所有启用存储 **且封面两档已缓存**」。
+
+### 收藏与播放
+
+- `favorites` 表不变,`target_type` 新增 `video_album`(album slug)与 `video`(键 `f"{album_slug}:v{idx}"`,v 前缀与照片键 `f"{slug}:{idx}"` 区分);四处白名单同步(favorites_api、web `_fav_keys`、mobile POST、mobile resolve 分桶)
+- Web 灯箱视频分支:复用同一套灯箱 DOM(bar/backdrop/under/counter/fav),主图区换成 `<video controls preload="metadata" playsinline>`,**完全绕开**图片的双缓冲/`lbReady`/`upgradeOriginal`/缩放;Android 侧是平行的 `VideoLightboxScreen`(`PlayerView` + ExoPlayer,`playWhenReady=false` 省流量,翻页即释放播放器)
+
+### 三个入口的图文分流
+
+入库有三条入口,**都必须做「图片建写真集、视频建视频专辑」的判定**,否则视频会静默留在 library 里:
+
+| 入口 | 走法 |
+|---|---|
+| 后台「一键导入」`/admin/harvest/import` | `import_library` 递归扫描,按目录判图文分流 |
+| 定时扫描 `scan_once()` | 同上(`import_library`) |
+| 采集任务完成后(worker) | 显式 `list_images` + `import_album` + `import_video_album`(曾断:只调 `import_album`,任务 111 的 4 个 mp4 就永久卡在 library 里,提示还写着「跳过 4 个视频」) |
+
+worker 侧视频标签单独挂一次(`apply_tags` 收 `VideoAlbum`,与写真各走一条关联表:`video_album_tags` vs `collection_tags`)。
+
+### 测试
+
+- `tests/test_library_import.py`:视频移入 `video/`、纯视频目录不再 skipped、图文同目录建两个 album、ffmpeg 缺失降级、**poster rel 回写**(曾断链:worker 只落缓存不回写 DB,封面永远为空)
+- `tests/test_worker.py`:**图文混合目录走采集链路**——视频建 `video_albums` 并移入 `video/`、任务提示为「N 段视频入库」而非「跳过 N 个视频」、tag 同时挂到视频专辑
+- `tests/test_tagging.py`:`apply_tags` 接 `VideoAlbum` 落 `video_album_tags`,写真侧关联表零写入
+- `tests/test_video_media.py`(新):MIME 映射、Range 206(首段+中段)、缺文件 404、路径穿越守卫、封面缓存命中、非 900/2400 档 404、ffmpeg 探测缓存、无 ffmpeg 抽帧/probe 降级
+- `tests/test_media_proxy.py`:视频 302 直链、无远端 404、**代理兜底时 Range 透传**且 MIME 按视频扩展名纠正
+- `tests/test_favorites.py` / `test_pages.py` / `test_admin.py` / `test_mobile_api.py`:两种新收藏类型的增删查、`/videos` 与详情 payload、admin CRUD + 上传上下文、移动端 videos 段形状与收藏往返
+- `tests/test_i18n.py`:视频模块新 msgid 三语言齐(缺一条导航/灯箱就中英混排)
+- 已知坑:httpx 客户端会先规范化 `..`,目录穿越测试直连服务端守卫函数 `_safe_path`

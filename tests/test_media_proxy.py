@@ -273,3 +273,84 @@ def test_redirect_cache_max_entries_evicts_oldest():
         assert storage._redirect_cache_get("k1") == "v1"  # 其余条目不受影响
     finally:
         storage._redirect_cache.clear()
+
+
+# ---- 视频回源(与写真平行的第二个媒体出口)-----------------------------------
+
+def _mk_video_with_remote(rel: str, origin: str) -> None:
+    """建 VideoAlbum/Video/VideoUpload,并删掉本地视频(模拟已传外存)。"""
+    from app.database import SessionLocal
+    from app.db import Model, Storage, Video, VideoAlbum, VideoUpload
+    from app.config import settings
+
+    owner, album, name = rel.split("/")
+    s = SessionLocal()
+    try:
+        m = s.query(Model).filter(Model.slug == owner).first()
+        if not m:
+            m = Model(name=owner, slug=owner)
+            s.add(m)
+            s.flush()
+        a = s.query(VideoAlbum).filter(VideoAlbum.slug == album).first()
+        if not a:
+            a = VideoAlbum(slug=album, title=album, model_id=m.id,
+                           published_at="2026.10.01", status="published")
+            s.add(a)
+            s.flush()
+        v = s.query(Video).filter(Video.filename == rel).first()
+        if not v:
+            v = Video(album_id=a.id, filename=rel, sort_order=0)
+            s.add(v)
+            s.flush()
+        st = s.query(Storage).filter(Storage.name == "test-storage-v").first()
+        if not st:
+            st = Storage(name="test-storage-v", type="webdav", token="t",
+                         enabled=True, direct_link=True, priority=9)
+            s.add(st)
+        st.type = "webdav"
+        st.api_url = origin
+        s.flush()
+        s.add(VideoUpload(video_id=v.id, storage_id=st.id, remote_path=rel))
+        s.commit()
+    finally:
+        s.close()
+    (settings.video_dir / rel).unlink(missing_ok=True)
+
+
+def test_video_missing_local_302_redirects(admin_client, stub_origin):
+    """本地视频缺失 → 302 到解析出的 CDN 直链(字节不过 NAS)。"""
+    from app.config import settings
+    from app.services import storage
+
+    storage._redirect_cache.clear()
+    rel = "vowner/valbum/clip0.mp4"
+    _mk_video_with_remote(rel, stub_origin)
+    r = admin_client.get(f"/video/{rel}", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"].startswith("http://cdn.example.com/cdn/")
+
+
+def test_video_missing_no_remote_404(admin_client):
+    from app.config import settings
+
+    rel = "vowner/vnone/clip1.mp4"
+    p = settings.video_dir / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.unlink(missing_ok=True)
+    assert admin_client.get(f"/video/{rel}").status_code == 404
+
+
+def test_video_proxy_forwards_range(admin_client, stub_origin, monkeypatch):
+    """直链解析失败 → 服务端流式代理,且 Range 透传给上游(拖动进度条可用)。"""
+    from app.services import storage
+
+    _StubOrigin.head_d_status = 500        # OpenList 异常 → 走代理兜底
+    rel = "vowner/valbum/clip2.mp4"
+    _mk_video_with_remote(rel, stub_origin)
+    r = admin_client.get(f"/video/{rel}",
+                         headers={"Range": "bytes=0-31"}, follow_redirects=False)
+    assert r.status_code == 200
+    assert "bytes=0-31" in _StubOrigin.seen_ranges
+    # 代理响应的 MIME 按视频扩展名,而不是上游乱给的 image/png
+    assert r.headers["content-type"] == "video/mp4"
+    _StubOrigin.head_d_status = 302

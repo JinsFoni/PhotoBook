@@ -4,7 +4,8 @@
 导致 tags 表永远为空、发现页「0 tags」。本模块提供唯一的打标入口:
 
 - ``apply_tags(s, collection, model, tags)``:把显示名 tag 幂等写入 tags 表,
-  同时挂到合集与模特(model_tags / collection_tags)
+  同时挂到合集与模特(model_tags / collection_tags);写真集与视频专辑都支持
+  (video_album_tags / video_albums 关系),两条线互不影响
 - ``retag_from_history(s)``:补录 —— 用 harvest_jobs 里已 done 任务的 url
   重新解析详情页,把 tag 补到已导入的合集/模特上(幂等,可重复跑)
 
@@ -18,7 +19,8 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..db import Collection, CollectionTag, HarvestJob, Model, ModelTag, Tag
+from ..db import Collection, VideoAlbum
+from ..db import CollectionTag, HarvestJob, Model, ModelTag, Tag
 from .harvest import net
 
 log = logging.getLogger("tagging")
@@ -54,9 +56,12 @@ def prune_empty_tags(s: Session) -> int:
     return len(orphan_ids)
 
 
-def apply_tags(s: Session, collection: Collection | None,
+def apply_tags(s: Session, collection: Collection | VideoAlbum | None,
                model: Model | None, tags: list[str]) -> int:
     """把 tag 幂等挂到合集与模特。返回本次新关联数(用于日志/统计)。
+
+    ``collection`` 接受写真集(Collection)或视频专辑(VideoAlbum)——
+    两者的 ``tags`` 关系同名,按类型自动走对应的关联表。
 
     tag 记录全局共享(同一名字只建一次);合集与模特任一存在即挂,
     两个都传就都挂 —— 调用方不用关心拆分。

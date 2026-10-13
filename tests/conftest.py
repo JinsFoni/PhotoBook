@@ -11,6 +11,7 @@ import tempfile
 TMP = tempfile.mkdtemp(prefix="pb-tests-")
 os.environ.setdefault("DATA_DIR", os.path.join(TMP, "data"))
 os.environ.setdefault("MEDIA_DIR", os.path.join(TMP, "media"))
+os.environ.setdefault("VIDEO_DIR", os.path.join(TMP, "video"))
 os.environ.setdefault("LIBRARY_DIR", os.path.join(TMP, "library"))
 os.environ.setdefault("HARVEST_ENABLED", "0")
 os.environ.setdefault("SEED_DEMO", "1")  # 测试依赖种子内容(demo 写真/模特)

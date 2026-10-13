@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # ---- 存储 ------------------------------------------------------------
     data_dir: Path = Path("./data")        # SQLite
     media_dir: Path = Path("./media")      # 平台图片库 + 缩略图缓存
+    video_dir: Path = Path("./video")      # 平台视频库(与 media 同目录规则)
     library_dir: Path = Path("./library")  # 采集归档库(素材库)
 
     # ---- 种子内容 -------------------------------------------------------
@@ -52,8 +53,12 @@ class Settings(BaseSettings):
     # manifest + service worker(可安装/离线兜底页); 局域网部署不需要时置 false
     pwa_enabled: bool = True
 
+    # ---- 视频 -------------------------------------------------------------
+    # 封面帧取秒点:有些视频前 1s 是黑场/淡入,抽不到有效画面可调大
+    video_frame_at: float = 1.0
+
     def ensure_dirs(self) -> None:
-        for d in (self.data_dir, self.media_dir, self.library_dir):
+        for d in (self.data_dir, self.media_dir, self.video_dir, self.library_dir):
             d.mkdir(parents=True, exist_ok=True)
 
 

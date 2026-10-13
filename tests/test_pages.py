@@ -108,3 +108,42 @@ def test_collections_page_vm_payload_has_tags(admin_client):
     if any(c["tags"] for c in d["collections"]):
         names = {t["name"] for t in d["tags"]}
         assert names, "有带标签的写真集时, tags 数据源不应为空"
+
+
+# ---- 写真视频(与写真集平行的独立模块) ----------------------------------------
+
+def test_videos_page_vm_payload(admin_client):
+    """/videos 与 /collections 同构: 数据池键名为 albums(不是 collections),
+    卡片条目带 tags/cover/count, 空库时也必须是 200 + 空数组。"""
+    r = admin_client.get("/videos")
+    assert r.status_code == 200
+    d = _pb_data(r.text)
+    assert isinstance(d.get("albums"), list)
+    assert isinstance(d.get("models"), list)
+    assert isinstance(d.get("tags"), list)
+    for a in d["albums"]:
+        for k in ("slug", "title", "cover", "count", "tags", "model_slug", "created"):
+            assert k in a, f"album {a.get('slug')} 缺字段 {k}"
+    assert 'class="vm-grid" data-grid' in r.text
+
+
+def test_video_detail_404_for_unknown(admin_client):
+    r = admin_client.get("/videos/nope-nope")
+    assert r.status_code == 404
+
+
+def test_favorites_page_video_buckets(admin_client):
+    """/favorites 的 PB_DATA 必须有 videoAlbums/videos 两个桶
+    (前端两个新 tab 与 loadFavs 遍历都依赖它们存在)。"""
+    r = admin_client.get("/favorites")
+    assert r.status_code == 200
+    d = _pb_data(r.text)
+    assert isinstance(d.get("videoAlbums"), list)
+    assert isinstance(d.get("videos"), list)
+    assert d["counts"]["video_album"] == len(d["videoAlbums"])
+    assert d["counts"]["video"] == len(d["videos"])
+    # 两个新 tab 的按钮与面板
+    assert 'data-fav-count="video_album"' in r.text
+    assert 'data-fav-count="video"' in r.text
+    assert 'data-panel="video_album"' in r.text
+    assert 'data-panel="video"' in r.text

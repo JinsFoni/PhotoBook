@@ -188,6 +188,12 @@ val DownloadIcon = part {
     moveTo(5f, 20f); horizontalLineTo(19f)
 }
 
+// 播放三角(视频瓦片/灯箱盖):实心三角 + 外圈细环,描边风格不显厚重。
+// 画成封闭三角再 close(),与其余 stroke 图标同一 PathScope DSL。
+val PlayIcon = part {
+    moveTo(9f, 6.2f); lineTo(19f, 12f); lineTo(9f, 17.8f); close()
+}
+
 val CopyIcon = part {
     roundedRect(8f, 8f, 12f, 12f, 1.5f)
     moveTo(16f, 8f); verticalLineTo(5.5f)

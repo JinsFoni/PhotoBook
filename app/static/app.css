@@ -1610,6 +1610,67 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .photo-tile:hover .photo-tile__idx,
 .photo-tile:focus-within .photo-tile__idx { opacity: 1; }
 
+/* ---------- 视频瓦片(写真视频模块,与写真集平行) --------------------------
+   复用 .photo-tile 的 hit 层/序号层语义: 封面帧是普通 webp(走 /t/s900/
+   同一缓存树), 瓦片本身只多时长角标与中央播放标记 */
+
+/* 时长角标: 左下胶囊, 半透明黑底白字。tabular-nums 让 mm:ss 跳秒不抖动 */
+.video-tile__badge {
+  position: absolute;
+  left: var(--s2, 8px);
+  bottom: var(--s2, 8px);
+  z-index: 2;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* 中央播放标记: 默认半隐, 悬停/聚焦完全显现;
+   触屏无 hover(@media hover:none 下统一常显) */
+.video-tile__play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.92);
+  z-index: 2;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.42);
+  color: #fff;
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity var(--t-ui) var(--ease), transform var(--t-ui) var(--ease);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.video-tile__play svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+  margin-left: 2px; /* 视觉居中: 三角形重心偏左 */
+}
+.collection-card:hover .video-tile__play,
+.collection-card:focus-within .video-tile__play,
+.video-tile:hover .video-tile__play,
+.video-tile:focus-within .video-tile__play,
+.video-tile__play:hover {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+@media (hover: none) {
+  .video-tile__play { opacity: 0.9; transform: translate(-50%, -50%) scale(1); }
+}
+
 /* touch devices never get a hover, so hover-revealed controls stay visible */
 @media (hover: none) {
   .reveal,
@@ -2018,6 +2079,30 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lightbox__under[data-ready="true"] { opacity: 1; }
 /* 放大模式: 主图内联尺寸可能超出 stage, 垫底层隐藏避免边缘穿帮 */
 .lightbox[data-zoom="true"] .lightbox__under { opacity: 0 !important; }
+
+/* 视频轨: kind=photo 时隐藏(图片模式完全不渲染视频元素);
+   kind=video 时铺满 stage 的 contain 矩形, controls 原生控件在底部,
+   上下留白避免与灯箱顶/底栏重叠 */
+.lightbox__video {
+  display: none;
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: min(100%, calc(100cqh * 16 / 9));
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  background: #000;
+  z-index: 3;
+}
+.lightbox[data-kind="video"] .lightbox__video { display: block; }
+/* 视频模式下图片双缓冲层与垫底层全部退场(视频自带 poster 垫首帧) */
+.lightbox[data-kind="video"] .lightbox__img,
+.lightbox[data-kind="video"] .lightbox__under { opacity: 0 !important; }
+/* 视频不支持图片那套 1:1 放大/拖拽平移, 光标语义回归默认 */
+.lightbox[data-kind="video"] .lightbox__stage { cursor: default; }
+/* 全屏态: 视频占满视口, 控件贴边 */
+.lightbox:fullscreen .lightbox__video { width: 100%; height: 100%; max-height: none; }
 
 /* ---------- 灯箱全屏态(:fullscreen 元素即 .lightbox) ----------------------
    布局与普通态一致: 顶/底栏本来就悬浮在图上, stage 占满视口, 照片 contain

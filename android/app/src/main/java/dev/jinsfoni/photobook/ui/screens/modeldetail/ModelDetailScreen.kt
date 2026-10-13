@@ -60,6 +60,7 @@ fun ModelDetailScreen(
     slug: String,
     onBack: () -> Unit,
     onOpenCollection: (String) -> Unit,
+    onOpenVideoAlbum: (String) -> Unit = {},
     vm: ModelDetailViewModel = hiltViewModel(),
 ) {
     val colors = LocalPhotoColors.current
@@ -79,6 +80,7 @@ fun ModelDetailScreen(
             onBack = onBack,
             onToggleFavorite = vm::toggleFavorite,
             onOpenCollection = onOpenCollection,
+            onOpenVideoAlbum = onOpenVideoAlbum,
         )
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -102,6 +104,7 @@ private fun ModelDetailContent(
     onBack: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpenCollection: (String) -> Unit,
+    onOpenVideoAlbum: (String) -> Unit,
 ) {
     val d = state.detail!!
     val colors = LocalPhotoColors.current
@@ -268,6 +271,28 @@ private fun ModelDetailContent(
                     end = if (i % 2 == 1) 18.dp else 0.dp,
                 ),
             )
+        }
+        // 写真视频段(平行模块):模特名下的视频专辑,节标题带部数
+        if (d.videoAlbums.isNotEmpty()) {
+            item(span = { GridItemSpan(2) }) {
+                dev.jinsfoni.photobook.ui.components.SectionHeader(
+                    title = "视频 ${d.videoAlbumCount}",
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                )
+            }
+            items(d.videoAlbums.size) { i ->
+                val a = d.videoAlbums[i]
+                CollectionCard(
+                    title = a.title,
+                    subtitle = "${a.modelName} · ${a.count} 段",
+                    imageUrl = a.imageUrl,
+                    onClick = { onOpenVideoAlbum(a.slug) },
+                    modifier = Modifier.padding(
+                        start = if (i % 2 == 0) 18.dp else 0.dp,
+                        end = if (i % 2 == 1) 18.dp else 0.dp,
+                    ),
+                )
+            }
         }
     }
 }

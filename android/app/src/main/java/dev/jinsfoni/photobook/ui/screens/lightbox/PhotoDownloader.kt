@@ -63,12 +63,59 @@ class PhotoDownloader @Inject constructor(
         }
     }
 
+    /**
+     * 保存视频到 Movies/PhotoBook/(写真视频模块)。与图片同款进程内拉流:
+     * 视频可能几 MB,readTimeout 放到 5 分钟,长视频弱网也能落盘。
+     */
+    fun downloadVideo(url: String, fileName: String) {
+        android.util.Log.w("PhotoDl", "video start $url -> $fileName")
+        scope.launch {
+            runCatching {
+                val bytes = fetchFollowingRedirects(url, readTimeoutMs = 300_000)
+                val values = ContentValues().apply {
+                    put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
+                    put(MediaStore.Video.Media.MIME_TYPE, videoMime(fileName))
+                    put(MediaStore.Video.Media.RELATIVE_PATH,
+                        "${Environment.DIRECTORY_MOVIES}/PhotoBook")
+                    put(MediaStore.Video.Media.IS_PENDING, 1)
+                }
+                val resolver = context.contentResolver
+                val uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                    ?: error("MediaStore insert failed")
+                resolver.openOutputStream(uri)?.use { os ->
+                    os.write(bytes)
+                    os.flush()
+                }
+                values.clear()
+                values.put(MediaStore.Video.Media.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                android.util.Log.w("PhotoDl", "video saved OK ${bytes.size}B")
+            }.onFailure { android.util.Log.w("PhotoDl", "video FAIL", it) }
+        }
+    }
+
+    /** 按扩展名给 MIME(系统相册靠它归类;未知扩展名按 mp4 兜底)。 */
+    private fun videoMime(fileName: String): String = when (
+        fileName.substringAfterLast('.', "").lowercase()
+    ) {
+        "m4v" -> "video/mp4"
+        "mov" -> "video/quicktime"
+        "mkv" -> "video/x-matroska"
+        "webm" -> "video/webm"
+        "ts" -> "video/mp2t"
+        else -> "video/mp4"
+    }
+
     /** 手动跟随重定向(含 http↔https 跨协议),上限 5 跳。 */
-    private fun fetchFollowingRedirects(url: String, redirects: Int = 0): ByteArray {
+    private fun fetchFollowingRedirects(
+        url: String,
+        redirects: Int = 0,
+        readTimeoutMs: Int = 30_000,
+    ): ByteArray {
         check(redirects <= 5) { "too many redirects" }
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 10_000
-        conn.readTimeout = 30_000
+        conn.readTimeout = readTimeoutMs
         conn.instanceFollowRedirects = false
         try {
             when (conn.responseCode) {
@@ -83,7 +130,7 @@ class PhotoDownloader @Inject constructor(
                     // 非法(服务端 URL 未编码), 会直接 URISyntaxException。
                     val next = resolveRedirect(url, loc)
                     android.util.Log.w("PhotoDl", "redirect -> $next")
-                    return fetchFollowingRedirects(next, redirects + 1)
+                    return fetchFollowingRedirects(next, redirects + 1, readTimeoutMs)
                 }
             }
             if (conn.responseCode !in 200..299) {

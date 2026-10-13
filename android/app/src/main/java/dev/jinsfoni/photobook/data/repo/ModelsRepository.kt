@@ -7,6 +7,7 @@ import dev.jinsfoni.photobook.data.remote.dto.CollectionCardDto
 import dev.jinsfoni.photobook.data.remote.dto.ModelDetailDto
 import dev.jinsfoni.photobook.data.remote.dto.ModelDto
 import dev.jinsfoni.photobook.data.remote.dto.SearchModelDto
+import dev.jinsfoni.photobook.data.remote.dto.VideoAlbumCardDto
 import dev.jinsfoni.photobook.data.remote.safeCall
 import dev.jinsfoni.photobook.ui.models.CollectionCard
 import dev.jinsfoni.photobook.ui.models.ModelCard
@@ -56,6 +57,10 @@ class ModelsRepository @Inject constructor(
             photoCount = dto.photoCount,
             tags = dto.tags,
             collections = dto.collections.map { it.toModel(base) },
+            // 写真视频是平行模块:模特详情另一段视频专辑卡列
+            videoAlbums = dto.videoAlbums.map { it.toVideoCard(base) },
+            videoAlbumCount = dto.videoAlbumCount,
+            videoCount = dto.videoCount,
         )
     }
 
@@ -87,6 +92,16 @@ internal fun SearchModelDto.toSearchCard(base: String) = ModelCard(
 )
 
 internal fun CollectionCardDto.toModel(base: String) = CollectionCard(
+    slug = slug,
+    title = title,
+    modelName = model_name,
+    imageUrl = coverThumb?.let { MediaUrls.fromPrefixed(base, it) },
+    count = count,
+    tags = tags,
+)
+
+/** 视频专辑卡:与写真卡同形(封面帧走同一 /t/ 缓存树),搜索/模特页复用。 */
+internal fun VideoAlbumCardDto.toVideoCard(base: String) = CollectionCard(
     slug = slug,
     title = title,
     modelName = model_name,

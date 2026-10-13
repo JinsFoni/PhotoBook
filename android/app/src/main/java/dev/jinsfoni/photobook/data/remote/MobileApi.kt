@@ -13,6 +13,8 @@ import dev.jinsfoni.photobook.data.remote.dto.CollectionDto
 import dev.jinsfoni.photobook.data.remote.dto.ModelDetailDto
 import dev.jinsfoni.photobook.data.remote.dto.ModelsPageDto
 import dev.jinsfoni.photobook.data.remote.dto.SearchResultDto
+import dev.jinsfoni.photobook.data.remote.dto.VideoAlbumDto
+import dev.jinsfoni.photobook.data.remote.dto.VideosPageDto
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
@@ -47,6 +49,17 @@ interface MobileApi {
 
     @GET("collections/{slug}")
     suspend fun collection(@Path("slug") slug: String): CollectionDto
+
+    @GET("videos")
+    suspend fun videos(
+        @Query("tag") tag: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 20,
+        @Query("sort") sort: String = "latest",
+    ): VideosPageDto
+
+    @GET("videos/{slug}")
+    suspend fun video(@Path("slug") slug: String): VideoAlbumDto
 
     @GET("models")
     suspend fun models(@Query("featured") featured: String? = null,

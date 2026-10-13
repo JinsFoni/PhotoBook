@@ -43,6 +43,9 @@ fun MainShell(
     onOpenCollection: (String) -> Unit = {},
     onOpenModel: (String) -> Unit = {},
     onOpenPhoto: (String, Int) -> Unit = { _, _ -> },
+    onOpenVideoAlbum: (String) -> Unit = {},
+    onOpenVideo: (String, Int) -> Unit = { _, _ -> },
+    onOpenAllVideos: () -> Unit = {},
     onOpenSearch: () -> Unit = {},
 ) {
     val colors = LocalPhotoColors.current
@@ -77,6 +80,8 @@ fun MainShell(
                         PhotoTab.EXPLORE -> ExploreScreen(
                             onOpenCollection = onOpenCollection,
                             onOpenAllCollections = openAllCollections,
+                            onOpenAllVideos = onOpenAllVideos,
+                            onOpenVideoAlbum = onOpenVideoAlbum,
                             onOpenSearch = onOpenSearch,
                         )
                         PhotoTab.COLLECTIONS -> CollectionsScreen(
@@ -89,6 +94,8 @@ fun MainShell(
                             onOpenModel = onOpenModel,
                             onOpenCollection = onOpenCollection,
                             onOpenPhoto = { slug: String, idx: Int -> onOpenPhoto(slug, idx) },
+                            onOpenVideoAlbum = onOpenVideoAlbum,
+                            onOpenVideo = { slug: String, idx: Int -> onOpenVideo(slug, idx) },
                             onOpenSettings = onOpenSettings,
                         )
                     }

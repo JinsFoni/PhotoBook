@@ -17,7 +17,7 @@
 
 ```
 ┌────────────────────────── Android App (Kotlin) ──────────────────────────┐
-│  ui/        Compose 屏幕 ×10 + PhotoTheme(light/dark/blur)+ 悬浮玻璃导航  │
+│  ui/        Compose 屏幕 ×13 + PhotoTheme(light/dark/blur)+ 悬浮玻璃导航  │
 │    │  UiState(StateFlow)↑↓ 事件(UDF,单向数据流)                        │
 │  data/      ViewModel ↔ Repository(内存缓存 + 乐观更新)                  │
 │    │                        │                                            │
@@ -42,6 +42,7 @@
 | 依赖注入 | Hilt(KSP) | 与 ViewModel/Compose 一等集成,编译期校验;备选手动 AppContainer,规模大了再迁不迟 |
 | 网络 | Retrofit + OkHttp + kotlinx.serialization | 官方 converter-kotlinx-serialization;DTO 与路由共用 `@Serializable` |
 | 图片 | Coil 3 + **telephoto**(zoomable-image-coil3) | Coil 复用 OkHttp 鉴权头与磁盘缓存;telephoto 提供灯箱子采样(大图 tile 解码)+ 缩放手势,Immich 同类方案 |
+| 视频 | **media3 ExoPlayer 1.8.1**(exoplayer + ui) | 写真视频(M5)播放:`PlayerView` 自带进度条/暂停/全屏,Range 请求由服务端 206 承接;不引自绘播放器 |
 | 背景虚化/玻璃 | Modifier.blur(RenderEffect,API 31+);**haze**(chrisbanes)做"背后内容实模糊";AGSL RuntimeShader 做 API 33+ 折射增强 | design.md 玻璃三要素:折射/磨砂/边缘光,对应三条实现路径 |
 | 本地存储 | DataStore(Proto) | 服务器档案、token、主题、语言;**V1 不引入 Room**(见 §8 YAGNI) |
 | 下载 | DownloadManager + HTTP 头带 token | 系统级通知/断点,零后台代码;不引 WorkManager |
@@ -127,6 +128,19 @@ app/src/main/kotlin/dev/jinsfoni/photobook/
 - Coil `ImageLoader` 全局单例:鉴权头拦截器、磁盘缓存 256MB、`respectCacheHeaders(false)`(缩略图内容寻址,永不失效)、内存缓存默认
 - 内存压力:灯箱打开时列表自动停驻加载(Coil 生命周期天然支持)
 
+### 6.1 视频管线(M5)
+
+视频是**平行模块**(独立表、独立 `video/` 目录、独立页面),但 URL 形状与图片刻意同构,让 Coil 侧的代码可以镜像:
+
+| 场景 | URL | 说明 |
+|---|---|---|
+| 封面帧(卡片/瀑布/垫底) | `/t/s900/{videoRel}.webp` | ffmpeg 抽首帧喂**同一套** `media._make_webp` 管线;与照片缩略图同一个缓存树,同一个 Coil ImageLoader |
+| 播放 | `/video/{videoRel}` | ExoPlayer `PlayerView`;服务端 `FileResponse` 原生 206,拖进度条零额外代码 |
+| 下载 | `/video/{videoRel}` | PhotoDownloader 走 `MediaStore.Video.Media` → `Movies/PhotoBook/` |
+
+- ExoPlayer 生命周期:`remember(url) { ExoPlayer.Builder(context).build() }` + `DisposableEffect(url) { onDispose { player.release() } }`;`playWhenReady = false` —— 移动端默认不自动播放,省流量,用户点播放才请求媒体
+- 灯箱视频页**完全绕开**图片专用的双缓冲/`lbReady`/`upgradeOriginal`/telephoto tile 解码,只保留 poster 垫底(首帧 webp 就是普通图片)+ 氛围层/垫底层的复用
+
 ## 7. 主题与玻璃效果实现路径
 
 | 设计元素 | 实现 |
@@ -138,6 +152,7 @@ app/src/main/kotlin/dev/jinsfoni/photobook/
 
 ## 8. 明确不做(V1 YAGNI)
 
+- **视频直播流/HLS 自适应码率**:media3-hls 依赖已引入(为后续留门),当前写真视频是文件直出(`/video/{rel}` + Range 206),不推流
 - **Room/离线浏览**:自托管 + VPN 常在线;Coil 磁盘缓存已兜住图片,JSON 列表体量小
 - Paging3:单库写真数百级,`limit/offset` 参数先占位,数据量到了再加
 - 多模块化:单模块 + 包分层,规模(万行)未到拆分收益点
@@ -153,6 +168,7 @@ app/src/main/kotlin/dev/jinsfoni/photobook/
 | M2 内容闭环 | models/detail + favorites(S7 读写同步)+ search(S10) | 收藏三段 Tab 与 Web 端一致 |
 | M3 体验补全 | settings(S9 多服务器/语言/主题)+ DownloadManager 下载 + 骨架屏/空态 | 全 10 屏可用 |
 | M4 增强 | AGSL 折射、缓存/内存调优、ktfmt/CI(assemble + 单测) | API 33 真机玻璃折射可见 |
+| M5 写真视频 | media3 ExoPlayer、视频列表/详情/灯箱播放/下载、收藏视频两 Tab | 视频拖动进度条 206 播放通,收藏与写真互不干扰 |
 
 ## 10. 测试策略
 
@@ -160,6 +176,7 @@ app/src/main/kotlin/dev/jinsfoni/photobook/
 - ViewModel:Turbine 断言 UiState 流(加载/空态/错误/乐观回滚)
 - Repository:假 Api 手写 Fake(不引 mockk 全家桶,接口少)
 - Compose:每屏 `createComposeRule` 冒烟(渲染不崩 + 关键节点存在);像素级验证靠设计稿阶段已完成的 Playwright 流程,不在端上重复
+- 视频(M5):ExoPlayer 本身不测(框架胶水),测 VM 映射(封面 URL = `/t/s900/{rel}.webp`、播放 URL = `/video/{rel}`)与收藏分桶;MockWebServer 排空必须用有界 `repeat(requestCount)`,`while (count > 0)` 会永久阻塞
 
 ## 11. M1 实施偏差记录(android 分支,2026-10-03)
 
@@ -197,3 +214,24 @@ M3(S9 设置页 / 多服务器 / 主题持久化 / 语言)已实施;以下为与
 | 冷启动请求落点跟随活动档案(HostSelectionInterceptor) | ✓(双向切换,日志确认) |
 | 删除非活动档案 | ✓(列表恢复单档案) |
 | 旧数据自动愈合(M2 空列表固化为 "[]") | ✓(档案行恢复) |
+
+## 13. M5 写真视频模块实施偏差记录(add-video 分支,2026-10-13)
+
+M5(写真视频:独立表 / `video/` 目录 / 列表·详情·灯箱·收藏)已实施;服务端侧改动记录见
+`docs/architecture.md` §十二,这里只记安卓端的偏差与踩坑:
+
+| 原设计 | 实际实现 | 原因 |
+|---|---|---|
+| 视频详情屏并入写真详情(S3),Pager 按 kind 分支 | **独立屏幕** `VideoAlbumScreen` / `VideoLightboxScreen` + 独立路由 `videos`、`video/{slug}`、`lightbox/video/{slug}/{idx}` | 用户确认视频是与写真集分开的独立模块:独立表、独立目录、独立页面,只共享媒体管线与视觉语言 |
+| 详情瀑布复用照片 2 列 | 视频详情用 `LazyVerticalStaggeredGrid` + `arrangeTwoColumnWall` 重排 | 视频按抽帧比例出瓦片(横/竖混排),2 列定高会留白 |
+| 灯箱视频页自绘播放器控件 | media3 `PlayerView`(`useController = true`,隐藏上/下一集按钮) | 进度条/暂停/全屏/手势是成熟实现,自绘只会在边界情况(横竖屏、seek 预览)反复返工 |
+| 灯箱图片的 `playWhenReady` 自动播放 | `playWhenReady = false` | 移动端默认自动播放既费流量又突然出声;点播放再请求媒体 |
+| 收藏键沿用写真 `slug:idx` | 视频收藏键加 `v` 前缀:`{album_slug}:v{idx}`,`target_type = "video"` | 同一 `favorites` 表,前缀保证与照片键不撞;`video_album` 型用 album slug |
+| Compose 屏冒烟测试 | 视频三个屏写 VM 单测(列表分页/排序、详情映射+收藏、灯箱收藏)+ FavoritesViewModel 视频分桶(总 51 项) | 与既有策略一致:VM 断言 UiState 流,渲染靠真机走查 |
+
+### 踩坑记录
+
+- **`Video.poster` 曾永不回写**:后端 worker 只把封面帧落缓存,不回写 DB,`_video_album_cover()` 永远返回 `None`,端上封面全空。已改为导入时同步回写 + worker 补写(`video.mark_poster`),`tests/test_library_import.py::test_video_import_records_poster_rel` 锁死这条链路
+- **`/video/` 与 `/poster/` 曾被登录墙拦住**:匿名播放 302 到登录页。`app/main.py` 的 auth_wall 中间件已把这两个前缀与 `/media`、`/t/` 同级放行(二进制流公开,专辑页本身仍要登录)
+- **单测假死**:`while (server.requestCount > 0)` 排空 MockWebServer 会死循环 —— `requestCount` 是累计值,排空后 `takeRequest()` 无限阻塞。改为 `repeat(server.requestCount) { ... }` 有界排空
+- **Gradle 测试执行器残留**:早先后台跑测试留下的 `Gradle Test Executor` JVM 会抢占同一任务导致 `EOFException`;后续跑 `testDebugUnitTest` 前先 `./gradlew --stop` + `pkill -f "Gradle Test Executor"` + 清 `app/build/tmp/testDebugUnitTest`,并加 `--no-daemon`

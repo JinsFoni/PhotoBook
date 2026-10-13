@@ -1,0 +1,295 @@
+{% extends '_shell.html' %}
+{% block title %}{{ t('Videos') }} — Photo Collection{% endblock %}
+
+{% block main %}
+<div class="wrap">
+  <div class="page-head" style="padding-top:var(--s6)">
+    <p class="page-head__sub" style="margin-top:0" data-sub>{{ t('Every published video set in the archive, newest first.') }}</p>
+  </div>
+
+  <div class="filters">
+    <label class="searchbox">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+      <input type="search" data-f-name placeholder="{{ t('Search titles and models') }}" aria-label="{{ t('Search videos') }}">
+    </label>
+
+    <select class="select" data-f-tag aria-label="{{ t('Tag') }}">
+      <option value="">{{ t('Any tag') }}</option>
+    </select>
+
+    <select class="select" data-f-model aria-label="{{ t('Models') }}">
+      <option value="">{{ t('Any model') }}</option>
+    </select>
+
+    <span class="filters__spacer"></span>
+    <span class="filters__count num" data-count></span>
+
+    <select class="select" data-f-sort aria-label="{{ t('Sort') }}">
+      <option value="newest">{{ t('Sort: Newest imported') }}</option>
+      <option value="oldest">{{ t('Sort: Oldest imported') }}</option>
+      <option value="pub-newest">{{ t('Sort: Newest published') }}</option>
+      <option value="pub-oldest">{{ t('Sort: Oldest published') }}</option>
+      <option value="title-asc">{{ t('Sort: Title A-Z') }}</option>
+      <option value="title-desc">{{ t('Sort: Title Z-A') }}</option>
+      <option value="size">{{ t('Sort: Most videos') }}</option>
+      <option value="size-asc">{{ t('Sort: Fewest videos') }}</option>
+    </select>
+
+    <button class="btn btn--quiet btn--sm" type="button" data-f-reset>{{ t('Reset') }}</button>
+  </div>
+
+  <div class="vm-grid" data-grid></div>
+
+  <div data-empty hidden>
+    <div class="state">
+      <h2 class="state__title">{{ t('No video sets match those filters.') }}</h2>
+      <p class="state__text">{{ t('Try a different tag, or clear the filters to see the whole archive.') }}</p>
+      <button class="btn btn--ghost" type="button" data-f-reset>{{ t('Clear filters') }}</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* 视频列表: 客户端筛选 + 网格虚拟化(与写真集列表同一套引擎)。
+   封面是 ffmpeg 抽帧生成的 webp, 走的 /t/s900/ 缓存树与照片同构,
+   因此卡片高度公式(2/3 封面 + 标注区)可原样沿用。 */
+(function () {
+  var D = window.PB_DATA;
+  var grid = document.querySelector("[data-grid]");
+  var empty = document.querySelector("[data-empty]");
+  var f = { name: D.filters.q || "", tag: D.filters.tag || "", model: D.filters.model || "", sort: "newest" };
+
+  /* ---- 虚拟化常量(与 collections.html 严格同步) ---- */
+  var COLS_WIDE = 6, COLS_NARROW = 3, NARROW_BP = 1180, MOBILE_BP = 760;
+  var CAP = 12 + 26 + 2 + 22;
+
+  function gutter() { return window.innerWidth <= MOBILE_BP ? 12 : 24; }
+  function cols() { return window.innerWidth <= NARROW_BP ? COLS_NARROW : COLS_WIDE; }
+
+  var tagSel = document.querySelector("[data-f-tag]");
+  D.tags.forEach(function (t) {
+    tagSel.insertAdjacentHTML("beforeend", '<option value="' + t.name + '">' + t.name + " (" + t.albums + ")</option>");
+  });
+  var modelSel = document.querySelector("[data-f-model]");
+  D.models.forEach(function (m) {
+    modelSel.insertAdjacentHTML("beforeend", '<option value="' + m.slug + '">' + m.name + "</option>");
+  });
+  document.querySelector("[data-f-name]").value = f.name;
+  tagSel.value = f.tag; modelSel.value = f.model;
+
+  function cardShell() {
+    return '<article class="collection-card hoverable">' +
+      '<div style="position:relative"><a data-card-link href="#" aria-label=""><div class="frame skeleton" style="aspect-ratio:2/3">' +
+      '<img alt="" loading="lazy" decoding="async"></div></a>' +
+      '<span class="video-tile__play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 6.5v11l9-5.5z"/></svg></span>' +
+      '<div class="card__fav reveal"><button class="fav fav--bare" type="button" data-fav="video_album" data-fav-key="" aria-pressed="false">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.2s-7.4-4.5-7.4-9.6A4.3 4.3 0 0 1 12 7.9a4.3 4.3 0 0 1 7.4 2.7c0 5.1-7.4 9.6-7.4 9.6z"/></svg>' +
+      '<span class="sr">' + PC.t("Add to favourites") + '</span></button></div></div>' +
+      '<div class="card__caption"><div class="card__caption-main">' +
+      '<h3 class="card__title"><a data-card-title href="#"></a></h3>' +
+      '<p class="card__sub"><a data-card-model href="#"></a><span data-card-count></span></p>' +
+      "</div></div></article>";
+  }
+
+  function fillCard(root, a) {
+    var link = root.querySelector("[data-card-link]");
+    link.href = "/videos/" + a.slug;
+    link.setAttribute("aria-label", PC.escapeHtml(a.title));
+    var img = root.querySelector("img");
+    img.alt = PC.escapeHtml(a.title);
+    /* 无封面帧(ffmpeg 缺失/抽帧失败)时 img.src 留空, CSS 的骨架底纹兜底 */
+    if (img.getAttribute("src") !== coverUrl(a)) img.src = coverUrl(a);
+    root.querySelector("[data-fav-key]").setAttribute("data-fav-key", a.slug);
+    var tl = root.querySelector("[data-card-title]");
+    tl.href = "/videos/" + a.slug;
+    tl.textContent = a.title;
+    var ml = root.querySelector("[data-card-model]");
+    ml.href = "/models/" + a.model_slug;
+    ml.textContent = a.model_name;
+    root.querySelector("[data-card-count]").textContent = PC.t("{n} videos", { n: a.count });
+  }
+
+  function filtered() {
+    var q = f.name.trim().toLowerCase();
+    var list = D.albums.filter(function (a) {
+      if (q && (a.title + " " + a.model_name).toLowerCase().indexOf(q) === -1) return false;
+      if (f.tag && a.tags.indexOf(f.tag) === -1) return false;
+      if (f.model && a.model_slug !== f.model) return false;
+      return true;
+    });
+    function byField(key, flip) {
+      return function (a, b) {
+        var d = ((a[key] || "").localeCompare(b[key] || "")) || (a.id - b.id);
+        return flip ? -d : d;
+      };
+    }
+    switch (f.sort) {
+      case "oldest": list.sort(byField("created", false)); break;
+      case "pub-oldest": list.sort(byField("date", false)); break;
+      case "title-asc": list.sort(function (a, b) { return a.title.localeCompare(b.title); }); break;
+      case "title-desc": list.sort(function (a, b) { return b.title.localeCompare(a.title); }); break;
+      case "size": list.sort(function (a, b) { return (b.count - a.count) || (a.id - b.id); }); break;
+      case "size-asc": list.sort(function (a, b) { return (a.count - b.count) || (a.id - b.id); }); break;
+      case "pub-newest": list.sort(byField("date", true)); break;
+      default: list.sort(byField("created", true));
+    }
+    return list;
+  }
+
+  var list = [], cells = [], cache = {}, win = { first: -1, count: -1 };
+  var VM_ON = false;
+
+  function measure() {
+    var w = grid.clientWidth || grid.getBoundingClientRect().width;
+    var n = cols(), g = gutter();
+    var colW = (w - g * (n - 1)) / n;
+    return { w: w, colW: colW, rh: Math.round(colW * 1.5) + CAP, n: n, g: g };
+  }
+
+  function build() {
+    var m = measure();
+    var rows = Math.ceil(list.length / m.n) || 0;
+    var total = rows ? rows * m.rh + (rows - 1) * m.g : 0;
+    if (!VM_ON && window.innerWidth > MOBILE_BP) {
+      VM_ON = true;
+      grid.setAttribute("data-vm", "on");
+    } else if (VM_ON && window.innerWidth <= MOBILE_BP) {
+      VM_ON = false;
+      grid.removeAttribute("data-vm");
+    }
+    if (VM_ON) {
+      grid.style.height = total + "px";
+    } else {
+      grid.style.height = "";
+    }
+    grid.hidden = rows === 0;
+    empty.hidden = rows > 0;
+    cache = { w: m.w, colW: m.colW, rh: m.rh, n: m.n, g: m.g, rows: rows, total: total };
+    return m;
+  }
+
+  function place(m, scrollTop) {
+    if (!m || !m.rh) return;
+    var top = grid.getBoundingClientRect().top + scrollTop;
+    if (!VM_ON) {
+      if (win.count !== list.length) {
+        grid.innerHTML = list.map(cardShell).join("");
+        Array.prototype.forEach.call(grid.children, function (el, i) { fillCard(el, list[i]); });
+        cells = [];
+        win.count = list.length;
+      }
+      return;
+    }
+    var vh = window.innerHeight;
+    var step = m.rh + m.g;
+    var first = Math.max(0, Math.floor((scrollTop - top) / step) - 2);
+    var last = Math.min(cache.rows - 1, Math.ceil((scrollTop - top + vh) / step) + 2);
+    if (last < first) last = first - 1;
+    var count = last - first + 1;
+    if (first === win.first && count === win.count && win.top === top && win.w === m.w) return;
+
+    var want = count * m.n;
+    while (cells.length < want) {
+      var d = document.createElement("div");
+      d.className = "vm-cell";
+      grid.appendChild(d);
+      cells.push(d);
+      d.style.display = "none";
+    }
+    for (var i = 0; i < cells.length; i++) {
+      var el = cells[i];
+      var idx = i < want ? first * m.n + i : -1;
+      if (idx >= 0 && idx < list.length) {
+        var r = Math.floor(idx / m.n), col = idx % m.n;
+        el.style.display = "";
+        el.style.left = Math.round(col * (m.colW + m.g)) + "px";
+        el.style.top = Math.round(r * step) + "px";
+        el.style.width = Math.round(m.colW) + "px";
+        if (el.dataset.idx !== String(idx)) {
+          el.dataset.idx = String(idx);
+          fillCell(el, list[idx]);
+        }
+      } else {
+        el.style.display = "none";
+        el.dataset.idx = "";
+      }
+    }
+    win.first = first; win.count = count; win.top = top; win.w = m.w;
+  }
+
+  function coverUrl(a) { return a.cover ? "/t/s900/" + a.cover + ".webp" : ""; }
+  function fillCell(el, item) {
+    if (!el.firstChild) el.innerHTML = cardShell();
+    fillCard(el, item);
+  }
+
+  var ticking = false;
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () {
+      ticking = false;
+      place(cache, window.pageYOffset || document.documentElement.scrollTop);
+    });
+  }
+
+  function render() {
+    list = filtered();
+    var m = build();
+    var count = document.querySelector("[data-count]");
+    count.textContent = PC.t(list.length === 1 ? "{n} video set" : "{n} video sets", { n: list.length });
+    win = { first: -1, count: -1, top: 0, w: 0 };
+    cells.forEach(function (el) { el.remove(); });
+    cells = [];
+    place(m, window.pageYOffset || document.documentElement.scrollTop);
+    document.dispatchEvent(new CustomEvent("pc:content"));
+  }
+
+  var lastW = window.innerWidth, lastH = window.innerHeight;
+  window.addEventListener("resize", function () {
+    if (window.innerWidth === lastW && Math.abs(window.innerHeight - lastH) < 120) return;
+    lastW = window.innerWidth; lastH = window.innerHeight;
+    win = { first: -1, count: -1, top: 0, w: 0 };
+    cells.forEach(function (el) { el.remove(); });
+    cells = [];
+    render();
+  });
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.PC_VM = { render: render };
+  requestAnimationFrame(function () { onScroll(); });
+
+  function syncUrl() {
+    var p = new URLSearchParams();
+    if (f.name) p.set("q", f.name);
+    if (f.tag) p.set("tag", f.tag);
+    if (f.model) p.set("model", f.model);
+    history.replaceState(null, "", p.toString() ? "?" + p : location.pathname);
+  }
+
+  var debounce;
+  document.querySelector("[data-f-name]").addEventListener("input", function (e) {
+    clearTimeout(debounce);
+    var v = e.target.value;
+    debounce = setTimeout(function () { f.name = v; syncUrl(); render(); }, 180);
+  });
+  tagSel.addEventListener("change", function (e) {
+    f.tag = e.target.value; syncUrl();
+    render();
+  });
+  modelSel.addEventListener("change", function (e) { f.model = e.target.value; syncUrl(); render(); });
+  document.querySelector("[data-f-sort]").addEventListener("change", function (e) { f.sort = e.target.value; render(); });
+  document.querySelectorAll("[data-f-reset]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      f = { name: "", tag: "", model: "", sort: "newest" };
+      document.querySelector("[data-f-name]").value = "";
+      tagSel.value = ""; modelSel.value = "";
+      syncUrl(); render();
+    });
+  });
+
+  render();
+})();
+</script>
+{% endblock %}

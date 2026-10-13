@@ -13,4 +13,5 @@ services:
     volumes:
       - ./data/db:/data/db          # SQLite 数据库
       - ./data/media:/data/media    # 演示图与缩略图缓存
+      - ./data/video:/data/video    # 视频库(封面帧缓存在 media/_cache 下)
       - ./data/library:/data/library  # 采集归档根目录

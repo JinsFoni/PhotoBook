@@ -4,7 +4,8 @@
 后续请求走 `Authorization: Bearer <token>`;auth_wall 中间件对 /api/mobile 早退,
 鉴权完全由本模块的依赖完成。所有错误统一为 {"error": {"code", "message"}}。
 
-媒体 URL 约定(客户端拿 rel 自拼):原图 /media/{rel},缩略图 /t/{w}x{h}/{rel}.webp。
+媒体 URL 约定(客户端拿 rel 自拼):原图 /media/{rel},缩略图 /t/{w}x{h}/{rel}.webp;
+视频源 /video/{rel},封面帧 poster 就是普通 webp(与照片同一 /t/ 缓存树)。
 """
 
 from __future__ import annotations
@@ -23,7 +24,8 @@ from sqlalchemy.orm import Session
 
 from ..auth import create_session, verify_password
 from ..config import settings
-from ..db import Collection, Favorite, Model, Photo, Session as DbSession, Tag, User
+from ..db import (Collection, Favorite, Model, Photo, Session as DbSession, Tag, User,
+                  Video, VideoAlbum)
 from ..database import get_db
 
 router = APIRouter(prefix="/api/mobile")
@@ -201,6 +203,7 @@ def _model_payload(s: Session, m: Model, collections: list[Collection] | None = 
             if c.photos:
                 avatar = c.photos[0].filename
                 break
+    albums = [a for a in m.video_albums if a.status == "published"]
     return {
         "id": m.id, "slug": m.slug, "name": m.name, "stage": m.stage_name or "",
         "avatar": avatar, "hero": m.hero_path or avatar,
@@ -209,6 +212,9 @@ def _model_payload(s: Session, m: Model, collections: list[Collection] | None = 
         "since": m.since or "", "featured": m.featured, "latest": latest,
         "tags": [t.name for t in m.tags],
         "count": len(works), "photoCount": photo_count,
+        # 写真视频是平行模块:视频专辑计数另列(客户端模特页 facts 展示)
+        "videoAlbumCount": len(albums),
+        "videoCount": sum(len(a.videos) for a in albums),
     }
 
 
@@ -218,12 +224,102 @@ def _published_collections(s: Session) -> list[Collection]:
         .order_by(desc(Collection.published_at), desc(Collection.id))).all())
 
 
+def _published_video_albums(s: Session) -> list[VideoAlbum]:
+    return list(s.scalars(
+        select(VideoAlbum).where(VideoAlbum.status == "published")
+        .order_by(desc(VideoAlbum.published_at), desc(VideoAlbum.id))).all())
+
+
+# ---- videos(写真视频模块,与写真集平行)---------------------------------------
+
+def _video_album_cover(a: VideoAlbum) -> str | None:
+    """封面 poster rel:优先 cover_video,回退首个有 poster 的视频。"""
+    if a.cover_video_id:
+        for v in a.videos:
+            if v.id == a.cover_video_id and v.poster:
+                return v.poster
+    for v in a.videos:
+        if v.poster:
+            return v.poster
+    return None
+
+
+def _video_album_payload(s: Session, a: VideoAlbum) -> dict:
+    cover = _video_album_cover(a)
+    return {
+        "id": a.id, "slug": a.slug, "title": a.title,
+        "date": a.published_at or "", "featured": a.featured,
+        "model_slug": a.model.slug if a.model else "",
+        "model_name": a.model.name if a.model else "未分类",
+        "cover": cover,
+        "coverThumb": f"t/s{THUMB_SHORT_CARD}/{cover}.webp" if cover else None,
+        # idx 与 web 端 videos 数组的下标一致(收藏键 slug:v{idx} 用)
+        "videos": [{"idx": i, "file": v.filename, "w": v.width, "h": v.height,
+                    "duration": v.duration, "poster": v.poster}
+                   for i, v in enumerate(a.videos)],
+        "tags": [t.name for t in a.tags],
+        "count": len(a.videos),
+    }
+
+
+def _video_album_card(s: Session, a: VideoAlbum) -> dict:
+    """列表瘦身条目(无 videos 数组)。"""
+    cover = _video_album_cover(a)
+    return {
+        "id": a.id, "slug": a.slug, "title": a.title,
+        "date": a.published_at or "",
+        "model_slug": a.model.slug if a.model else "",
+        "model_name": a.model.name if a.model else "未分类",
+        "cover": cover,
+        "coverThumb": f"t/s{THUMB_SHORT_CARD}/{cover}.webp" if cover else None,
+        "count": len(a.videos),
+        "tags": [t.name for t in a.tags],
+    }
+
+
+@router.get("/videos")
+async def mobile_videos(s: Session = Depends(get_db), tag: str = "",
+                        page: int = Query(1, ge=1),
+                        page_size: int = Query(20, ge=1, le=100, alias="pageSize"),
+                        sort: str = Query("latest",
+                                          pattern="^(latest|oldest|added_latest|added_oldest)$")):
+    albums = _published_video_albums(s)
+    if tag:
+        albums = [a for a in albums if any(t.name == tag for t in a.tags)]
+    if sort == "oldest":
+        albums = list(reversed(albums))
+    elif sort == "added_latest":
+        albums = sorted(albums, key=lambda a: (a.created_at, a.id), reverse=True)
+    elif sort == "added_oldest":
+        albums = sorted(albums, key=lambda a: (a.created_at, a.id))
+    total = len(albums)
+    start = (page - 1) * page_size
+    items = albums[start:start + page_size]
+    return {"items": [_video_album_card(s, a) for a in items],
+            "total": total, "page": page, "pageSize": page_size}
+
+
+@router.get("/videos/{slug}")
+async def mobile_video_detail(slug: str, s: Session = Depends(get_db)):
+    a = s.scalar(select(VideoAlbum).where(VideoAlbum.slug == slug,
+                                          VideoAlbum.status == "published"))
+    if not a:
+        raise ApiError("not_found", "Video set not found", 404)
+    payload = _video_album_payload(s, a)
+    payload["coverThumb"] = (f"t/s{THUMB_SHORT_HERO}/{payload['cover']}.webp"
+                             if payload["cover"] else None)
+    payload["model"] = ({"slug": a.model.slug, "name": a.model.name}
+                        if a.model else None)
+    return payload
+
+
 # ---- discover ----
 
 @router.get("/discover")
 async def mobile_discover(s: Session = Depends(get_db),
                           if_none_match: str | None = Header(default=None)):
     cols = _published_collections(s)
+    albums = _published_video_albums(s)
     featured = [c for c in cols if c.featured][:4] or cols[:4]
     # 12 个:发现页轮播吃前 12(客户端 HeroCarousel take(12));网格只展示前 6。
     # 最新入库 = 入库时间(created_at)新→旧,同刻按 id 兜底,与写真 tab 的
@@ -248,7 +344,10 @@ async def mobile_discover(s: Session = Depends(get_db),
                    for m in models],
         "tags": [{"name": t.name, "collections": tag_counts.get(t.name, {}).get("collections", 0),
                   "models": len(tag_counts.get(t.name, {}).get("models", set()))} for t in tags],
-        "stats": {"collections": len(cols), "models": len(models)},
+        "stats": {"collections": len(cols), "models": len(models),
+                  "videoAlbums": len(albums)},
+        # 写真视频段:发现页最新 8 部(客户端 take(4) 展示 + 「查看全部」进列表)
+        "videoAlbums": [_video_album_card(s, a) for a in albums[:8]],
     }, if_none_match)
 
 
@@ -321,6 +420,9 @@ async def mobile_model_detail(slug: str, s: Session = Depends(get_db)):
     works = [c for c in _published_collections(s) if c.model_id == m.id]
     payload = _model_payload(s, m, works)
     payload["collections"] = [_collection_card(s, c) for c in works]
+    # 写真视频是平行模块: 详情页另给一段(客户端按 tab 展示)
+    albums = [a for a in _published_video_albums(s) if a.model_id == m.id]
+    payload["videoAlbums"] = [_video_album_card(s, a) for a in albums]
     return payload
 
 
@@ -330,7 +432,7 @@ async def mobile_model_detail(slug: str, s: Session = Depends(get_db)):
 async def mobile_search(q: str = Query(""), s: Session = Depends(get_db)):
     q = q.strip()
     if not q:
-        return {"q": "", "models": [], "collections": [], "tags": []}
+        return {"q": "", "models": [], "collections": [], "tags": [], "videos": []}
     like = q.lower()
 
     models = s.scalars(select(Model).where(Model.status == "published")
@@ -345,6 +447,12 @@ async def mobile_search(q: str = Query(""), s: Session = Depends(get_db)):
                 if like in (c.title + " " +
                             (c.model.name if c.model else "") + " " +
                             " ".join(t.name for t in c.tags)).lower()][:10]
+
+    albums = _published_video_albums(s)
+    hit_albums = [a for a in albums
+                  if like in (a.title + " " +
+                              (a.model.name if a.model else "") + " " +
+                              " ".join(t.name for t in a.tags)).lower()][:10]
 
     tags = s.scalars(select(Tag).order_by(Tag.name)).all()
     hit_tags = [t.name for t in tags if like in t.name.lower()][:8]
@@ -365,6 +473,7 @@ async def mobile_search(q: str = Query(""), s: Session = Depends(get_db)):
         "models": [_model_card(m) for m in hit_models],
         "collections": [_collection_card(s, c) for c in hit_cols],
         "tags": hit_tags,
+        "videos": [_video_album_card(s, a) for a in hit_albums],
     }
 
 
@@ -374,12 +483,15 @@ async def mobile_search(q: str = Query(""), s: Session = Depends(get_db)):
 async def mobile_favorites_resolve(s: Session = Depends(get_db),
                                    user: User = Depends(require_mobile_user),
                                    if_none_match: str | None = Header(default=None)):
-    """收藏三段解析为实体(S7 直接渲染,免客户端逐段反查):
+    """收藏段解析为实体(S7 直接渲染,免客户端逐段反查):
     model 段 = _model_payload;collection 段 = _collection_card;
-    photo 段 = key slug:idx 反查文件名 + 缩略 rel + 所在合集标题。"""
-    out = {"models": [], "collections": [], "photos": []}
+    photo 段 = key slug:idx 反查文件名 + 缩略 rel + 所在合集标题;
+    video_album 段 = _video_album_card;video 段 = key slug:v{idx} 反查。"""
+    out = {"models": [], "collections": [], "photos": [],
+           "videoAlbums": [], "videos": []}
     rows = s.scalars(select(Favorite).where(Favorite.user_id == user.id)).all()
-    favs = {"model": set(), "collection": set(), "photo": set()}
+    favs = {"model": set(), "collection": set(), "photo": set(),
+            "video_album": set(), "video": set()}
     for r in rows:
         if r.target_type in favs:
             favs[r.target_type].add(r.target_key)
@@ -407,13 +519,33 @@ async def mobile_favorites_resolve(s: Session = Depends(get_db),
                         "w": p.width, "h": p.height,
                     })
         out["photos"] = photos
+
+    # 写真视频段(与写真段平行,键用 v 前缀区分)
+    if favs["video_album"] or favs["video"]:
+        albums = _published_video_albums(s)
+        out["videoAlbums"] = [_video_album_card(s, a) for a in albums
+                              if a.slug in favs["video_album"]]
+        videos = []
+        for a in albums:
+            for i, v in enumerate(a.videos):
+                if f"{a.slug}:v{i}" in favs["video"]:
+                    videos.append({
+                        "key": f"{a.slug}:v{i}", "slug": a.slug, "idx": i,
+                        "file": v.filename, "title": a.title,
+                        "thumb": (f"t/s{THUMB_SHORT_CARD}/{v.poster}.webp"
+                                  if v.poster else None),
+                        "w": v.width, "h": v.height,
+                        "duration": v.duration,
+                    })
+        out["videos"] = videos
     return _etag_response(out, if_none_match)
 
 
 @router.get("/favorites")
 async def mobile_favorites(s: Session = Depends(get_db),
                            user: User | None = Depends(mobile_user)):
-    out = {"model": [], "collection": [], "photo": []}
+    out = {"model": [], "collection": [], "photo": [],
+           "video_album": [], "video": []}
     if not user:
         return out
     rows = s.scalars(select(Favorite).where(Favorite.user_id == user.id)).all()
@@ -424,15 +556,15 @@ async def mobile_favorites(s: Session = Depends(get_db),
 
 
 class FavoriteIn(BaseModel):
-    type: str            # model | collection | photo
-    key: str             # slug 或 collection:idx
+    type: str            # model | collection | photo | video_album | video
+    key: str             # slug / collection:idx / album:v{idx}
     added: bool
 
 
 @router.post("/favorites")
 async def mobile_toggle_favorite(body: FavoriteIn, s: Session = Depends(get_db),
                                  user: User = Depends(require_mobile_user)):
-    if body.type not in ("model", "collection", "photo"):
+    if body.type not in ("model", "collection", "photo", "video_album", "video"):
         raise ApiError("validation", "bad type", 400)
     row = s.scalar(select(Favorite).where(
         Favorite.user_id == user.id, Favorite.target_type == body.type,

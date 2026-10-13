@@ -20,10 +20,13 @@ import dev.jinsfoni.photobook.ui.screens.collections.CollectionsScreen
 import dev.jinsfoni.photobook.ui.screens.detail.DetailScreen
 import dev.jinsfoni.photobook.ui.screens.lightbox.LightboxScreen
 import dev.jinsfoni.photobook.ui.screens.lightbox.PhotoDownloader
+import dev.jinsfoni.photobook.ui.screens.lightbox.VideoLightboxScreen
 import dev.jinsfoni.photobook.ui.screens.login.LoginScreen
 import dev.jinsfoni.photobook.ui.screens.modeldetail.ModelDetailScreen
 import dev.jinsfoni.photobook.ui.screens.search.SearchScreen
 import dev.jinsfoni.photobook.ui.screens.settings.SettingsScreen
+import dev.jinsfoni.photobook.ui.screens.videodetail.VideoAlbumScreen
+import dev.jinsfoni.photobook.ui.screens.videos.VideosScreen
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.EnterTransition
@@ -115,6 +118,9 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     onOpenCollection = { slug -> nav.navigate("detail/$slug") },
                     onOpenModel = { slug -> nav.navigate("model/$slug") },
                     onOpenPhoto = { slug, idx -> nav.navigate("lightbox/$slug/$idx") },
+                    onOpenVideoAlbum = { slug -> nav.navigate("video/$slug") },
+                    onOpenVideo = { slug, idx -> nav.navigate("lightbox/video/$slug/$idx") },
+                    onOpenAllVideos = { nav.navigate("videos") },
                     onOpenSearch = { nav.navigate("search") },
                 )
             }
@@ -127,6 +133,7 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     slug = slug,
                     onBack = { nav.popBackStack() },
                     onOpenCollection = { s -> nav.navigate("detail/$s") },
+                    onOpenVideoAlbum = { s -> nav.navigate("video/$s") },
                 )            }
             composable("settings") {
                 SettingsScreen(
@@ -152,6 +159,7 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     onBack = { nav.popBackStack() },
                     onOpenModel = { slug -> nav.navigate("model/$slug") },
                     onOpenCollection = { slug -> nav.navigate("detail/$slug") },
+                    onOpenVideoAlbum = { slug -> nav.navigate("video/$slug") },
                     onOpenTag = { tag ->
                         // 标签点回标签筛选页(复用 S2 列表,独立页形态)
                         nav.navigate("collections?tag=$tag")
@@ -183,6 +191,26 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                     onBack = { nav.popBackStack() },
                 )
             }
+            // 写真视频列表(与写真平行,同款独立页形态;标签筛选后续可加)
+            composable("videos") {
+                VideosScreen(
+                    onOpenVideoAlbum = { slug -> nav.navigate("video/$slug") },
+                    onOpenSearch = { nav.navigate("search") },
+                    onBack = { nav.popBackStack() },
+                )
+            }
+            composable(
+                "video/{slug}",
+                arguments = listOf(navArgument("slug") { }),
+            ) { entry ->
+                val slug = entry.arguments?.getString("slug").orEmpty()
+                VideoAlbumScreen(
+                    slug = slug,
+                    onBack = { nav.popBackStack() },
+                    onOpenVideo = { s, idx -> nav.navigate("lightbox/video/$s/$idx") },
+                    onOpenTag = { tag -> nav.navigate("collections?tag=$tag") },
+                )
+            }
             // 灯箱是"浮层"语义:退出动画由 LightboxScreen 屏内自编排(黑底/chrome 先撤,
             // 只留图片溶解)。pop 用 340ms "隐形"淡出占位:让本页在导航过渡期间保持挂载
             // 340ms(屏内两段动画 120+240-20 错峰的总窗),几乎不变的 1→0.999 曲线
@@ -198,6 +226,25 @@ fun AppRoot(downloader: PhotoDownloader, vm: AppRootViewModel = hiltViewModel())
                 val slug = entry.arguments?.getString("slug").orEmpty()
                 val idx = entry.arguments?.getString("idx")?.toIntOrNull() ?: 0
                 LightboxScreen(
+                    slug = slug,
+                    initialIdx = idx,
+                    onBack = { nav.popBackStack() },
+                    downloader = downloader,
+                )
+            }
+            // 视频灯箱(写真视频模块;与图片灯箱同款"浮层"转场语义,
+            // 只是内容从可缩放图片换成 ExoPlayer+PlayerView)
+            composable(
+                "lightbox/video/{slug}/{idx}",
+                arguments = listOf(navArgument("slug") { }, navArgument("idx") { }),
+                enterTransition = { fadeIn(tween(200)) },
+                exitTransition = { ExitTransition.KeepUntilTransitionsFinished },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { fadeOut(tween(340), targetAlpha = 0.999f) },
+            ) { entry ->
+                val slug = entry.arguments?.getString("slug").orEmpty()
+                val idx = entry.arguments?.getString("idx")?.toIntOrNull() ?: 0
+                VideoLightboxScreen(
                     slug = slug,
                     initialIdx = idx,
                     onBack = { nav.popBackStack() },

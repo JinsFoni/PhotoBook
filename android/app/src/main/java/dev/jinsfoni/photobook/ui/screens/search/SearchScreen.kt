@@ -57,6 +57,7 @@ fun SearchScreen(
     onBack: () -> Unit,
     onOpenModel: (String) -> Unit,
     onOpenCollection: (String) -> Unit,
+    onOpenVideoAlbum: (String) -> Unit = {},
     onOpenTag: (String) -> Unit,
     vm: SearchViewModel = hiltViewModel(),
 ) {
@@ -177,6 +178,23 @@ fun SearchScreen(
                         )
                     }
                 }
+                if (r.videoAlbums.isNotEmpty()) {
+                    item(span = { GridItemSpan(2) }) {
+                        SectionHeader(
+                            title = "视频 ${r.videoAlbums.size}",
+                            modifier = Modifier.padding(horizontal = 18.dp),
+                        )
+                    }
+                    items(r.videoAlbums.size) { i ->
+                        val a = r.videoAlbums[i]
+                        CollectionCard(
+                            title = a.title,
+                            subtitle = "${a.modelName} · ${a.count} 段",
+                            imageUrl = a.imageUrl,
+                            onClick = { onOpenVideoAlbum(a.slug) },
+                        )
+                    }
+                }
                 if (r.tags.isNotEmpty()) {
                     item(span = { GridItemSpan(2) }) {
                         SectionHeader(
@@ -200,7 +218,7 @@ fun SearchScreen(
                         }
                     }
                 }
-                if (r.models.isEmpty() && r.collections.isEmpty() && r.tags.isEmpty()) {
+                if (r.models.isEmpty() && r.collections.isEmpty() && r.videoAlbums.isEmpty() && r.tags.isEmpty()) {
                     item(span = { GridItemSpan(2) }) {
                         Box(Modifier.fillMaxWidth().padding(vertical = 60.dp), contentAlignment = Alignment.Center) {
                             EmptyState(message = "没有找到 “${r.q}” 相关内容")

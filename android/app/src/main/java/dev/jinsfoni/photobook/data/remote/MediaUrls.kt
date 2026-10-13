@@ -4,6 +4,7 @@ package dev.jinsfoni.photobook.data.remote
  * 媒体 URL 拼装 —— 与服务端 app/services/media.py 约定一致:
  * 原图 /media/{rel};缩略图 /t/{w}x{h}/{rel}.webp(h 省略 → 等比),
  * s 前缀 = 短边钳制(/t/s{w}/ → 竖图钳宽、横图钳高,等比不裁)。
+ * 视频:源 /video/{rel}(Range 原生支持),封面帧 poster 走同一 /t/ 缓存树。
  * DTO 只存 rel 路径,展示时经此拼全 URL。
  */
 object MediaUrls {
@@ -36,4 +37,16 @@ object MediaUrls {
      */
     fun fromPrefixed(baseUrl: String, rel: String): String =
         "${origin(baseUrl)}/$rel"
+
+    /**
+     * 视频源直链(/video/{rel})—— 写真视频模块。
+     * 服务端 FileResponse 原生处理 Range/206,ExoPlayer 拖动进度条直接可用;
+     * 本地缺失时服务端 302 到远端存储,播放器跟随重定向即可。
+     */
+    fun video(baseUrl: String, rel: String): String =
+        "${origin(baseUrl)}/video/$rel"
+
+    /** 视频封面帧:ffmpeg 抽帧生成的 webp,与照片同一 /t/ 缓存树,短边 900 档。 */
+    fun poster(baseUrl: String, rel: String, shortSide: Int = 900): String =
+        "${origin(baseUrl)}/t/s$shortSide/$rel.webp"
 }

@@ -85,7 +85,9 @@
   var facts = [
     [PC.t("Gender"), m.gender], [PC.t("Age"), m.age], [PC.t("Height"), m.height],
     [PC.t("Measurements"), m.measurements], [PC.t("Agency"), m.agency], [PC.t("In archive since"), m.since],
-    [PC.t("Collections"), m.count], [PC.t("Photos"), m.photoCount]
+    [PC.t("Collections"), m.count], [PC.t("Photos"), m.photoCount],
+    /* 写真视频是平行模块: 有视频的模特才显示这两行(0 值一律不展示) */
+    [PC.t("Videos"), m.videoCount || null], [PC.t("Video sets"), m.videoAlbumCount || null]
   ].filter(function (r) { return r[1] !== null && r[1] !== undefined && r[1] !== ""; });
   document.querySelector("[data-facts]").innerHTML = facts.map(function (r) {
     return '<div class="fact"><dt class="fact__k">' + r[0] + '</dt><dd class="fact__v num">' + r[1] + "</dd></div>";

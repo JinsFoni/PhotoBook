@@ -143,6 +143,82 @@ def _fix_url_unsafe_slugs() -> None:
     finally:
         s.close()
 
+    _fix_url_unsafe_video_slugs()
+
+
+def _fix_url_unsafe_video_slugs() -> None:
+    """一次性修复:视频侧存量 slug 含 URL 结构字符(与 _fix_url_unsafe_slugs 平行)。
+
+    视频是新模块,本函数对「含 #%&? 的 slug」动手 —— 正常情况下永远空转,
+    只有手工建过带这些字符的专辑标题才会命中。修复两件事,均幂等:
+    1. 重算 VideoAlbum slug(复用 slugify/_unique_slug);
+    2. 同步 video/ 目录名与 Video.filename 前缀(规则同 import_video_album)。
+    Model.slug 的重命名由 _fix_url_unsafe_slugs 负责,但它只改 media/ 目录,
+    video/ 下的 owner 目录必须在这里跟着改(否则视频文件路径全断)。
+    """
+    from sqlalchemy import select
+
+    from .db import Model, Video, VideoAlbum
+    from .services.library_import import _unique_slug, slugify
+
+    bad_chars = set("#%&?")
+    s = SessionLocal()
+    try:
+        video_root = settings.video_dir
+        log = logging.getLogger("photobook")
+        # 只在该修的时候才做一次 Model 快照(绝大多数库永远不走下面两段)
+        needs_model_fix = any(any(ch in bad_chars for ch in m.slug)
+                              for m in s.scalars(select(Model.slug)).all())
+        if needs_model_fix:
+            # ---- Model slug(video/ 的 owner 目录名,与 media 同步改名) ----
+            for m in s.scalars(select(Model)).all():
+                if not any(ch in bad_chars for ch in m.slug):
+                    continue
+                old = m.slug
+                new = _unique_slug(s, Model, slugify(m.name, maxlen=120), 120)
+                src = video_root / old
+                dst = video_root / new
+                if src.is_dir() and src != dst and not dst.exists():
+                    src.rename(dst)
+                    log.info("renamed video dir %s -> %s", old, new)
+                for v in s.scalars(select(Video).where(
+                        Video.filename.like(f"{old}/%"))).all():
+                    v.filename = new + v.filename[len(old):]
+                log.info("model slug (video) %s -> %s", old, new)
+            s.flush()
+
+        # ---- VideoAlbum slug(尾段 = video/ 下的专辑目录名) ----
+        for a in s.scalars(select(VideoAlbum)).all():
+            if not any(ch in bad_chars for ch in a.slug):
+                continue
+            old = a.slug
+            first = s.scalars(select(Video.filename).where(
+                Video.album_id == a.id).limit(1)).first()
+            owner = first.split("/", 1)[0] if first else old.split("-", 1)[0]
+            old_title_slug = old[len(owner) + 1:] if old.startswith(owner + "-") else old
+            title_slug = slugify(a.title, maxlen=160)
+            new = _unique_slug(s, VideoAlbum, f"{owner}-{title_slug}"[:200], 200)
+            new_title_slug = new[len(owner) + 1:] if new.startswith(owner + "-") else title_slug
+            src = video_root / owner / old_title_slug
+            dst = video_root / owner / new_title_slug
+            if src.is_dir() and src != dst and not dst.exists():
+                src.rename(dst)
+                log.info("renamed video dir %s -> %s", src, dst)
+            for v in s.scalars(select(Video).where(
+                    Video.album_id == a.id)).all():
+                parts = v.filename.split("/", 2)  # owner / title_slug / file
+                if len(parts) == 3 and parts[1] == old_title_slug:
+                    v.filename = f"{parts[0]}/{new_title_slug}/{parts[2]}"
+            a.slug = new
+            log.info("video album slug %s -> %s", old, new)
+
+        s.commit()
+    except Exception:
+        s.rollback()
+        logging.getLogger("photobook").exception("url-unsafe video slug fix failed")
+    finally:
+        s.close()
+
 
 def _backfill_source_serial() -> None:
     """一次性回填:存量采集导入的写真集无 source_serial, 浏览器联动无法判「已入库」。

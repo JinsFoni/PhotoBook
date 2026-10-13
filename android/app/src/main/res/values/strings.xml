@@ -4,6 +4,8 @@
     <string name="collections_noun">写真</string>
     <string name="models_noun">模特</string>
     <string name="photos_noun">照片</string>
+    <string name="video_albums_noun">视频</string>
+    <string name="videos_noun">片段</string>
     <string name="favorites_noun">收藏</string>
     <string name="featured_kicker">FEATURED · 精选</string>
     <string name="latest_added">最新入库</string>
@@ -21,10 +23,13 @@
     <string name="sort_by_added">按入库日期</string>
     <string name="empty_collections">还没有写真</string>
     <string name="empty_collections_pull">还没有写真,下拉刷新试试</string>
+    <string name="empty_videos">还没有视频专辑</string>
     <string name="empty_models">还没有模特</string>
     <string name="empty_fav_collections">还没有收藏写真</string>
     <string name="empty_fav_models">还没有收藏模特</string>
     <string name="empty_fav_photos">还没有收藏照片</string>
+    <string name="empty_fav_video_albums">还没有收藏视频专辑</string>
+    <string name="empty_fav_videos">还没有收藏视频</string>
     <string name="empty_tag">这个标签下还没有写真</string>
     <string name="no_results">没有找到 “%s” 相关内容</string>
     <string name="search_hint_input">输入关键词开始搜索</string>

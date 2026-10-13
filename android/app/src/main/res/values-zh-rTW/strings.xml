@@ -4,6 +4,8 @@
     <string name="collections_noun">寫真</string>
     <string name="models_noun">模特兒</string>
     <string name="photos_noun">照片</string>
+    <string name="video_albums_noun">影片</string>
+    <string name="videos_noun">片段</string>
     <string name="favorites_noun">收藏</string>
     <string name="featured_kicker">FEATURED · 精選</string>
     <string name="latest_added">最新入庫</string>
@@ -21,10 +23,13 @@
     <string name="sort_by_added">按入庫日期</string>
     <string name="empty_collections">還沒有寫真</string>
     <string name="empty_collections_pull">還沒有寫真,下拉重新整理試試</string>
+    <string name="empty_videos">還沒有影片專輯</string>
     <string name="empty_models">還沒有模特兒</string>
     <string name="empty_fav_collections">還沒有收藏寫真</string>
     <string name="empty_fav_models">還沒有收藏模特兒</string>
     <string name="empty_fav_photos">還沒有收藏照片</string>
+    <string name="empty_fav_video_albums">還沒有收藏影片專輯</string>
+    <string name="empty_fav_videos">還沒有收藏影片</string>
     <string name="empty_tag">這個標籤下還沒有寫真</string>
     <string name="no_results">找不到「%s」相關內容</string>
     <string name="search_hint_input">輸入關鍵字開始搜尋</string>

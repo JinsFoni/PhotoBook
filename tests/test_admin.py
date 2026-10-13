@@ -7,6 +7,76 @@ def test_dashboard(admin_client):
     assert admin_client.get("/admin").status_code == 200
 
 
+def test_video_album_crud(admin_client):
+    """视频专辑 CRUD:与写真集同构,路由前缀 /admin/videos。"""
+    r = admin_client.post("/admin/videos/new", data={
+        "title": "测试视频", "slug": "test-video-set", "status": "draft",
+        "model_id": "", "published_at": "", "featured": "",
+    }, follow_redirects=False)
+    assert r.status_code in (302, 303)
+    assert "test-video-set" in admin_client.get("/admin/videos").text
+
+    from app.database import SessionLocal
+    from app.db import VideoAlbum
+    s = SessionLocal()
+    aid = s.query(VideoAlbum).filter_by(slug="test-video-set").one().id
+    s.close()
+
+    r = admin_client.get(f"/admin/videos/{aid}/edit")
+    assert r.status_code == 200 and "测试视频" in r.text
+
+    r = admin_client.post(f"/admin/videos/{aid}/edit", data={
+        "title": "改名视频", "slug": "test-video-set", "status": "published",
+        "model_id": "", "published_at": "2026.10.01", "featured": "",
+    }, follow_redirects=False)
+    assert r.status_code in (302, 303)
+
+    # 打标签(表单路由)
+    admin_client.post(f"/admin/videos/{aid}/tags", data={"tag": "视频标签"})
+    r = admin_client.get(f"/admin/videos/{aid}/edit")
+    assert "视频标签" in r.text
+
+    # 删除
+    assert admin_client.post(f"/admin/videos/{aid}/delete",
+                             follow_redirects=False).status_code in (302, 303)
+
+
+def test_video_album_duplicate_slug_rejected(admin_client):
+    for _ in range(2):
+        admin_client.post("/admin/videos/new", data={
+            "title": "重复视频", "slug": "dup-video-set", "status": "draft",
+            "model_id": "", "published_at": "", "featured": "",
+        }, follow_redirects=False)
+    # 第二次应被 slug 唯一约束挡下(重定向到新建页带 error)
+    r = admin_client.post("/admin/videos/new", data={
+        "title": "重复视频", "slug": "dup-video-set", "status": "draft",
+        "model_id": "", "published_at": "", "featured": "",
+    }, follow_redirects=False)
+    assert r.status_code in (302, 303)
+    assert "error" in r.headers.get("location", "")
+
+
+def test_video_albums_api_payload(admin_client):
+    """列表翻页端点 payload:键名为 albums(与写真集版 collections 区分)。"""
+    admin_client.post("/admin/videos/new", data={
+        "title": "API 视频", "slug": "api-video-set", "status": "published",
+        "model_id": "", "published_at": "", "featured": "",
+    }, follow_redirects=False)
+    r = admin_client.get("/admin/api/videos")
+    assert r.status_code == 200
+    body = r.json()
+    assert "albums" in body and "storages" in body
+    assert any(a["slug"] == "api-video-set" for a in body["albums"])
+
+
+def test_video_upload_jobs_api_includes_video_tasks(admin_client):
+    """/admin/api/upload/jobs 的 jobs 数组同时覆盖写真与视频两类上传任务
+    (前端上传列轮询只打这一个端点)。"""
+    r = admin_client.get("/admin/api/upload/jobs")
+    assert r.status_code == 200
+    assert "jobs" in r.json()
+
+
 def test_model_crud(admin_client):
     r = admin_client.post("/admin/models/new", data={
         "name": "测试模特", "slug": "test-model", "status": "published",

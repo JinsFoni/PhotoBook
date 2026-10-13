@@ -5,7 +5,8 @@ from __future__ import annotations
 from sqlalchemy import func, select
 
 from app.database import SessionLocal
-from app.db import Collection, CollectionTag, HarvestJob, Model, ModelTag, Tag
+from app.db import (Collection, CollectionTag, HarvestJob, Model, ModelTag,
+                    Tag, VideoAlbum, VideoAlbumTag)
 from app.services import tagging
 
 
@@ -39,8 +40,37 @@ def test_apply_tags_creates_and_links(s=None):
         s.close()
 
 
+def test_apply_tags_video_album_links(s=None):
+    """apply_tags 接视频专辑:tag 落 video_album_tags,写真侧关联表不受影响。"""
+    s = SessionLocal()
+    try:
+        # 写真侧关联表零写入(两条线分开):对比打标前后的总量(库里有种子数据)
+        before_col_tags = s.scalar(select(func.count(CollectionTag.collection_id)))
+        m = Model(slug="tagtest-va-model", name="TagTest VA Model",
+                  status="published")
+        s.add(m)
+        s.flush()
+        va = VideoAlbum(slug="tagtest-va", title="TagTest VA", model_id=m.id,
+                        status="published")
+        s.add(va)
+        s.flush()
+        n = tagging.apply_tags(s, va, m, ["Cosplay", "Gravure"])
+        s.flush()
+        assert n == 4, f"added={n}"  # 专辑 2 + 模特 2
+        assert s.scalar(select(func.count(VideoAlbumTag.album_id))
+                        .where(VideoAlbumTag.album_id == va.id)) == 2
+        assert s.scalar(select(func.count(ModelTag.model_id))
+                        .where(ModelTag.model_id == m.id)) == 2
+        assert s.scalar(select(func.count(CollectionTag.collection_id))) \
+            == before_col_tags
+        # 幂等
+        assert tagging.apply_tags(s, va, m, ["Cosplay", "Gravure"]) == 0
+    finally:
+        s.rollback()
+        s.close()
+
+
 def test_apply_tags_empty_noop():
-    """空 tag 列表或无挂载对象 → 直接返回 0。"""
     s = SessionLocal()
     try:
         assert tagging.apply_tags(s, None, None, ["x"]) == 0

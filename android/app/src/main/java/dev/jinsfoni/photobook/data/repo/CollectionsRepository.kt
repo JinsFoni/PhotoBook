@@ -7,12 +7,15 @@ import dev.jinsfoni.photobook.data.remote.MobileApi
 import dev.jinsfoni.photobook.data.remote.dto.CollectionCardDto
 import dev.jinsfoni.photobook.data.remote.dto.CollectionDto
 import dev.jinsfoni.photobook.data.remote.dto.DiscoverDto
+import dev.jinsfoni.photobook.data.remote.dto.VideoAlbumCardDto
 import dev.jinsfoni.photobook.data.remote.safeCall
 import dev.jinsfoni.photobook.ui.models.CollectionCard
 import dev.jinsfoni.photobook.ui.models.CollectionDetail
 import dev.jinsfoni.photobook.ui.models.DiscoverFeed
 import dev.jinsfoni.photobook.ui.models.Stats
 import dev.jinsfoni.photobook.ui.models.TagCount
+import dev.jinsfoni.photobook.ui.models.VideoAlbumDetail
+import dev.jinsfoni.photobook.ui.models.VideoItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -87,7 +90,9 @@ class CollectionsRepository @Inject constructor(
             )
         },
         tags = tags.map { TagCount(it.name, it.collections, it.models) },
-        stats = Stats(stats.collections, stats.models),
+        stats = Stats(stats.collections, stats.models, stats.videoAlbums),
+        // 视频专辑卡与写真卡同型(封面帧就是普通 webp),映射复用
+        videoAlbums = videoAlbums.map { it.toVideoCard(base) },
     )
 
     // ---- discover 磁盘缓存(按活动档案分文件)--------------------------------
@@ -165,6 +170,56 @@ class CollectionsRepository @Inject constructor(
         imageUrl = coverThumb?.let { MediaUrls.fromPrefixed(base, it) },
         // hero 轮播全屏宽 → /t/s2400/ 短边档(同灯箱 previewUrl)
         heroUrl = cover?.let { MediaUrls.thumbShortSide(base, it, 2400) },
+        count = count,
+        tags = tags,
+    )
+
+    // ---- 写真视频(与写真集平行的独立模块)------------------------------------
+
+    suspend fun videos(
+        tag: String? = null,
+        page: Int = 1,
+        pageSize: Int = 20,
+        sort: String = "latest",
+    ): Pair<List<CollectionCard>, Int> {
+        val dto = safeCall { api.videos(tag, page, pageSize, sort) }
+        val base = session.currentBaseUrl()
+        return dto.items.map { it.toVideoCard(base) } to dto.total
+    }
+
+    suspend fun videoDetail(slug: String): VideoAlbumDetail {
+        val dto = safeCall { api.video(slug) }
+        val base = session.currentBaseUrl()
+        return VideoAlbumDetail(
+            slug = dto.slug,
+            title = dto.title,
+            date = dto.date,
+            tags = dto.tags,
+            count = dto.count,
+            heroUrl = dto.coverThumb?.let { MediaUrls.fromPrefixed(base, it) }
+                ?: dto.cover?.let { MediaUrls.poster(base, it) },
+            modelName = dto.model?.name ?: dto.model_name,
+            modelSlug = dto.model?.slug ?: dto.model_slug,
+            videos = dto.videos.map { v ->
+                VideoItem(
+                    idx = v.idx,
+                    videoUrl = MediaUrls.video(base, v.file),
+                    posterUrl = v.poster?.let { MediaUrls.poster(base, it) },
+                    durationSec = v.duration,
+                    width = v.w,
+                    height = v.h,
+                )
+            },
+        )
+    }
+
+    /** 视频专辑卡复用 CollectionCard(封面帧就是普通 webp,渲染管线完全一致)。 */
+    private fun VideoAlbumCardDto.toVideoCard(base: String) = CollectionCard(
+        slug = slug,
+        title = title,
+        modelName = model_name,
+        imageUrl = coverThumb?.let { MediaUrls.fromPrefixed(base, it) },
+        heroUrl = cover?.let { MediaUrls.poster(base, it, 2400) },
         count = count,
         tags = tags,
     )

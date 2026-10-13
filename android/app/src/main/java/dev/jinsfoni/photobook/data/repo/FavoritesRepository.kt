@@ -38,8 +38,14 @@ class FavoritesRepository @Inject constructor(
 
     suspend fun refresh(): Favorites {
         val dto = safeCall { api.favorites() }
-        return Favorites(dto.model, dto.collection, dto.photo)
-            .also { _state.value = it }
+        // 五个桶:写真/视频两个平行模块各两个(视频键带 v 前缀)
+        return Favorites(
+            model = dto.model,
+            collection = dto.collection,
+            photo = dto.photo,
+            videoAlbum = dto.video_album,
+            video = dto.video,
+        ).also { _state.value = it }
     }
 
     /**
