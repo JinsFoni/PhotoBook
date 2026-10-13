@@ -225,8 +225,10 @@ async def mobile_discover(s: Session = Depends(get_db),
                           if_none_match: str | None = Header(default=None)):
     cols = _published_collections(s)
     featured = [c for c in cols if c.featured][:4] or cols[:4]
-    # 12 个:发现页轮播吃前 12(客户端 HeroCarousel take(12));网格只展示前 6
-    latest = cols[:12]
+    # 12 个:发现页轮播吃前 12(客户端 HeroCarousel take(12));网格只展示前 6。
+    # 最新入库 = 入库时间(created_at)新→旧,同刻按 id 兜底,与写真 tab 的
+    # added_latest 同语义;cols 自身是发布日期序,不能直接截断。
+    latest = sorted(cols, key=lambda c: (c.created_at, c.id), reverse=True)[:12]
     models = s.scalars(select(Model).where(Model.status == "published")
                        .order_by(desc(Model.featured), Model.name)).all()
     tags = s.scalars(select(Tag).order_by(Tag.name)).all()

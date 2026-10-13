@@ -151,6 +151,36 @@ def test_discover_model_payload(client):
         assert key in m
 
 
+def test_discover_latest_sorted_by_added_date(client):
+    """latest 按入库时间(created_at)倒序,与发布日期序相互独立。"""
+    from sqlalchemy import select
+
+    from app.db import Collection
+    from app.database import SessionLocal
+
+    s = SessionLocal()
+    try:
+        expected = [c.id for c in s.scalars(
+            select(Collection).where(Collection.status == "published")
+            .order_by(Collection.created_at.desc(), Collection.id.desc())).all()[:12]]
+    finally:
+        s.close()
+    slugs = [c["slug"] for c in client.get("/api/mobile/discover").json()["latest"]]
+    # latest 只回 id 不回 slug→slug 需另查;用 id 顺序比对(ids 按入库序)
+    s = SessionLocal()
+    try:
+        slug_by_id = {c.id: c.slug for c in s.scalars(select(Collection))}
+    finally:
+        s.close()
+    assert slugs == [slug_by_id[i] for i in expected]
+
+    # 入库序 ≠ 发布序(种子数据里两者不同向):证明排序依据确实是入库时间
+    published_order = [c["slug"] for c in
+                       client.get("/api/mobile/collections",
+                                  params={"sort": "latest", "pageSize": 12}).json()["items"]]
+    assert slugs != published_order, "latest 退化成发布日期序了"
+
+
 # ---- collections 列表/详情 ----
 
 def test_collections_pagination(client):
