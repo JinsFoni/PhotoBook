@@ -612,12 +612,12 @@ PIKPAK_STATUS_GROUPS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _pikpak_row(j: PikPakJob) -> dict:
+def _pikpak_row(s: Session, j: PikPakJob) -> dict:
     """PikPakJob → 与 HarvestJob 行同构的 dict(kind=pikpak 供模板/JS 区分渲染)。"""
     return {
         "kind": "pikpak", "id": j.id, "serial": None, "status": j.status,
         "title": j.name or "", "model": j.model_name or "",
-        "error": j.error or "", "kind_label": "PikPak",
+        "error": _job_display_error(s, j), "kind_label": "PikPak",
         "filesDone": j.files_done, "filesTotal": j.files_total,
         "bytesDone": j.bytes_done, "bytesTotal": j.bytes_total,
         "createdAt": local_time_fmt(j.created_at),
@@ -696,7 +696,7 @@ def _merged_jobs_page(s: Session, status: str, page: int) -> tuple[list, int, di
             j = p_map.get(jid)
             if j is None:
                 continue
-            rows.append(_pikpak_row(j))
+            rows.append(_pikpak_row(s, j))
     return rows, total, chip_counts
 
 

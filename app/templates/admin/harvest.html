@@ -90,7 +90,7 @@
                 {% for j in jobs %}
                 {% set is_pk = j.kind == 'pikpak' %}
                 <tr data-job-row="{{ j.kind }}-{{ j.id }}" style="border-bottom:1px solid var(--line-2)">
-                  <td class="num" style="padding:var(--s2) 0">{{ j.id }}</td>
+                  <td class="num" style="padding:var(--s2) 0">{{ 'P' ~ j.id if is_pk else j.id }}</td>
                   <td class="num">{{ j.serial or '—' }}</td>
                   <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ j.title or '' }}">{{ (j.title or '—')[:24] }}{% if j.title and j.title|length > 24 %}…{% endif %}</td>
                   <td>{{ j.model or '—' }}</td>
@@ -257,7 +257,7 @@
           "</span></td>";
         var title = (j.title || "").slice(0, 24) + ((j.title || "").length > 24 ? "…" : "");
         return "<tr style=\"border-bottom:1px solid var(--line-2)\">" +
-          '<td class="num" style="padding:var(--s2) 0">' + j.id + "</td>" +
+          '<td class="num" style="padding:var(--s2) 0">' + (isPk ? "P" + j.id : j.id) + "</td>" +
           '<td class="num">' + (j.serial || "—") + "</td>" +
           '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(j.title || "") + '">' + esc(title || "—") + "</td>" +
           "<td>" + esc(j.model || "—") + "</td>" +

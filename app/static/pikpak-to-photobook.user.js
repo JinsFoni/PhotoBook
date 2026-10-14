@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PikPak to PhotoBook
 // @namespace    photobook.bridge
-// @version      1.2.3
+// @version      1.3.0
 // @description  在 mypikpak.com 勾选文件/文件夹,一键推送到 PhotoBook 任务队列下载入库。勾选的文件夹就是写真集(里面是写真图片),标签第一个作为模特名。修复原脚本分享页文件夹下载 100 条限制。
 // @author       PhotoBook
 // @match        https://mypikpak.com/*
@@ -407,6 +407,13 @@
   .pb-pk-bar{height:100%;background:linear-gradient(90deg,#4f46e5,#8b5cf6);width:0;
     transition:width .25s}
   .pb-pk-empty{padding:36px 20px;text-align:center;color:#94a3b8;font-size:13px}
+  .pb-pk-bg{position:fixed;right:16px;bottom:16px;z-index:9998;width:300px;
+    background:#fff;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.18);
+    padding:12px 14px;font-size:12px;color:#334155}
+  .pb-pk-bg .pb-pk-progress{margin:8px 0 4px}
+  .pb-pk-bg-close{position:absolute;top:6px;right:10px;border:0;background:none;
+    color:#94a3b8;font-size:15px;cursor:pointer;line-height:1;padding:2px}
+  .pb-pk-bg-close:hover{color:#475569}
   .pb-pk-spin{display:inline-block;width:14px;height:14px;border:2px solid #cbd5e1;
     border-top-color:#4f46e5;border-radius:50%;animation:pbspin .7s linear infinite;vertical-align:-2px}
   @keyframes pbspin{to{transform:rotate(360deg)}}
@@ -722,9 +729,169 @@
     },
 
     // ---- 推送 --------------------------------------------------------------
-    // 逐个勾选项解析其中每个文件的直链(PikPak 直链带时效, 推送前解析;
-    // 并发 8 平衡速度与限流)。一个勾选项 = 一个 item, files 按相对路径排列。
-    resolveLinks: function (items, onProg) {
+    // 点「推送到队列」立即关弹窗, 直链解析 + 分批推送全部在右下角后台状态条
+    // 里进行(可随时关闭隐藏, 不影响任务进行)。
+    push: function () {
+      const self = this;
+      if (this.busy) return;
+      if (!BASE || !KEY) {
+        toast("请先配置 PhotoBook 地址与 API Key", "bad");
+        promptSettings();
+        return;
+      }
+      if (!this.items.length) return;
+
+      // 记住标签(下次打开自动带出); 模特名 = 第一个标签, 由后端取 tags[0]
+      TAGS = this.$("#pb-pk-tags").value.trim();
+      GM_setValue(CFG_KEY.tags, TAGS);
+
+      const tags = TAGS.split(/[,，]/).map(function (s) { return s.trim(); })
+        .filter(Boolean);
+      const model = tags.length ? tags[0] : "";
+
+      this.busy = true;
+      const items = this.items;
+      const nItems = items.length;
+      const totalFiles = items.reduce(function (n, it) {
+        return n + it._files.length;
+      }, 0);
+      this.close();
+
+      const bg = Bg.show(`正在解析 ${nItems} 个勾选项的直链…`);
+      bg.prog(0, totalFiles);
+
+      resolveLinks(items, function (done, n) {
+        bg.title(`正在解析直链 ${done} / ${n}`);
+        bg.prog(done, n);
+      }).then(function (r) {
+        if (!r.items.length) {
+          bg.fail(`直链解析全部失败(${r.fail} 个勾选项),请刷新 PikPak 页面后重试`);
+          toast("直链解析失败", "bad");
+          return;
+        }
+        bg.title(`解析完成,推送 ${r.items.length} 个写真集…`);
+        return self.send(r, tags, model, bg);
+      }).catch(function (e) {
+        console.warn("[PB] push failed", e);
+        bg.fail("推送出错:" + (e && e.message || e));
+      });
+    },
+
+    send: function (r, tags, model, bg) {
+      // 超过后端上限时按批切(FastAPI 单请求体上限 5000; 一个勾选项的
+      // files 可能上千, 所以按「文件数」而不是「勾选项数」切批)
+      const CHUNK = 2000;
+      const chunks = [];
+      let cur = { items: [], n: 0 };
+      r.items.forEach(function (it) {
+        cur.items.push(it);
+        cur.n += it.files.length;
+        if (cur.n >= CHUNK) { chunks.push(cur); cur = { items: [], n: 0 }; }
+      });
+      if (cur.items.length) chunks.push(cur);
+
+      let queued = 0, skipped = 0;
+      let k = 0;
+
+      function next() {
+        if (k >= chunks.length) {
+          if (!queued) {
+            bg.fail(`没有新任务入队(${skipped} 个已在队列) — 这些写真集可能已在下载或已入库`);
+            toast("没有新任务 — 均已在队列中", "info");
+            return;
+          }
+          const msg = `已推送 ${queued} 个写真集到队列` + (skipped ? `，跳过 ${skipped} 个已入队` : "")
+            + (r.fail ? `，${r.fail} 个直链解析失败` : "");
+          bg.done(msg + " · 可在 PhotoBook 后台「任务队列」查看下载进度");
+          toast(msg, r.fail && !queued ? "bad" : "ok");
+          return;
+        }
+        const chunk = chunks[k++];
+        bg.title(`正在推送 ${Math.min(k, chunks.length)}/${chunks.length} 批…`);
+        api("POST", "/api/ext/pikpak", {
+          items: chunk.items.map(function (it) {
+            return { file_id: it.id, name: it.name || "pikpak", files: it.files };
+          }),
+          model_name: model, tags: tags,
+        }, function (ok, data) {
+          if (ok && data) {
+            queued += data.queued || 0;
+            skipped += data.skipped || 0;
+          } else {
+            bg.fail("推送失败(HTTP 或鉴权错误),部分任务可能未入队");
+            toast("推送失败（HTTP 或鉴权错误）", "bad");
+            return;
+          }
+          next();
+        });
+      }
+      next();
+    },
+  };
+
+  // ---- 后台推送状态条 --------------------------------------------------------
+  // 弹窗关闭后解析/推送仍在进行; 这里是页面右下角的进度小卡(可关, 关了不终止)。
+  const Bg = {
+    el: null,
+    _timer: null,
+
+    _clearTimer: function () {
+      if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+    },
+    show: function (title) {
+      const self = this;
+      this._clearTimer();
+      if (this.el) this.el.remove();
+      this.el = $(`
+        <div class="pb-pk-bg">
+          <button class="pb-pk-bg-close" title="隐藏(不中断任务)">×</button>
+          <b data-title></b>
+          <div class="pb-pk-progress"><div class="pb-pk-bar" data-bar></div></div>
+          <span data-hint style="color:#94a3b8"></span>
+        </div>`);
+      this.el.querySelector(".pb-pk-bg-close").addEventListener("click",
+        function () { self.el.remove(); self.el = null; });
+      this.el.querySelector("[data-title]").textContent = title;
+      document.body.appendChild(this.el);
+      return this;
+    },
+    _node: function (sel) {
+      return this.el && this.el.querySelector(sel);
+    },
+    title: function (s) {
+      const n = this._node("[data-title]");
+      if (n) n.textContent = s;
+    },
+    prog: function (done, n) {
+      const bar = this._node("[data-bar]");
+      const hint = this._node("[data-hint]");
+      if (bar) bar.style.width = (n ? Math.round(done / n * 100) : 0) + "%";
+      if (hint) hint.textContent = n ? `${done} / ${n} 个文件` : "";
+    },
+    fail: function (msg) {
+      if (!this.el) { toast(msg, "bad"); return; }
+      this.title(msg);
+      const bar = this._node("[data-bar]");
+      if (bar) bar.style.background = "#ef4444";
+      const hint = this._node("[data-hint]");
+      if (hint) hint.textContent = "点击 × 关闭";
+    },
+    done: function (msg) {
+      if (!this.el) { toast(msg, "ok"); return; }
+      this.title(msg);
+      const bar = this._node("[data-bar]");
+      if (bar) { bar.style.width = "100%"; bar.style.background = "#10b981"; }
+      // 完成后停留几秒自动收走
+      const self = this;
+      this._timer = setTimeout(function () {
+        if (self.el) { self.el.remove(); self.el = null; }
+      }, 5000);
+    },
+  };
+
+  // 逐个勾选项解析其中每个文件的直链(PikPak 直链带时效, 推送前解析;
+  // 并发 8 平衡速度与限流)。一个勾选项 = 一个 item, files 按相对路径排列。
+  function resolveLinks(items, onProg) {
       const CONC = 8;
       let i = 0, ok = 0, fail = 0;
       const total = items.reduce(function (n, it) { return n + it._files.length; }, 0);
@@ -769,111 +936,8 @@
         return { items: items.filter(function (it) { return it.files && it.files.length; }),
                  ok: ok, fail: fail };
       });
-    },
+  }
 
-    push: function () {
-      const self = this;
-      if (this.busy) return;
-      if (!BASE || !KEY) {
-        toast("请先配置 PhotoBook 地址与 API Key", "bad");
-        promptSettings();
-        return;
-      }
-      if (!this.items.length) return;
-
-      // 记住标签(下次打开自动带出); 模特名 = 第一个标签, 由后端取 tags[0]
-      TAGS = this.$("#pb-pk-tags").value.trim();
-      GM_setValue(CFG_KEY.tags, TAGS);
-
-      const tags = TAGS.split(/[,，]/).map(function (s) { return s.trim(); })
-        .filter(Boolean);
-      const model = tags.length ? tags[0] : "";
-
-      this.busy = true;
-      const btn = this.$("[data-action=push]");
-      btn.disabled = true;
-      btn.textContent = "解析直链…";
-      const totalFiles = this.items.reduce(function (n, it) {
-        return n + it._files.length;
-      }, 0);
-      this.setBody(
-        '<div class="pb-pk-empty">' +
-        '<div style="margin-bottom:10px">正在解析直链 <b data-link-prog>0</b> / ' + totalFiles + "</div>" +
-        '<div class="pb-pk-progress"><div class="pb-pk-bar" data-bar></div></div>' +
-        '<p class="pb-pk-hint" style="margin:0">直链由 PikPak 下发,文件多时需要一点时间。</p></div>');
-
-      this.resolveLinks(this.items, function (done, n) {
-        const el = self.$("[data-link-prog]");
-        const bar = self.$("[data-bar]");
-        if (el) el.textContent = done;
-        if (bar) bar.style.width = (n ? Math.round(done / n * 100) : 0) + "%";
-      }).then(function (r) {
-        if (!r.items.length) {
-          self.busy = false;
-          btn.textContent = "推送到队列";
-          btn.disabled = false;
-          self.setBody('<div class="pb-pk-empty">直链解析全部失败(' + r.fail + " 个勾选项)<br>请刷新 PikPak 页面后重试</div>");
-          toast("直链解析失败", "bad");
-          return;
-        }
-        btn.textContent = "推送中…";
-        return self.send(r, tags, model, btn);
-      });
-    },
-
-    send: function (r, tags, model, btn) {
-      const self = this;
-      // 超过后端上限时按批切(FastAPI 单请求体上限 5000; 一个勾选项的
-      // files 可能上千, 所以按「文件数」而不是「勾选项数」切批)
-      const CHUNK = 2000;
-      const chunks = [];
-      let cur = { items: [], n: 0 };
-      r.items.forEach(function (it) {
-        cur.items.push(it);
-        cur.n += it.files.length;
-        if (cur.n >= CHUNK) { chunks.push(cur); cur = { items: [], n: 0 }; }
-      });
-      if (cur.items.length) chunks.push(cur);
-
-      let queued = 0, skipped = 0, failed = false;
-      let k = 0;
-
-      function next() {
-        if (k >= chunks.length) {
-          self.busy = false;
-          btn.disabled = false;
-          btn.textContent = "推送到队列";
-          if (!queued) {
-            self.setBody('<div class="pb-pk-empty">没有新任务入队(' + skipped + " 个已在队列)<br>这些写真集可能已在下载或已入库</div>");
-            toast("没有新任务 — 均已在队列中", "info");
-            return;
-          }
-          const msg = `已推送 ${queued} 个写真集到队列` + (skipped ? `，跳过 ${skipped} 个已入队` : "")
-            + (r.fail ? `，${r.fail} 个直链解析失败` : "");
-          self.setBody('<div class="pb-pk-empty">' + msg + "<br>可在 PhotoBook 后台「任务队列」查看下载进度</div>");
-          toast(msg, r.fail && !queued ? "bad" : "ok");
-          return;
-        }
-        const chunk = chunks[k++];
-        api("POST", "/api/ext/pikpak", {
-          items: chunk.items.map(function (it) {
-            return { file_id: it.id, name: it.name || "pikpak", files: it.files };
-          }),
-          model_name: model, tags: tags,
-        }, function (ok, data) {
-          if (ok && data) {
-            queued += data.queued || 0;
-            skipped += data.skipped || 0;
-          } else {
-            failed = true;
-            toast("推送失败（HTTP 或鉴权错误）", "bad");
-          }
-          next();
-        });
-      }
-      next();
-    },
-  };
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {

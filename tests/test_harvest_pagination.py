@@ -391,14 +391,39 @@ def test_pikpak_failed_filter(admin_client):
         _pk_cleanup()
 
 
-def test_zz_dump2(admin_client):
-    page = admin_client.get("/admin/harvest").text
-    open("/tmp/pb-dump2.html", "w").write(page)
-
-
-def test_zz_dump3(admin_client):
+def test_pikpak_thumb_generating_becomes_done(admin_client):
+    """PikPak 行与 harvest 行同享实时缩略图状态:写真已 published 时,
+    error 尾巴「,缩略图生成中#n」应实时变为「,已完成」。"""
+    from app.db import Collection, Model, PikPakJob
     _pk_cleanup()
-    _pk_job("pk99-1", "kev 灵溪 大主宰", "downloading", files_total=112, files_done=19)
-    page = admin_client.get("/admin/harvest").text
-    open("/tmp/pb-dump3.html", "w").write(page)
-    _pk_cleanup()
+    pk_id = _pk_job("pk99-4", "缩略图任务", "done", files_total=10, files_done=10)
+    s = SessionLocal()
+    try:
+        j = s.get(PikPakJob, pk_id)
+        slug = "tester-pk-thumb"
+        m = s.query(Model).filter(Model.name == "tester").first()
+        if not m:
+            m = Model(name="tester", slug="tester")
+            s.add(m); s.flush()
+        s.add(Collection(slug=slug, title="pk thumb", model_id=m.id,
+                         published_at="2026.10.15", status="published"))
+        j.collection_slug = slug
+        j.error = "→ 10 张已入库,缩略图生成中#1"
+        s.commit()
+    finally:
+        s.close()
+    try:
+        import json as _json
+        api = _json.loads(admin_client.get("/admin/api/harvest/jobs").text)
+        row = [x for x in api["jobs"] if x["kind"] == "pikpak" and x["id"] == pk_id][0]
+        assert row["error"] == "→ 10 张已入库,已完成"
+    finally:
+        _pk_cleanup()
+        from sqlalchemy import delete
+        from app.db import Collection
+        s = SessionLocal()
+        try:
+            s.execute(delete(Collection).where(Collection.slug == "tester-pk-thumb"))
+            s.commit()
+        finally:
+            s.close()
