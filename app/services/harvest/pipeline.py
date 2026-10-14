@@ -40,6 +40,17 @@ def close_stream(key) -> bool:
         return False
 
 
+def close_job_streams(job_id) -> int:
+    """关闭一个任务名下的全部在途流(pikpak 并发下载的 key 是
+    "<job_id>:<file_id>"; 也兼容裸 job_id 的单流任务)。返回关闭数。"""
+    prefix = f"{job_id}:"
+    closed = 0
+    for key in [k for k in _STREAMS if k == job_id or str(k).startswith(prefix)]:
+        if close_stream(key):
+            closed += 1
+    return closed
+
+
 def download_stream(url: str, dest: Path, *,
                     expected_sha256: str = "",
                     max_bytes: int = 4 * 1024**3,

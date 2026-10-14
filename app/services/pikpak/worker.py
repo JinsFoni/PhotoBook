@@ -22,7 +22,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from ...db import HarvestJob, PikPakFile, PikPakJob
 from ...database import SessionLocal
@@ -51,6 +51,10 @@ _run_tokens: dict[int, str] = {}
 
 # 单个文件大小上限(8G): 写真相册不会有比这更大的单张图
 MAX_FILE_BYTES = 8 * 1024**3
+
+# 图片目录下载并发数: PikPak CDN 按连接限速(~0.9MB/s/连接, 2026-10 实测,
+# 多路可线性叠加), 4 路已把一本写真压到 ~2 分钟; 再高收益小且可能触发限流
+DOWNLOAD_CONCURRENCY = 4
 
 
 def _now():
@@ -324,12 +328,20 @@ def _download_archive(s, job: PikPakJob, f: PikPakFile, library_root: Path,
     archive_tmp = archive_tmp_of(library_root)
     archive_tmp.mkdir(parents=True, exist_ok=True)
     dest = archive_tmp / (f.rel or job.name or f"pikpak-{job.id}")
-    # stream_key = job_id: 看门狗重置整个任务时 close 这一个流即可
+    # stream_key = job_id(单文件任务无并发冲突): 看门狗重置时 close 解堵
+    prog = _Progress(job.id, token, base_bytes=int(job.bytes_done or 0),
+                     total_bytes=int(f.size or job.bytes_total or 0))
+    prev = {"n": int(job.bytes_done or 0)}
+
+    def on_prog(done, total):
+        prog.report(prev["n"], done, total)
+        prev["n"] = done
+
     pipeline.download_stream(f.url, dest,
                              max_bytes=MAX_FILE_BYTES,
-                             on_progress=_make_progress(s, job_id=job.id,
-                                                        token=token),
+                             on_progress=on_prog,
                              stream_key=job.id)
+    prog.finish()
     job = s.get(PikPakJob, job.id)
     if job:
         job.files_done = 1
@@ -348,90 +360,181 @@ def _extract(archive: Path, work_dir: Path) -> Path:
         return work_dir
 
 
-def _make_progress(s, *, job_id: int, token: str, base: int = 0):
-    """进度回调: 只写本任务的字节数, 不动其它字段。
+class _Progress:
+    """跨下载线程的字节进度聚合 + 降频落库。
 
-    base = 本文件之前已落盘的字节数(多文件写真集要累加才显示总进度)。
+    每个下载线程持有自己的「本流上次已报字节」, 回调把绝对字节数涨量报进来;
+    聚合后若距上次落库超过 FLUSH_EVERY(~1MB), 用独立短 session 写一次
+    pikpak_jobs.bytes_done/bytes_total —— 调用线程的 session 可能正被
+    其它线程使用, 不能在回调里碰。
     """
 
-    def progress(done: int, total: int) -> None:
-        if _run_tokens.get(job_id) != token:
+    FLUSH_EVERY = 1024 * 1024   # 落库间隔: 1MB(串行时代是逐 512KB 一 commit)
+
+    def __init__(self, job_id: int, token: str, base_bytes: int, total_bytes: int):
+        self._job_id = job_id
+        self._token = token
+        self._lock = threading.Lock()
+        self._done = base_bytes          # 已落盘字节(含跳过的存量)
+        self._total = max(total_bytes, base_bytes)
+        self._flushed_at = base_bytes    # 上次落库时的 done 值
+
+    def report(self, prev: int, done: int, total: int) -> None:
+        """本流字节数从 prev 涨到 done(流内绝对值)。
+
+        bytes_total 由 _run_job 预计算好(_Progress 构造时已带), 回调的
+        total(单流, 且可能为 0=未知)只用来兜底抬升, 不会拉低。
+        """
+        with self._lock:
+            self._done += max(0, done - prev)
+            if total and total > self._total:
+                self._total = total
+        if done - self._flushed_at >= self.FLUSH_EVERY:
+            self.flush()
+
+    def flush(self) -> None:
+        if _run_tokens.get(self._job_id) != self._token:
             return
-        job = s.get(PikPakJob, job_id)
-        if job is None:
-            return
-        job.bytes_done = base + done
-        if total:
-            job.bytes_total = max(job.bytes_total or 0, base + total)
-        job.updated_at = _now()
+        with self._lock:
+            if self._done - self._flushed_at < self.FLUSH_EVERY:
+                return
+            self._flushed_at = self._done
+        s = SessionLocal()
         try:
-            s.commit()
+            job = s.get(PikPakJob, self._job_id)
+            if job is not None:
+                job.bytes_done = self._done
+                job.bytes_total = max(job.bytes_total or 0, self._total)
+                job.updated_at = _now()
+                s.commit()
         except Exception:
             s.rollback()
+        finally:
+            s.close()
 
-    return progress
+    def finish(self) -> None:
+        """单文件完成时强制落库一次(不受间隔限制)。"""
+        with self._lock:
+            self._flushed_at = self._done - self.FLUSH_EVERY
+        self.flush()
 
 
 def _download_files(s, job: PikPakJob, files: list[PikPakFile], album_dir: Path,
                     token: str) -> None:
-    """逐个下载到写真目录(串行, 一次一个文件)。
+    """并发(DOWNLOAD_CONCURRENCY 路)下载到写真目录, 子目录结构按 rel 保留。
 
-    已完成/已存在的文件跳过(断点重跑; 写真相册单张图通常几 MB, 靠 .part
-    续传的意义不大, 直接按目标文件是否存在判定即可)。
+    PikPak CDN 按连接限速(~0.9MB/s), 多路可线性提速 —— 一本 130 张的
+    写真从 ~7 分钟降到 ~2 分钟。已完成/已存在的文件直接跳过(断点重跑;
+    单张图几 MB, .part 续传价值不大, 按目标文件存在判定)。
+
+    并发安全:
+    - SQLAlchemy session 非线程安全 —— 外层 s 在下载期间只读不写;
+      job/files 行的更新全部走各线程自己的短 session;
+    - files_done/bytes_done 由锁保护的计数器汇总, 降频落库;
+    - stream_key 带 file_id 后缀, 看门狗可按前缀关掉本任务全部在途流。
     """
     album_dir.mkdir(parents=True, exist_ok=True)
+
+    # 预检存量: 已存在文件的大小直接计入 bytes_done 底数
     done_bytes = 0
-    for i, f in enumerate(files):
-        if _run_tokens.get(job.id) != token:
-            return
-        rel = (f.rel or f.file_id or f"file-{i}").strip() or f"file-{i}"
-        dest = _safe_join(album_dir, rel)
-        if dest is None:
-            # 路径穿越(rel 含 .. 或绝对路径)→ 记失败, 不让整包失败
-            f.status = "failed"
-            f.error = "非法路径"
-            job = s.get(PikPakJob, job.id)
-            if job is not None:
-                job.files_done = i + 1
-                job.updated_at = _now()
-                s.commit()
-            continue
-        if dest.exists() and dest.stat().st_size > 0:
-            f.status = "done"
-            f.error = None
+    for f in files:
+        dest = _safe_join(album_dir, (f.rel or f.file_id or "").strip())
+        if dest is not None and dest.exists() and dest.stat().st_size > 0:
             done_bytes += dest.stat().st_size
-            job = s.get(PikPakJob, job.id)
-            if job is not None:
-                job.files_done = i + 1
-                job.bytes_done = done_bytes
-                job.updated_at = _now()
-                s.commit()
-            continue
+    prog = _Progress(job.id, token, base_bytes=done_bytes,
+                     total_bytes=int(job.bytes_total or 0))
+
+    lock = threading.Lock()
+    queue: list[tuple[int, PikPakFile]] = list(enumerate(files))
+    take = {"i": 0}          # 队列游标(锁内推进)
+
+    def mark_file(f_id: int, status: str, error: str | None) -> None:
+        s2 = SessionLocal()
         try:
-            # stream_key = job_id: 看门狗重置任务时 close 正在下载的这个流
-            pipeline.download_stream(
-                f.url, dest,
-                max_bytes=MAX_FILE_BYTES,
-                on_progress=_make_progress(s, job_id=job.id, token=token,
-                                           base=done_bytes),
-                stream_key=job.id)
-            f.status = "done"
-            f.error = None
-            done_bytes += dest.stat().st_size
-        except Exception as e:
-            f.status = "failed"
-            f.error = str(e)[:200]
-            # 一张图失败不判整包失败: 剩下的继续下, 最后由 _import_album
-            # 按实际到手的图片数决定写真集是否成立
-            log.warning("pikpak job #%s file %s failed: %s", job.id, rel,
-                        str(e)[:120])
+            s2.execute(update(PikPakFile)
+                       .where(PikPakFile.id == f_id)
+                       .values(status=status, error=error))
+            s2.commit()
+        except Exception:
+            s2.rollback()
         finally:
-            job = s.get(PikPakJob, job.id)
-            if job is not None:
-                job.files_done = i + 1
-                job.bytes_done = done_bytes
-                job.updated_at = _now()
-                s.commit()
+            s2.close()
+
+    def complete_one() -> None:
+        # files_done 用原子 UPDATE 递增 — 各线程短 session 的「读-改-写」
+        # 会互相覆盖(后提交的旧值盖掉先提交的新值, 实测 6 个文件随机丢到 2)
+        s2 = SessionLocal()
+        try:
+            if _run_tokens.get(job.id) == token:
+                s2.execute(update(PikPakJob)
+                           .where(PikPakJob.id == job.id)
+                           .values(files_done=PikPakJob.files_done + 1,
+                                   updated_at=_now()))
+                s2.commit()
+        except Exception:
+            s2.rollback()
+        finally:
+            s2.close()
+        prog.finish()   # 单文件收尾: 强制进度落库一次
+
+    def worker() -> None:
+        while _run_tokens.get(job.id) == token:
+            with lock:
+                idx = take["i"]
+                if idx >= len(queue):
+                    return
+                take["i"] = idx + 1
+            i, f = queue[idx]
+            rel = (f.rel or f.file_id or f"file-{i}").strip() or f"file-{i}"
+            dest = _safe_join(album_dir, rel)
+            if dest is None:
+                # 路径穿越(rel 含 .. 或绝对路径)→ 记失败, 不让整包失败
+                f.status = "failed"
+                f.error = "非法路径"
+                mark_file(f.id, "failed", "非法路径")
+                complete_one()
+                continue
+            if dest.exists() and dest.stat().st_size > 0:
+                f.status = "done"
+                f.error = None
+                mark_file(f.id, "done", None)
+                complete_one()
+                continue
+            try:
+                # 每流维护「上次已报字节」; 绝对值涨量交给 _Progress 聚合
+                prev = {"n": 0}
+                def on_prog(done, total, _prev=prev):
+                    prog.report(_prev["n"], done, total)
+                    _prev["n"] = done
+                pipeline.download_stream(
+                    f.url, dest,
+                    max_bytes=MAX_FILE_BYTES,
+                    on_progress=on_prog,
+                    stream_key=f"{job.id}:{f.file_id}")
+                f.status = "done"
+                f.error = None
+                mark_file(f.id, "done", None)
+            except Exception as e:
+                f.status = "failed"
+                f.error = str(e)[:200]
+                mark_file(f.id, "failed", f.error)
+                # 一张图失败不判整包失败: 剩下的继续下, 最后由 _import_album
+                # 按实际到手的图片数决定写真集是否成立
+                log.warning("pikpak job #%s file %s failed: %s", job.id, rel,
+                            str(e)[:120])
+            complete_one()
+
+    threads = [threading.Thread(target=worker, daemon=True,
+                                name=f"pikpak-dl-{job.id}-{k}")
+               for k in range(DOWNLOAD_CONCURRENCY)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    prog.flush()
+    # 外层 session 的 identity map 已过期(其它线程改了这些行), 让后续
+    # _import_album 重新拉最新状态
+    s.expire_all()
 
 
 def _safe_join(root: Path, rel: str) -> Path | None:
@@ -583,8 +686,8 @@ def _recover_and_watchdog() -> None:
             job.status = "queued"
             job.error = "进度停滞/上次运行中断, 自动重新排队(已下载部分续传)"
             s.commit()
-            # 解堵: close 卡死线程阻塞中的下载流
-            pipeline.close_stream(job_id)
+            # 解堵: close 本任务全部在途下载流(并发下载是 <job>:<file> 多 key)
+            pipeline.close_job_streams(job_id)
             # 撤销所有权: 卡死的旧线程复苏后不得再碰这个任务
             _run_tokens.pop(job_id, None)
             log.warning("watchdog reset pikpak job #%s (%s) -> queued",
