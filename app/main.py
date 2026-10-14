@@ -29,9 +29,11 @@ async def lifespan(app: FastAPI):
     _seed()
     from .services import media
     from .services.harvest import worker
+    from .services.pikpak import worker as pikpak_worker
     # worker 消费线程常启: 手动提交的任务随时要处理。
     # HARVEST_ENABLED 只控制「定时扫描」是否自动跑(见 start_worker 内部)。
     worker.start_worker()
+    pikpak_worker.start_worker()  # PikPak 队列(油猴脚本推送的直链)
     media.ensure_import_worker()  # 入库缩略图队列(daemon, 惰性启动亦可, 这里提前拉起)
     try:
         media.recover_stuck_processing()  # 重启丢内存队列的自愈: 重新入队 processing 集合
@@ -48,6 +50,8 @@ async def lifespan(app: FastAPI):
     yield
     from .services.harvest import worker
     worker.stop_worker()
+    from .services.pikpak import worker as pikpak_worker
+    pikpak_worker.stop_worker()
     media._preheat_done.set()  # 通知预热线程提前退出
 
 

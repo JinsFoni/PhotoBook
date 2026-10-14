@@ -97,6 +97,22 @@
               </form>
             </div>
           </div>
+
+          <div style="border-top:1px solid var(--line);margin-top:var(--s6);padding-top:var(--s5)">
+            <h2 class="t-h3" style="margin-bottom:var(--s2)">{{ t('浏览器联动(PikPak to PhotoBook)') }}</h2>
+            <p class="t-small" style="color:var(--ink-2);margin-bottom:var(--s3)">
+              {{ t('在油猴(Tampermonkey)安装本脚本后,浏览 mypikpak.com 勾选文件/文件夹,点右上角下载按钮即可推送到本站任务队列下载入库;可填写模特名与标签,入库时按模特归档、自动打标。') }}
+            </p>
+            <ol class="t-small" style="color:var(--ink-2);margin:0 0 var(--s3) 1.2em;line-height:1.9">
+              <li>{{ t('安装脚本:') }} <a class="link" href="{{ pikpak_script_url }}">{{ pikpak_script_url }}</a><br>
+                  <span style="color:var(--ink-3)">{{ t('(与 API Key 复用同一套配置: 脚本菜单「设置 PhotoBook」填地址与 Key)') }}</span></li>
+              <li>{{ t('在 PikPak 页面上勾选文件/文件夹 → 点右上角下载按钮 → 填模特名与标签 → 推送到队列') }}</li>
+              <li>{{ t('下载进度与失败重试见「任务队列」') }}</li>
+            </ol>
+            <p class="t-small" style="color:var(--ink-3);margin:0">
+              {{ t('说明: 一个勾选项(文件或文件夹)会归档成一个写真集;文件夹展开与直链解析均由脚本在本地完成,本站只按队列串行下载。') }}
+            </p>
+          </div>
         </div>
       </div>
     </div>

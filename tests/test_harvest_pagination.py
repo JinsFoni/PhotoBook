@@ -59,7 +59,7 @@ def test_jobs_paginated_20_per_page(admin_client, jobs45):
     finally:
         s.close()
     for jid in top20:
-        assert f'data-job-row="{jid}"' in page
+        assert f'data-job-row="harvest-{jid}"' in page
 
 
 def test_jobs_second_page(admin_client, jobs45):
@@ -72,7 +72,7 @@ def test_jobs_second_page(admin_client, jobs45):
     finally:
         s.close()
     for j in rows:
-        assert f'data-job-row="{j.id}"' in page
+        assert f'data-job-row="harvest-{j.id}"' in page
 
 
 def test_jobs_page_out_of_range_clamped(admin_client, jobs45):
@@ -85,15 +85,15 @@ def test_jobs_page_out_of_range_clamped(admin_client, jobs45):
 def test_jobs_status_filter_failed(admin_client, jobs45):
     page = admin_client.get("/admin/harvest?status=failed").text
     assert "共 1 条" in page
-    assert f'data-job-row="{jobs45["failed_id"]}"' in page
+    assert f'data-job-row="harvest-{jobs45["failed_id"]}"' in page
     # done 任务不应出现在 failed 筛选里
-    assert f'data-job-row="{jobs45["done_ids"][0]}"' not in page
+    assert f'data-job-row="harvest-{jobs45["done_ids"][0]}"' not in page
 
 
 def test_jobs_status_filter_done_excludes_failed(admin_client, jobs45):
     page = admin_client.get("/admin/harvest?status=done").text
     assert "共 45 条" in page
-    assert f'data-job-row="{jobs45["failed_id"]}"' not in page
+    assert f'data-job-row="harvest-{jobs45["failed_id"]}"' not in page
 
 
 def test_jobs_api_paginated(admin_client, jobs45):
@@ -296,3 +296,109 @@ def test_thumb_generating_becomes_done_after_publish(admin_client, jobs45):
     api = _json.loads(admin_client.get("/admin/api/harvest/jobs").text)
     err = [x["error"] for x in api["jobs"] if x["id"] == j.id][0]
     assert err == "→ 10 张已入库,已完成"
+
+
+# ---- PikPak 任务并入队列 -----------------------------------------------------------
+
+def _pk_job(file_id: str, name: str, status: str, files_total: int = 3,
+            files_done: int = 0) -> int:
+    from app.db import PikPakFile, PikPakJob
+    s = SessionLocal()
+    try:
+        j = PikPakJob(batch_id="test-batch", name=name, file_id=file_id,
+                      status=status, files_total=files_total, files_done=files_done)
+        s.add(j)
+        s.flush()
+        for i in range(files_total):
+            s.add(PikPakFile(job_id=j.id, file_id=f"{file_id}-{i}",
+                             url=f"https://dl/{file_id}/{i}.jpg", rel=f"{i}.jpg"))
+        s.commit()
+        return j.id
+    finally:
+        s.close()
+
+
+def _pk_cleanup():
+    from sqlalchemy import delete
+    from app.db import PikPakFile, PikPakJob
+    s = SessionLocal()
+    try:
+        s.execute(delete(PikPakFile).where(PikPakFile.file_id.like("pk99-%")))
+        s.execute(delete(PikPakJob).where(PikPakJob.file_id.like("pk99-%")))
+        s.commit()
+    finally:
+        s.close()
+
+
+def test_pikpak_jobs_in_queue_page(admin_client):
+    _pk_cleanup()
+    pk_id = _pk_job("pk99-1", "kev 灵溪 大主宰", "downloading", files_total=112, files_done=19)
+    try:
+        page = admin_client.get("/admin/harvest").text
+        assert "kev 灵溪 大主宰" in page
+        assert 'data-job-row="pikpak-%d"' % pk_id in page
+        assert "PikPak" in page          # 来源列
+        assert "19/112 张" in page       # 进度按文件数
+        # 轮询 API 同样包含
+        import json as _json
+        api = _json.loads(admin_client.get("/admin/api/harvest/jobs").text)
+        row = [x for x in api["jobs"] if x["kind"] == "pikpak" and x["id"] == pk_id]
+        assert row and row[0]["filesTotal"] == 112
+    finally:
+        _pk_cleanup()
+
+
+def test_pikpak_job_retry_and_delete(admin_client):
+    _pk_cleanup()
+    pk_id = _pk_job("pk99-2", "重试任务", "failed")
+    try:
+        # 重试: failed → queued, 文件行复位
+        r = admin_client.post(f"/admin/pikpak/{pk_id}/retry", data={"back": ""})
+        assert r.status_code in (200, 303)
+        s = SessionLocal()
+        try:
+            from app.db import PikPakFile, PikPakJob
+            j = s.get(PikPakJob, pk_id)
+            assert j.status == "queued"
+            assert all(f.status == "queued" for f in s.query(PikPakFile).where(
+                PikPakFile.job_id == pk_id))
+        finally:
+            s.close()
+        # 队列中取消: queued → 删除
+        r = admin_client.post(f"/admin/pikpak/{pk_id}/cancel", data={"back": ""})
+        assert r.status_code in (200, 303)
+        s = SessionLocal()
+        try:
+            from app.db import PikPakJob
+            assert s.get(PikPakJob, pk_id) is None
+        finally:
+            s.close()
+    finally:
+        _pk_cleanup()
+
+
+def test_pikpak_failed_filter(admin_client):
+    _pk_cleanup()
+    pk_id = _pk_job("pk99-3", "失败任务", "failed")
+    try:
+        import json as _json
+        api = _json.loads(admin_client.get("/admin/api/harvest/jobs?status=failed").text)
+        kinds = [(x["kind"], x["id"]) for x in api["jobs"]]
+        assert ("pikpak", pk_id) in kinds
+        page = admin_client.get("/admin/harvest?status=failed").text
+        assert "失败任务" in page
+    finally:
+        _pk_cleanup()
+
+
+def test_zz_dump2(admin_client):
+    page = admin_client.get("/admin/harvest").text
+    open("/tmp/pb-dump2.html", "w").write(page)
+
+
+def test_zz_dump3(admin_client):
+    _pk_cleanup()
+    _pk_job("pk99-1", "kev 灵溪 大主宰", "downloading", files_total=112, files_done=19)
+    page = admin_client.get("/admin/harvest").text
+    open("/tmp/pb-dump3.html", "w").write(page)
+    _pk_cleanup()

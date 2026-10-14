@@ -202,6 +202,74 @@ class HarvestHistory(Base):
     processed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+# ---- PikPak 对接(油猴脚本 PikPak to PhotoBook)--------------------------------
+
+class PikPakJob(Base):
+    """PikPak 下载任务 — 由油猴脚本推送勾选的文件/文件夹入队。
+
+    与 HarvestJob 是两条独立的队列: harvest 走「详情页 → 短链 → MediaFire」,
+    这里由脚本把勾选项展开成直链列表, 不解析详情页(用户 2026-10 决定:
+    PikPak 勾选的文件夹本身就是写真集)。
+
+    粒度是 **一个勾选项 = 一个任务 = 一个写真集**: 勾文件夹时脚本展开它的
+    所有文件(递归/翻页, 不受 100 条限制), 按相对路径写进 PikPakFile, worker
+    逐个下载到同一写真目录; 勾压缩包时只有一个文件, 该文件即写真集本体,
+    下载后走解压归档。压缩包与纯图片目录都能落地成写真集。
+    """
+    __tablename__ = "pikpak_jobs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # 勾选项标识: 同一批勾选共享同一个 uuid(前端回显与分组用)
+    batch_id: Mapped[str] = mapped_column(String(36), index=True)
+    # 勾选项显示名(文件夹名, 或压缩包/单图文件名), 用作写真标题
+    name: Mapped[str] = mapped_column(String(255))
+    # 勾选项在 PikPak 侧的文件 ID(单个勾选项一个, 去重判据)
+    file_id: Mapped[str] = mapped_column(String(64), index=True)
+    # 是压缩包(zip/rar/7z/…): 下载后解压归档; 否则按图片目录下载
+    is_archive: Mapped[bool] = mapped_column(Boolean, default=False)
+    size: Mapped[int] = mapped_column(Integer, default=0)    # 勾选项总字节
+    # 模特名(脚本可填;空=未分类)
+    model_name: Mapped[str | None] = mapped_column(String(120), default=None)
+    # 脚本填写的 tag,逗号分隔(入库时拆分挂到合集与模特)
+    tags: Mapped[str | None] = mapped_column(String(500), default=None)
+    status: Mapped[str] = mapped_column(String(12), default="queued", index=True)
+    # queued | downloading | extracting | done | failed
+    files_done: Mapped[int] = mapped_column(Integer, default=0)
+    files_total: Mapped[int] = mapped_column(Integer, default=0)
+    bytes_done: Mapped[int] = mapped_column(Integer, default=0)
+    bytes_total: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    # 导入成功后写真 slug(任务列表实时判态用)
+    collection_slug: Mapped[str | None] = mapped_column(String(220), default=None)
+    # 下载/导入失败时残留在 library 的归档目录,删除任务时清理
+    archive_dir: Mapped[str | None] = mapped_column(String(500), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(default=None)
+    finished_at: Mapped[datetime | None] = mapped_column(default=None)
+    updated_at: Mapped[datetime | None] = mapped_column(default=None, onupdate=utcnow)
+
+    __table_args__ = (Index("ix_pikpak_jobs_status_id", "status", "id"),)
+
+
+class PikPakFile(Base):
+    """勾选项展开后的单个文件(直链)。job_id 相同的行属于同一个写真集。
+
+    rel 是相对勾选项的路径(含文件名), 下载时按它落到写真目录, 子文件夹结构
+    因此能原样保留。dedupe_key 是 PikPak 侧文件 ID: 同一勾选项在同一次推送里
+    不会重复, 但换批重新推送同名勾选项时用它判「已入队/已下过」。
+    """
+    __tablename__ = "pikpak_files"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("pikpak_jobs.id",
+                                                  ondelete="CASCADE"), index=True)
+    file_id: Mapped[str] = mapped_column(String(64), index=True)
+    url: Mapped[str] = mapped_column(String(2000))
+    rel: Mapped[str] = mapped_column(String(500))     # 相对勾选项的路径
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(10), default="queued")
+    # queued | done | failed
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+
+
 # ---- 配置 -------------------------------------------------------------------
 
 class Setting(Base):

@@ -20,7 +20,8 @@ from sqlalchemy.orm import Session
 from ..auth import hash_password, require_admin
 from ..config import settings
 from ..db import (Collection, Favorite, HarvestHistory, HarvestJob, local_dt, Model, Photo,
-                  PhotoUpload, Session as DbSession, Setting, Storage, Tag, UploadJob, User)
+                  PhotoUpload, PikPakFile, PikPakJob, Session as DbSession, Setting, Storage,
+                  Tag, UploadJob, User)
 from ..database import get_db
 from ..i18n import t
 from ..templating import templates
@@ -40,18 +41,6 @@ JOB_STATUS_GROUPS: dict[str, tuple[str, ...]] = {
     "skipped": ("skipped",),
     "failed": ("failed",),
 }
-
-
-def _jobs_query(s: Session, status: str):
-    """任务列表查询:status 为分组键(active/done/skipped/failed)时按状态过滤。
-
-    状态有索引(ix_jobs_status_id),过滤后按 id 倒序取页都是索引扫描。
-    """
-    q = select(HarvestJob)
-    statuses = JOB_STATUS_GROUPS.get(status or "")
-    if statuses:
-        q = q.where(HarvestJob.status.in_(statuses))
-    return q.order_by(desc(HarvestJob.id))
 
 
 def _clamp_page(page: int, total: int, per_page: int) -> int:
@@ -159,8 +148,10 @@ async def dashboard(request: Request, s: Session = Depends(get_db)):
         "photos": s.scalar(select(func.count(Photo.id))) or 0,
         "users": s.scalar(select(func.count(User.id))) or 0,
         "tags": s.scalar(select(func.count(Tag.id))) or 0,
-        "jobs_active": s.scalar(select(func.count(HarvestJob.id)).where(
-            HarvestJob.status.in_(["queued", "parsing", "downloading", "extracting"]))) or 0,
+        "jobs_active": (s.scalar(select(func.count(HarvestJob.id)).where(
+            HarvestJob.status.in_(["queued", "parsing", "downloading", "extracting"]))) or 0)
+        + (s.scalar(select(func.count(PikPakJob.id)).where(
+            PikPakJob.status.in_(["queued", "downloading", "extracting"]))) or 0),
         "jobs_done": s.scalar(select(func.count(HarvestJob.id)).where(
             HarvestJob.status.in_(["done", "exists"]))) or 0,
         "jobs_failed": s.scalar(select(func.count(HarvestJob.id)).where(
@@ -612,25 +603,111 @@ async def admin_collection_tag_remove(col_id: int, tag_id: int, s: Session = Dep
 
 # ---- 采集(§29)--------------------------------------------------------------------
 
-@router.get("/harvest")
-async def admin_harvest(request: Request, s: Session = Depends(get_db),
-                        page: int = 1, status: str = ""):
-    total = s.scalar(select(func.count()).select_from(
-        _jobs_query(s, status).subquery())) or 0
-    page = _clamp_page(page, total, JOBS_PER_PAGE)
-    jobs = s.scalars(_jobs_query(s, status)
-                     .offset((page - 1) * JOBS_PER_PAGE)
-                     .limit(JOBS_PER_PAGE)).all()
-    # 展示文案实时化:「缩略图生成中」在队列完成后显示「已完成」(见 _thumb_status_text)
-    display_errors = {j.id: _job_display_error(s, j) for j in jobs}
-    total_pages = max(1, -(-total // JOBS_PER_PAGE))
-    # 各筛选分组的任务数(一次分组查询,供筛选胶囊显示计数)
+# PikPak 任务状态 → 队列筛选分组(harvest 同款分组键)
+PIKPAK_STATUS_GROUPS: dict[str, tuple[str, ...]] = {
+    "active": ("queued", "downloading", "extracting"),
+    "done": ("done",),
+    "skipped": (),
+    "failed": ("failed",),
+}
+
+
+def _pikpak_row(j: PikPakJob) -> dict:
+    """PikPakJob → 与 HarvestJob 行同构的 dict(kind=pikpak 供模板/JS 区分渲染)。"""
+    return {
+        "kind": "pikpak", "id": j.id, "serial": None, "status": j.status,
+        "title": j.name or "", "model": j.model_name or "",
+        "error": j.error or "", "kind_label": "PikPak",
+        "filesDone": j.files_done, "filesTotal": j.files_total,
+        "bytesDone": j.bytes_done, "bytesTotal": j.bytes_total,
+        "createdAt": local_time_fmt(j.created_at),
+    }
+
+
+def _merged_jobs_page(s: Session, status: str, page: int) -> tuple[list, int, dict]:
+    """任务队列 = HarvestJob(buondua) + PikPakJob(油猴脚本推送)合并列表。
+
+    两表主键独立,无法 SQL JOIN 排序 — 各自全量取 (id,status) 后内存归并,
+    按 (created_at, id) 倒序混合分页。数据量级(千级)下成本可忽略。
+    返回 (统一行 dicts, 总数, 各分组计数)。
+    """
+    # 非法分组键回退为全部(与旧 _harvest_list_payload 口径一致)
+    if status and status not in JOB_STATUS_GROUPS:
+        status = ""
+    statuses = JOB_STATUS_GROUPS.get(status or "")
+    pk_statuses = PIKPAK_STATUS_GROUPS.get(status or "")
+
+    h_rows = s.execute(select(HarvestJob.id, HarvestJob.created_at, HarvestJob.status))
+    p_rows = s.execute(select(PikPakJob.id, PikPakJob.created_at, PikPakJob.status))
+    merged: list[tuple] = []
+    pk_status_counts: dict[str, int] = {}
+    for jid, created, st in h_rows:
+        merged.append((created, jid, "h", st))
+    for jid, created, st in p_rows:
+        merged.append((created, jid, "p", st))
+        pk_status_counts[st] = pk_status_counts.get(st, 0) + 1
+    # created_at 可能混时区(None 兜底), 键统一为 (字符串时间, 来源, id)
+    merged.sort(key=lambda r: (str(r[0]) if r[0] else "", r[2], r[1]), reverse=True)
+
+    # 筛选: 分组键存在时按各自状态白名单过滤(空白名单 = 该组无可见任务)
+    if status:
+        merged = [r for r in merged
+                  if (r[2] == "h" and r[3] in (statuses or ()))
+                  or (r[2] == "p" and r[3] in (pk_statuses or ()))]
+
     status_counts = dict(s.execute(
         select(HarvestJob.status, func.count(HarvestJob.id)).group_by(HarvestJob.status)).all())
     chip_counts = {g: sum(status_counts.get(st, 0) for st in sts)
                    for g, sts in JOB_STATUS_GROUPS.items()}
-    chip_counts[""] = sum(status_counts.values())
-    active_count = chip_counts["active"]
+    for g, sts in PIKPAK_STATUS_GROUPS.items():
+        chip_counts[g] = chip_counts.get(g, 0) + sum(pk_status_counts.get(st, 0) for st in sts)
+    chip_counts[""] = sum(status_counts.values()) + sum(pk_status_counts.values())
+
+    total = len(merged)
+    page = _clamp_page(page, total, JOBS_PER_PAGE)
+    window = merged[(page - 1) * JOBS_PER_PAGE: page * JOBS_PER_PAGE]
+
+    h_ids = [jid for _, jid, src, _ in window if src == "h"]
+    p_ids = [jid for _, jid, src, _ in window if src == "p"]
+    h_map = {}
+    if h_ids:
+        h_map = {j.id: j for j in s.scalars(
+            select(HarvestJob).where(HarvestJob.id.in_(h_ids))).all()}
+    p_map = {}
+    if p_ids:
+        p_map = {j.id: j for j in s.scalars(
+            select(PikPakJob).where(PikPakJob.id.in_(p_ids))).all()}
+
+    rows: list[dict] = []
+    for _, jid, src, _st in window:
+        if src == "h":
+            j = h_map.get(jid)
+            if j is None:
+                continue
+            rows.append({
+                "kind": "harvest", "id": j.id, "serial": j.serial, "status": j.status,
+                "title": j.title or "", "model": j.model_name or "",
+                "error": _job_display_error(s, j), "kind_label": j.source or "buondua",
+                "filesDone": 0, "filesTotal": 0,
+                "bytesDone": j.bytes_done, "bytesTotal": j.bytes_total,
+                "createdAt": local_time_fmt(j.created_at),
+            })
+        else:
+            j = p_map.get(jid)
+            if j is None:
+                continue
+            rows.append(_pikpak_row(j))
+    return rows, total, chip_counts
+
+
+@router.get("/harvest")
+async def admin_harvest(request: Request, s: Session = Depends(get_db),
+                        page: int = 1, status: str = ""):
+    rows, total, chip_counts = _merged_jobs_page(s, status, page)
+    page = _clamp_page(page, total, JOBS_PER_PAGE)
+    jobs = rows          # 模板/JS 用统一 dict 行
+    total_pages = max(1, -(-total // JOBS_PER_PAGE))
+    active_count = chip_counts.get("active", 0)
     history_count = s.scalar(select(func.count(HarvestHistory.serial))) or 0
     conf = settings_store.harvest_conf(s)
     status_icon = {"queued": "clock", "parsing": "search", "downloading": "download",
@@ -638,7 +715,7 @@ async def admin_harvest(request: Request, s: Session = Depends(get_db),
                    "skipped": "minus", "failed": "close"}
     return templates.TemplateResponse(request, "admin/harvest.html", {
         "page": "admin", "jobs": jobs, "history_count": history_count,
-        "display_errors": display_errors,
+        "display_errors": {},
         "conf": conf, "harvest_keys": settings_store.HARVEST_KEYS,
         "status_icon": status_icon,
         "job_status_groups": JOB_STATUS_GROUPS,
@@ -775,6 +852,50 @@ async def admin_harvest_cancel(request: Request, job_id: int, s: Session = Depen
     return _action_response(request, s, status, page, back, "")
 
 
+@router.post("/pikpak/{job_id}/retry")
+async def admin_pikpak_retry(request: Request, job_id: int, s: Session = Depends(get_db),
+                             back: str = Form("")):
+    """重推 PikPak 任务: 终态 → queued, worker 轮询(3s)自动拾起重跑。
+
+    直链带时效, 复用旧 url 大概率失败 — 重试同时把文件行复位为 queued,
+    worker 对 queued 文件行会重新解析直链(见 services/pikpak/worker)。
+    """
+    job = s.get(PikPakJob, job_id)
+    if job and job.status in ("failed", "skipped"):
+        job.status = "queued"
+        job.error = None
+        job.finished_at = None
+        s.query(PikPakFile).where(
+            PikPakFile.job_id == job.id,
+            PikPakFile.status.in_(("failed", "done"))).update({"status": "queued"})
+        s.commit()
+    status, page = _back_params(back)
+    return _action_response(request, s, status, page, back, "")
+
+
+@router.post("/pikpak/{job_id}/cancel")
+async def admin_pikpak_cancel(request: Request, job_id: int, s: Session = Depends(get_db),
+                              back: str = Form("")):
+    job = s.get(PikPakJob, job_id)
+    if job and job.status == "queued":
+        s.delete(job)   # pikpak_files 级联删除
+        s.commit()
+    status, page = _back_params(back)
+    return _action_response(request, s, status, page, back, "")
+
+
+@router.post("/pikpak/{job_id}/delete")
+async def admin_pikpak_delete(request: Request, job_id: int, s: Session = Depends(get_db),
+                              back: str = Form("")):
+    """删除 PikPak 终态任务记录(不碰已导入的写真文件)。"""
+    job = s.get(PikPakJob, job_id)
+    if job and job.status in ("done", "failed", "skipped"):
+        s.delete(job)
+        s.commit()
+    status, page = _back_params(back)
+    return _action_response(request, s, status, page, back, "")
+
+
 @router.post("/harvest/{job_id}/delete")
 async def admin_harvest_delete(request: Request, job_id: int, s: Session = Depends(get_db),
                                back: str = Form("")):
@@ -824,32 +945,19 @@ def local_time_fmt(dt):
 
 
 def _harvest_list_payload(s: Session, status: str, page: int) -> dict:
-    """任务列表分页 payload(API 与 AJAX 动作响应共用,保证前端重绘口径一致)。"""
-    status = status if status in JOB_STATUS_GROUPS else ""
-    total = s.scalar(select(func.count()).select_from(
-        _jobs_query(s, status).subquery())) or 0
+    """任务列表分页 payload(API 与 AJAX 动作响应共用,保证前端重绘口径一致)。
+
+    队列已并入 PikPak 任务(kind=pikpak),与页面同走 _merged_jobs_page。
+    """
+    rows, total, chip_counts = _merged_jobs_page(s, status, page)
     page = _clamp_page(page, total, JOBS_PER_PAGE)
-    jobs = s.scalars(_jobs_query(s, status)
-                     .offset((page - 1) * JOBS_PER_PAGE)
-                     .limit(JOBS_PER_PAGE)).all()
-    status_counts = dict(s.execute(
-        select(HarvestJob.status, func.count(HarvestJob.id)).group_by(HarvestJob.status)).all())
-    chip_counts = {g: sum(status_counts.get(st, 0) for st in sts)
-                   for g, sts in JOB_STATUS_GROUPS.items()}
-    chip_counts[""] = sum(status_counts.values())
-    return {"jobs": [{
-        "id": j.id, "serial": j.serial, "status": j.status, "title": j.title or "",
-        "model": j.model_name or "", "error": _job_display_error(s, j),
-        "bytesDone": j.bytes_done, "bytesTotal": j.bytes_total,
-        "source": j.source,
-        "createdAt": local_time_fmt(j.created_at),
-    } for j in jobs],
-        "page": page, "totalPages": max(1, -(-total // JOBS_PER_PAGE)),
-        "total": total,
-        "chipCounts": chip_counts,
-        "workerRunning": harvest_worker.worker_running(),
-        "preheatRunning": media.preheat_running(),
-        "preheatProgress": media.preheat_progress()}
+    return {"jobs": rows,
+            "page": page, "totalPages": max(1, -(-total // JOBS_PER_PAGE)),
+            "total": total,
+            "chipCounts": chip_counts,
+            "workerRunning": harvest_worker.worker_running(),
+            "preheatRunning": media.preheat_running(),
+            "preheatProgress": media.preheat_progress()}
 
 
 @router.get("/api/harvest/jobs")
@@ -869,6 +977,7 @@ async def admin_settings(request: Request, s: Session = Depends(get_db)):
         "harvest_keys": settings_store.HARVEST_KEYS,
         "ext_key_tail": (settings_store.get_setting(s, ext_api.API_KEY_SETTING) or "")[-4:],
         "script_url": str(request.base_url).rstrip("/") + "/static/buondua-bridge.user.js",
+        "pikpak_script_url": str(request.base_url).rstrip("/") + "/static/pikpak-to-photobook.user.js",
         "flash": request.query_params.get("flash", ""),
     })
 

@@ -8,6 +8,7 @@ __pycache__/
 /data/
 /media/
 /library/
+/video/
 
 # 环境
 .env

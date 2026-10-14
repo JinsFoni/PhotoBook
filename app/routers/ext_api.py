@@ -23,12 +23,17 @@ from ..i18n import t
 from ..services import settings_store
 from ..services.harvest import net
 from ..services.harvest.worker import enqueue, ACTIVE_JOB_STATES
+from ..services.pikpak import worker as pikpak_worker
 
 router = APIRouter(prefix="/api/ext")
 
 API_KEY_SETTING = "ext.api_key"
 # 单次状态查询/推送的 serial 数上限(一页卡片 24~48 个, 留余量)
 MAX_SERIALS = 100
+# PikPak 单次推送的勾选项个数上限(每人一次勾几个/几十个写真集)
+MAX_PIKPAK_ITEMS = 5000
+# 单次推送展开后的文件总数上限(勾选项较多时总量兜底, 防请求体过大)
+MAX_PIKPAK_FILES = 50000
 
 
 # ---- API key ----------------------------------------------------------------
@@ -208,6 +213,57 @@ async def status_api(serials: str, s: Session = Depends(require_key)):
 
 class StatusByUrlBody(BaseModel):
     urls: list[str]
+
+
+# ---- PikPak(油猴脚本 PikPak to PhotoBook)-----------------------------------
+
+class PikPakFileItem(BaseModel):
+    """勾选项展开后的单个文件(直链)。
+
+    rel = 相对勾选项的路径(含文件名), 下载时按它落到写真目录,
+    因此勾选的文件夹里有子目录时结构能原样保留。
+    """
+    file_id: str = ""
+    url: str
+    rel: str = ""
+    size: int = 0
+
+
+class PikPakItem(BaseModel):
+    """一个勾选项(文件或文件夹) = 一个写真集 = 一个下载任务。"""
+    file_id: str
+    name: str
+    files: list[PikPakFileItem] = []
+    size: int = 0
+
+
+class PikPakPushBody(BaseModel):
+    items: list[PikPakItem]
+    model_name: str = ""      # 模特名(空 = 未分类)
+    tags: list[str] = []      # 脚本输入的标签
+
+
+@router.post("/pikpak")
+async def push_pikpak(body: PikPakPushBody, s: Session = Depends(require_key)):
+    """推送 PikPak 勾选项入队。返回 {ok, queued, skipped, batchId}。
+
+    一个勾选项 = 一个任务: 文件夹由脚本在本地递归展开成 files[](直链),
+    worker 逐个下载到同一个写真目录; 压缩包也走 files[](单元素), 下载后
+    解压归档。同 file_id 已在队列 → skipped。
+    """
+    if not body.items:
+        raise HTTPException(422, "items required")
+    if len(body.items) > MAX_PIKPAK_ITEMS:
+        raise HTTPException(422, f"too many items (max {MAX_PIKPAK_ITEMS})")
+    total_files = sum(len(i.files) for i in body.items)
+    if total_files > MAX_PIKPAK_FILES:
+        raise HTTPException(422, f"too many files (max {MAX_PIKPAK_FILES})")
+    items = [i.model_dump() for i in body.items
+             if (i.file_id or "").strip()]
+    queued, skipped, batch_id = pikpak_worker.enqueue_batch(
+        items, model_name=body.model_name, tags=body.tags)
+    return {"ok": queued > 0, "queued": queued, "skipped": skipped,
+            "batchId": batch_id}
 
 
 @router.post("/status-by-url")
