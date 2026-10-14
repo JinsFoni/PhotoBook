@@ -51,6 +51,8 @@ def _migrate() -> None:
         "ALTER TABLE storages ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE storages ADD COLUMN manual_upload BOOLEAN NOT NULL DEFAULT 0",
         "ALTER TABLE storages ADD COLUMN direct_link BOOLEAN NOT NULL DEFAULT 1",
+        "ALTER TABLE model_tags ADD COLUMN pos INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE collection_tags ADD COLUMN pos INTEGER NOT NULL DEFAULT 0",
     )
     with engine.connect() as conn:
         for stmt in stmts:
@@ -59,10 +61,26 @@ def _migrate() -> None:
                 conn.commit()
             except Exception:
                 pass  # 列已存在
+    _backfill_tag_pos()
     _backfill_collection_slug()
     _backfill_source_serial()
     _backfill_cross_site_serials()
     _fix_url_unsafe_slugs()
+
+
+def _backfill_tag_pos() -> None:
+    """一次性回填:关联表 pos 列上线前的存量挂载,用 rowid(即当时的
+    输入顺序)补齐。幂等:只更新 pos=0 的行。"""
+    stmts = (
+        "UPDATE model_tags SET pos = rowid - (SELECT MIN(rowid) FROM model_tags mt2 "
+        "WHERE mt2.model_id = model_tags.model_id) WHERE pos = 0",
+        "UPDATE collection_tags SET pos = rowid - (SELECT MIN(rowid) FROM collection_tags ct2 "
+        "WHERE ct2.collection_id = collection_tags.collection_id) WHERE pos = 0",
+    )
+    with engine.connect() as conn:
+        for stmt in stmts:
+            conn.execute(text(stmt))
+        conn.commit()
 
 
 def _fix_url_unsafe_slugs() -> None:

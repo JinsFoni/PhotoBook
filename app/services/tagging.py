@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from ..db import Collection, CollectionTag, HarvestJob, Model, ModelTag, Tag
@@ -64,6 +64,8 @@ def apply_tags(s: Session, collection: Collection | None,
     if not tags or (collection is None and model is None):
         return 0
     added = 0
+    col_pos: list[int] = []   # 按输入顺序记录 tag_id, flush 后回写 pos
+    mdl_pos: list[int] = []
     for name in tags:
         name = name.strip()
         if not name:
@@ -71,10 +73,28 @@ def apply_tags(s: Session, collection: Collection | None,
         t = _get_or_create_tag(s, name)
         if collection is not None and t not in collection.tags:
             collection.tags.append(t)
+            col_pos.append(t.id)
             added += 1
         if model is not None and t not in model.tags:
             model.tags.append(t)
+            mdl_pos.append(t.id)
             added += 1
+    # pos 记挂载时的输入顺序, 详情页按此展示(否则按 tag_id 全局创建序漂移)。
+    # secondary 关系的关联行 ORM 不暴露, flush 生成行后用 SQL 回写。
+    if col_pos:
+        s.flush()
+        for i, tid in enumerate(col_pos):
+            s.execute(update(CollectionTag)
+                      .where(CollectionTag.collection_id == collection.id,
+                             CollectionTag.tag_id == tid)
+                      .values(pos=i))
+    if mdl_pos:
+        s.flush()
+        for i, tid in enumerate(mdl_pos):
+            s.execute(update(ModelTag)
+                      .where(ModelTag.model_id == model.id,
+                             ModelTag.tag_id == tid)
+                      .values(pos=i))
     return added
 
 

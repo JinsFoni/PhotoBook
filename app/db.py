@@ -81,7 +81,8 @@ class Model(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     collections: Mapped[list["Collection"]] = relationship(back_populates="model")
-    tags: Mapped[list["Tag"]] = relationship(secondary="model_tags", lazy="selectin")
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary="model_tags", lazy="selectin", order_by="ModelTag.pos")
 
 
 class Collection(Base):
@@ -110,7 +111,8 @@ class Collection(Base):
         back_populates="collection", cascade="all, delete-orphan",
         order_by="Photo.sort_order", lazy="selectin",
         foreign_keys="Photo.collection_id")
-    tags: Mapped[list["Tag"]] = relationship(secondary="collection_tags", lazy="selectin")
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary="collection_tags", lazy="selectin", order_by="CollectionTag.pos")
 
     __table_args__ = (Index("ix_collections_status_date", "status", "published_at"),)
 
@@ -143,14 +145,17 @@ class Tag(Base):
 
 class ModelTag(Base):
     __tablename__ = "model_tags"
+    # pos = 挂载时的输入顺序(详情页标签按用户输入顺序展示)
     model_id: Mapped[int] = mapped_column(ForeignKey("models.id", ondelete="CASCADE"), primary_key=True)
     tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+    pos: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class CollectionTag(Base):
     __tablename__ = "collection_tags"
     collection_id: Mapped[int] = mapped_column(ForeignKey("collections.id", ondelete="CASCADE"), primary_key=True)
     tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+    pos: Mapped[int] = mapped_column(Integer, default=0)
 
 
 # ---- 用户行为 ---------------------------------------------------------------
