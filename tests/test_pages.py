@@ -18,6 +18,50 @@ def test_discovery(admin_client):
     assert "PB_DATA" in r.text
 
 
+def test_discovery_hero_sorted_by_added_date(admin_client):
+    """轮播图 featured 按入库时间(created_at)倒序, 与发布日期序相互独立。
+
+    种子数据 featured 三本按发布日期序应为 summer-editorial → first-light →
+    nocturne, 而按入库序(id 兜底)恰好倒过来 —— 断言两者不同防退化。
+    """
+    from sqlalchemy import select
+
+    from app.db import Collection
+    from app.database import SessionLocal
+
+    s = SessionLocal()
+    try:
+        by_added = [c.id for c in s.scalars(
+            select(Collection).where(Collection.status == "published",
+                                     Collection.featured.is_(True))
+            .order_by(Collection.created_at.desc(), Collection.id.desc()))]
+    finally:
+        s.close()
+    d = _pb_data(admin_client.get("/").text)
+    got = [c["id"] for c in d["featured"]]
+    assert len(got) == len(by_added)
+    assert got == by_added
+    assert got != list(reversed(got))  # 入库序 ≠ 发布序
+
+
+def test_discovery_latest_sorted_by_added_date(admin_client):
+    """「Latest Collections」网格按入库时间(created_at)倒序取前 6。"""
+    from sqlalchemy import select
+
+    from app.db import Collection
+    from app.database import SessionLocal
+
+    s = SessionLocal()
+    try:
+        expected = [c.id for c in s.scalars(
+            select(Collection).where(Collection.status == "published")
+            .order_by(Collection.created_at.desc(), Collection.id.desc()))][:6]
+    finally:
+        s.close()
+    d = _pb_data(admin_client.get("/").text)
+    assert [c["id"] for c in d["latest"]] == expected
+
+
 def test_collections_page_lists_seed(admin_client):
     r = admin_client.get("/collections")
     assert r.status_code == 200

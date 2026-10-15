@@ -105,8 +105,12 @@ def _published_collections(s: Session) -> list[Collection]:
 async def discovery(request: Request, s: Session = Depends(get_db)):
     user = request.state.user
     cols = _published_collections(s)
-    featured = [c for c in cols if c.featured][:16] or cols[:16]
-    latest = cols[:6]
+    # 轮播图顺序 = 最新入库(created_at 新→旧, 同刻按 id 兜底);cols 自身是
+    # 发布日期序, 不能直接截断。勾了 featured 的优先, 没有则全库兜底。
+    by_added = sorted(cols, key=lambda c: (c.created_at, c.id), reverse=True)
+    featured_set = {c.id for c in cols if c.featured}
+    featured = [c for c in by_added if c.id in featured_set][:16] or by_added[:16]
+    latest = by_added[:6]  # 「Latest Collections」同为最新入库序
     models = s.scalars(select(Model).where(Model.status == "published")
                        .order_by(desc(Model.featured), Model.name)).all()
     tags = s.scalars(select(Tag).order_by(Tag.name)).all()
