@@ -972,10 +972,13 @@ async def admin_harvest_jobs_api(s: Session = Depends(get_db),
 @router.get("/settings")
 async def admin_settings(request: Request, s: Session = Depends(get_db)):
     conf = settings_store.harvest_conf(s)
+    # 管理页可见完整 Key(仅 admin 路由可达);首次打开即生成,保证一定有值
+    ext_key = ext_api.get_or_create_api_key(s)
     return templates.TemplateResponse(request, "admin/settings.html", {
         "page": "admin", "conf": conf,
         "harvest_keys": settings_store.HARVEST_KEYS,
-        "ext_key_tail": (settings_store.get_setting(s, ext_api.API_KEY_SETTING) or "")[-4:],
+        "ext_key": ext_key,
+        "ext_key_tail": ext_key[-4:],
         "script_url": str(request.base_url).rstrip("/") + "/static/buondua-bridge.user.js",
         "pikpak_script_url": str(request.base_url).rstrip("/") + "/static/pikpak-to-photobook.user.js",
         "flash": request.query_params.get("flash", ""),

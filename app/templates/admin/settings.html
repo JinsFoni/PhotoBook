@@ -90,12 +90,61 @@
               <li>{{ t('在脚本菜单「设置 PhotoBook」中填入本站地址与下方 API Key') }}</li>
             </ol>
             <div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap">
-              <span class="t-small" style="color:var(--ink-3)">{{ t('当前 API Key 尾号:') }} <code style="color:var(--ink)">·{{ ext_key_tail or '—' }}</code></span>
+              <span class="t-small" style="color:var(--ink-3)">{{ t('API Key:') }}
+                <code id="ext-key" data-visible="false" style="color:var(--ink)">·{{ ext_key_tail or '—' }}</code>
+                <button type="button" id="ext-key-toggle" class="btn btn--quiet btn--sm"
+                        style="padding:0 .4em;line-height:1.4">{{ t('显示') }}</button>
+                <button type="button" id="ext-key-copy" class="btn btn--quiet btn--sm"
+                        style="padding:0 .4em;line-height:1.4" aria-label="{{ t('复制 API Key') }}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                       style="vertical-align:-2px" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                </button>
+              </span>
               <form method="post" action="/admin/settings/ext-key"
                     onsubmit='return confirm({{ t('重置后旧 Key 立即失效,脚本需重新配置。确定重置?') | tojson }})'>
                 <button class="btn btn--quiet btn--sm" type="submit">{{ t('重置 API Key') }}</button>
               </form>
             </div>
+            <script>
+              (function () {
+                var KEY = {{ ext_key | tojson }};
+                var code = document.getElementById("ext-key");
+                var toggle = document.getElementById("ext-key-toggle");
+                var copy = document.getElementById("ext-key-copy");
+                if (!code || !KEY) return;
+                function setVis(v) {
+                  code.dataset.visible = String(v);
+                  code.textContent = v ? KEY : "·" + KEY.slice(-4);
+                  toggle.textContent = v ? {{ t('隐藏') | tojson }} : {{ t('显示') | tojson }};
+                }
+                toggle.addEventListener("click", function () {
+                  setVis(code.dataset.visible !== "true");
+                });
+                copy.addEventListener("click", function () {
+                  function ok() {
+                    copy.textContent = {{ t('已复制') | tojson }};
+                    setTimeout(function () {
+                      copy.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+                    }, 1500);
+                  }
+                  if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(KEY).then(ok);
+                  } else {
+                    var ta = document.createElement("textarea");
+                    ta.value = KEY;
+                    ta.style.position = "fixed"; ta.style.opacity = "0";
+                    document.body.appendChild(ta);
+                    ta.select();
+                    try { document.execCommand("copy"); ok(); } catch (e) {}
+                    ta.remove();
+                  }
+                });
+              })();
+            </script>
           </div>
 
           <div style="border-top:1px solid var(--line);margin-top:var(--s6);padding-top:var(--s5)">
