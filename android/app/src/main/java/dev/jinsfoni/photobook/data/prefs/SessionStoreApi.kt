@@ -1,5 +1,6 @@
 package dev.jinsfoni.photobook.data.prefs
 
+import dev.jinsfoni.photobook.core.design.FontPack
 import dev.jinsfoni.photobook.core.design.GlassMaterial
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import kotlinx.coroutines.flow.Flow
@@ -27,6 +28,9 @@ interface SessionStoreApi {
 
     /** 语言标签("zh-CN"/"zh-TW";空 = 跟随系统)。 */
     val locale: Flow<String>
+
+    /** 字体风格三选一(cute/minimal/modern,与 Web 端字体包对齐)。 */
+    val fontPack: Flow<FontPack>
 
     suspend fun currentBaseUrl(): String
 
@@ -62,4 +66,5 @@ interface SessionStoreApi {
     suspend fun saveGlassMaterial(material: GlassMaterial)
     suspend fun saveLoadOriginal(enabled: Boolean)
     suspend fun saveLocale(tag: String)
+    suspend fun saveFontPack(pack: FontPack)
 }

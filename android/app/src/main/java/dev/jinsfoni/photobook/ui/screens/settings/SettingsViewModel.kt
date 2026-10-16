@@ -8,6 +8,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dev.jinsfoni.photobook.core.design.FontPack
+import dev.jinsfoni.photobook.core.design.FontPackState
 import dev.jinsfoni.photobook.core.design.GlassMaterial
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.core.design.ThemeState
@@ -30,6 +32,9 @@ data class SettingsUiState(
     val loadOriginal: Boolean = false,
     /** 当前语言标签("" = 跟随系统);API 33+ 以系统 per-app locale 为准。 */
     val locale: String = "",
+
+    /** 字体风格三选一(cute 默认;与 Web 端设置页字体包对齐)。 */
+    val fontPack: FontPack = FontPack.CUTE,
 )
 
 /** per-app 语言控制抽象:33+ 系统实现,低版本不支持(回落 DataStore + recreate)。 */
@@ -79,6 +84,7 @@ class SettingsViewModel(
         session.locale,
         systemLocale,
         session.loadOriginal,
+        session.fontPack,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         SettingsUiState(
@@ -88,6 +94,7 @@ class SettingsViewModel(
             glassMaterial = values[3] as GlassMaterial,
             locale = (values[5] as String).ifBlank { values[4] as String },
             loadOriginal = values[6] as Boolean,
+            fontPack = values[7] as FontPack,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -115,6 +122,12 @@ class SettingsViewModel(
     /** 灯箱原图开关:灯箱直接订阅 SessionStore.loadOriginal,落库即生效。 */
     fun setLoadOriginal(enabled: Boolean) {
         viewModelScope.launch { session.saveLoadOriginal(enabled) }
+    }
+
+    /** 字体风格切换:内存态即时生效(全 UI 重组),同时落库。 */
+    fun setFontPack(pack: FontPack) {
+        FontPackState.pack = pack
+        viewModelScope.launch { session.saveFontPack(pack) }
     }
 
     /** 语言切换:33+ 走系统 per-app locale(自动重建);31/32 存档 + recreate。 */

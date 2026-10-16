@@ -12,6 +12,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.jinsfoni.photobook.core.design.FontPackState
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.core.design.ThemeState
 import dev.jinsfoni.photobook.data.prefs.SessionStoreApi
@@ -59,11 +60,12 @@ class AppRootViewModel @Inject constructor(
         .map { !it.isNullOrBlank() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
 
-    /** 启动:把持久化主题/底栏玻璃材质灌入 ThemeState(内存单例),变更写回。 */
+    /** 启动:把持久化主题/底栏玻璃材质/字体风格灌入内存单例,变更写回。 */
     fun restoreTheme() {
         viewModelScope.launch {
             ThemeState.mode = session.theme.first()
             ThemeState.glassMaterial = session.glassMaterial.first()
+            FontPackState.pack = session.fontPack.first()
         }
     }
 

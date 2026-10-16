@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dev.jinsfoni.photobook.core.design.FontPack
 import dev.jinsfoni.photobook.core.design.GlassMaterial
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.data.remote.ApiErrors
@@ -45,6 +46,7 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
     private val glassMaterialKey = stringPreferencesKey("glass_material")
     private val loadOriginalKey = booleanPreferencesKey("load_original")
     private val localeKey = stringPreferencesKey("locale")
+    private val fontPackKey = stringPreferencesKey("font_pack")
 
     override val token: Flow<String?> = context.dataStore.data.map { prefs ->
         activeProfile(prefs)?.token?.takeIf { it.isNotBlank() } ?: prefs[tokenKey]
@@ -98,6 +100,15 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
 
     override val locale: Flow<String> =
         context.dataStore.data.map { it[localeKey] ?: "" }
+
+    override val fontPack: Flow<FontPack> = context.dataStore.data.map { prefs ->
+        when (prefs[fontPackKey]) {
+            "MINIMAL" -> FontPack.MINIMAL
+            "MODERN" -> FontPack.MODERN
+            "CUTE" -> FontPack.CUTE
+            else -> FontPack.CUTE
+        }
+    }
 
     override suspend fun currentBaseUrl(): String = baseUrl.first()
 
@@ -284,6 +295,10 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
 
     override suspend fun saveLocale(tag: String) {
         context.dataStore.edit { it[localeKey] = tag }
+    }
+
+    override suspend fun saveFontPack(pack: FontPack) {
+        context.dataStore.edit { it[fontPackKey] = pack.name }
     }
 
     /**

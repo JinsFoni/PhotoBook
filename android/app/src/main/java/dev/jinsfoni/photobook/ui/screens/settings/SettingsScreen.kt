@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import dev.jinsfoni.photobook.core.design.FontPack
 import dev.jinsfoni.photobook.core.design.GlassMaterial
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoType
@@ -128,6 +129,23 @@ fun SettingsScreen(
             label = stringResource(R.string.glass_liquid),
             selected = state.glassMaterial == GlassMaterial.LIQUID,
             onClick = { vm.setGlassMaterial(GlassMaterial.LIQUID) },
+        )
+
+        SectionLabel(stringResource(R.string.section_font))
+        ThemeRow(
+            label = stringResource(R.string.font_modern),
+            selected = state.fontPack == FontPack.MODERN,
+            onClick = { vm.setFontPack(FontPack.MODERN) },
+        )
+        ThemeRow(
+            label = stringResource(R.string.font_minimal),
+            selected = state.fontPack == FontPack.MINIMAL,
+            onClick = { vm.setFontPack(FontPack.MINIMAL) },
+        )
+        ThemeRow(
+            label = stringResource(R.string.font_cute),
+            selected = state.fontPack == FontPack.CUTE,
+            onClick = { vm.setFontPack(FontPack.CUTE) },
         )
 
         SectionLabel(stringResource(R.string.section_lightbox))

@@ -62,6 +62,10 @@
     <string name="glass_thin">薄磨砂(默认)</string>
     <string name="glass_frost">清霜玻璃</string>
     <string name="glass_liquid">液态玻璃</string>
+    <string name="section_font">字体风格</string>
+    <string name="font_modern">现代</string>
+    <string name="font_minimal">简约</string>
+    <string name="font_cute">可爱(默认)</string>
     <string name="section_lightbox">查看大图</string>
     <string name="load_original">加载原图(更清晰,更耗流量)</string>
     <string name="section_language">语言</string>

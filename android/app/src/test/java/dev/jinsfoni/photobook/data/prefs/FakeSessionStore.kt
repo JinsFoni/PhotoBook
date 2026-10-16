@@ -1,5 +1,6 @@
 package dev.jinsfoni.photobook.data.prefs
 
+import dev.jinsfoni.photobook.core.design.FontPack
 import dev.jinsfoni.photobook.core.design.GlassMaterial
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import kotlinx.coroutines.flow.Flow
@@ -35,6 +36,7 @@ open class FakeSessionStore : SessionStoreApi {
     override val glassMaterial: Flow<GlassMaterial> = MutableStateFlow(GlassMaterial.THIN)
     override val loadOriginal: Flow<Boolean> = MutableStateFlow(false)
     override val locale: Flow<String> = localeFlow
+    override val fontPack: Flow<FontPack> = MutableStateFlow(FontPack.CUTE)
 
     override suspend fun currentBaseUrl(): String =
         (profilesFlow.value.firstOrNull { it.id == activeIdFlow.value }
@@ -116,6 +118,8 @@ open class FakeSessionStore : SessionStoreApi {
     override suspend fun saveLoadOriginal(enabled: Boolean) { }
 
     override suspend fun saveLocale(tag: String) { localeFlow.value = tag }
+
+    override suspend fun saveFontPack(pack: FontPack) { }
 
     private fun updateProfile(id: String, transform: (ServerProfile) -> ServerProfile) {
         profilesFlow.value = profilesFlow.value.map { if (it.id == id) transform(it) else it }
