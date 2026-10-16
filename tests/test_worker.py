@@ -191,3 +191,59 @@ def test_run_job_archives_and_imports(monkeypatch, s):
     assert calls == []
 
     _cleanup(SERIALS[:2], slug=SLUG, model="WorkerModel")
+
+
+def test_run_job_cross_site_title_duplicate(monkeypatch, s):
+    """跨站等价预检:同一本写真已在库(其他站序号),本站标题写法不同
+    (slug 预检拦不住)→ 不下载,标 exists 并把本站序号补登记。"""
+    import json
+
+    calls: list = []
+    _stub_pipeline(monkeypatch, calls)
+    # 库里已有「Worker Import Album」(另一站序号 980011 入库)
+    c = Collection(slug="workermodel-worker-import-album-x2",
+                   title="WorkerModel - Worker Import Album",
+                   status="published", source_serial=980011)
+    s.add(c)
+    s.commit()
+    try:
+        job = worker.enqueue(s, SERIALS[2],
+                             f"https://www.buondua.com/worker-import-album-{'0' * 32}-980003")
+        s.commit()
+        worker._run_job(job.id)
+        s.expire_all()
+        assert s.get(HarvestJob, job.id).status == "exists"
+        assert calls == []                      # 没下载
+        row = s.get(Collection, c.id)
+        assert 980003 in json.loads(row.source_serials)   # 序号已登记
+    finally:
+        _cleanup([SERIALS[2]], slug="workermodel-worker-import-album-x2")
+
+
+def test_link_cross_site_serials_scans_collections(s):
+    """_link_cross_site_serials 除 history 外还扫其他 collections 的
+    source_serial —— history 没有那行也能互相登记。"""
+    import json
+
+    col = Collection(slug="link-x-a", title="Coser@九言 - 鸣潮 坎特蕾拉",
+                     status="published", source_serial=980021,
+                     source_serials=json.dumps([980021]))
+    other = Collection(slug="link-x-b",
+                       title="Coser@九言: 鸣潮 坎特蕾拉 (58 photos + 2 videos)",
+                       status="published", source_serial=980022)
+    s.add_all([col, other])
+    s.commit()
+    try:
+        worker._link_cross_site_serials(s, col)
+        s.flush()
+        assert 980022 in json.loads(col.source_serials)
+        # 反向:登记 other 时也能收到 980021
+        worker._link_cross_site_serials(s, other)
+        s.flush()
+        assert 980021 in json.loads(other.source_serials)
+    finally:
+        for c in (col, other):
+            row = s.get(Collection, c.id)
+            if row:
+                s.delete(row)
+        s.commit()

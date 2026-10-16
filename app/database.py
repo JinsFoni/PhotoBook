@@ -65,6 +65,7 @@ def _migrate() -> None:
     _backfill_collection_slug()
     _backfill_source_serial()
     _backfill_cross_site_serials()
+    _repair_cross_site_serials()
     _fix_url_unsafe_slugs()
 
 
@@ -242,6 +243,59 @@ def _backfill_cross_site_serials() -> None:
                 "backfilled cross-site serials on %d collections", fixed)
     except Exception:
         logging.getLogger("photobook").exception("cross-site serial backfill failed")
+    finally:
+        s.close()
+
+
+def _repair_cross_site_serials() -> None:
+    """一次性修复:source_serials 已落过但漏登记的存量行(幂等标记防重跑)。
+
+    首版回填与实时登记都只比对 harvest_history —— 其他站「已在库但本服务
+    从未采集过」的序号(history 无行)登记不进去,油猴脚本在那站永远显示
+    「可下载」,点了重复下一遍(misskon 119035 ↔ buondua 56909 实测)。
+    现改为同时比对其他 collections 的 source_serial;老数据已有
+    source_serials 不再被首版回填触碰,这里用 settings 标记跑一次补登记。
+    """
+    import json
+
+    from sqlalchemy import select
+
+    from .db import Collection, HarvestHistory, Setting
+    from .services.harvest.titlematch import titles_match
+
+    s = SessionLocal()
+    try:
+        if s.get(Setting, "backfill.cross_site_v2") is not None:
+            return
+        s.add(Setting(key="backfill.cross_site_v2", value="1"))
+        s.commit()
+        fixed = 0
+        cols = s.scalars(select(Collection).where(
+            Collection.source_serial.is_not(None))).all()
+        others = [(c.id, c.source_serial, c.title) for c in cols]
+        for col in cols:
+            try:
+                known = {col.source_serial} | set(
+                    json.loads(col.source_serials or "[]"))
+            except (ValueError, TypeError):
+                known = {col.source_serial}
+            extra = sorted({serial for _cid, serial, title in others
+                            if serial not in known and serial is not None
+                            and titles_match(title, col.title)}
+                           | {h.serial for h in s.scalars(
+                               select(HarvestHistory).where(
+                                   HarvestHistory.serial.not_in(known))).all()
+                              if titles_match(h.title, col.title)})
+            if extra:
+                col.source_serials = json.dumps(sorted(known | set(extra)))
+                fixed += 1
+        s.commit()
+        if fixed:
+            logging.getLogger("photobook").info(
+                "repaired cross-site serials on %d collections", fixed)
+    except Exception:
+        s.rollback()
+        logging.getLogger("photobook").exception("cross-site serial repair failed")
     finally:
         s.close()
 

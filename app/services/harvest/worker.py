@@ -98,7 +98,10 @@ def _link_cross_site_serials(s, col) -> None:
     三站(buondua / misskon / nicesss)转载同一作品时序号体系各自独立
     (buondua 56556 ↔ misskon 117727),入库时只写下当前站的序号,另外
     两站的油猴链接就会显示「可下载」→ 点了重复下一遍已入库的包。
-    这里扫 harvest_history 已处理记录,按跨站标题等价比对收序号。
+    这里按跨站标题等价比对收序号,来源有两处:
+    - harvest_history 已处理记录(其他站采集过、本站没入库的序号);
+    - 其他 collections 的 source_serial(其他站已入库的写真,反向登记
+      —— history 只记本服务采集过的,用户早前手动导入的不在里面)。
 
     与 database._backfill_cross_site_serials 同一判据;那次管存量,
     这次管新增。失败只记日志,不阻断入库。
@@ -117,6 +120,13 @@ def _link_cross_site_serials(s, col) -> None:
             if serial in known:
                 continue
             if titles_match(title, col.title):
+                extra.append(serial)
+        for serial, other_title in s.execute(
+                select(Collection.source_serial, Collection.title).where(
+                    Collection.source_serial.is_not(None))).all():
+            if serial in known:
+                continue
+            if titles_match(other_title, col.title):
                 extra.append(serial)
         if extra:
             col.source_serials = json.dumps(sorted(known | set(extra)))
@@ -251,6 +261,29 @@ def _run_job(job_id: int) -> None:
         from .. import library_import
         if library_import.collection_exists(s, target.model_name, title_part,
                                             str(conf["harvest.unsorted_dir"])):
+            _finish(s, job, "exists")
+            s.commit()
+            return
+        # ③ 跨站等价预检:同一本写真在其他站已入库,本站序号没登记进
+        #    source_serials(如其他站是早期/手动导入,history 无行)。
+        #    slug 是各站标题的直接 slug 化,尾缀写法不同必不等 → 用标题
+        #    等价比对兜底;命中即把本站序号补登记,任务标 exists,不白下。
+        for c in s.scalars(select(Collection).where(
+                Collection.source_serial.is_not(None))).all():
+            if not titles_match(target.title, c.title):
+                continue
+            import json as _json
+            try:
+                known = {c.source_serial} | set(
+                    _json.loads(c.source_serials or "[]"))
+            except (ValueError, TypeError):
+                known = {c.source_serial}
+            known.discard(None)
+            if job.serial not in known:
+                known.add(job.serial)
+                c.source_serials = _json.dumps(sorted(known))
+            log.info("cross-site duplicate: serial %s ≡ %s (collection %s)",
+                     job.serial, c.source_serial, c.slug)
             _finish(s, job, "exists")
             s.commit()
             return

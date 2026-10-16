@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import pytest
+from app.database import SessionLocal
+from app.db import Collection, HarvestHistory, HarvestJob
 
 
 @pytest.fixture()
@@ -135,6 +137,21 @@ def _mk_collection_with_serials(slug: str, own: int, others: list[int]):
         s.close()
 
 
+def _mk_collection_with_title(own: int, slug: str, title: str):
+    """指定 title 的已入库写真(跨站标题比对测试用)。"""
+    from app.database import SessionLocal
+    from app.db import Collection
+
+    s = SessionLocal()
+    try:
+        c = Collection(slug=slug, title=title, status="published",
+                       source_serial=own, source_serials=f"[{own}]")
+        s.add(c)
+        s.commit()
+    finally:
+        s.close()
+
+
 def test_status_done_by_cross_site_serial(ext_key, client):
     """同一本写真从没下过的那一站查 → 也判已入库。
 
@@ -209,6 +226,73 @@ def test_status_by_url_resolves_misskon_serial(ext_key, client):
 def test_status_by_url_requires_key(client):
     r = client.post("/api/ext/status-by-url", json={"urls": ["https://misskon.com/1-a/"]})
     assert r.status_code == 401
+
+
+# ---- 状态查询 + 标题登记(POST /status) ----------------------------------------
+
+def test_status_post_title_registers_cross_site_serial(ext_key, client):
+    """同一本写真从 misskon 入库;在 buondua(序号从未进过服务端)打开,
+    脚本带页面标题查询 → 服务端按标题等价比对,登记序号并返回 done。"""
+    _mk_collection_with_title(119035, "ext-cross-album-6",
+                              "Coser@九言 - 鸣潮 坎特蕾拉")
+    try:
+        r = client.post("/api/ext/status", headers=H(ext_key), json={"items": [
+            {"serial": 56909, "title":
+                "Coser@九言: 鸣潮 坎特蕾拉 (58 photos + 2 videos)  - ( Page 1 / 2 )"},
+        ]})
+        item = r.json()["items"][0]
+        assert item == {"serial": 56909, "state": "done"}, item
+        # 登记后纯序号查询(GET 旧入口)也命中
+        r2 = client.get("/api/ext/status?serials=56909", headers=H(ext_key))
+        assert r2.json()["items"][0]["state"] == "done"
+    finally:
+        _rm_collection("ext-cross-album-6")
+
+
+def test_status_post_no_false_positive(ext_key, client):
+    """不同写真的标题比对不出 → 不登记、照常返回 new。"""
+    _mk_collection_with_title(119235, "ext-cross-album-7",
+                              "Coser@Tokar浵卡 - 坎特蕾拉Cantarella")
+    try:
+        r = client.post("/api/ext/status", headers=H(ext_key), json={"items": [
+            {"serial": 56909, "title":
+                "Coser@九言: 鸣潮 坎特蕾拉 (58 photos + 2 videos)  -"},
+        ]})
+        assert r.json()["items"][0] == {"serial": 56909, "state": "new"}
+    finally:
+        _rm_collection("ext-cross-album-7")
+
+
+def test_status_post_queued_not_rechecked(ext_key, client):
+    """状态不是 new(排队中)时跳过标题比对 —— 排队任务完成后序号自会登记。"""
+    _mk_collection_with_title(119035, "ext-cross-album-8",
+                              "Coser@九言 - 鸣潮 坎特蕾拉")
+    s = SessionLocal()
+    try:
+        s.add(HarvestJob(serial=56909, url="https://buondua.com/x-56909",
+                         status="queued"))
+        s.commit()
+        r = client.post("/api/ext/status", headers=H(ext_key), json={"items": [
+            {"serial": 56909, "title":
+                "Coser@九言: 鸣潮 坎特蕾拉 (58 photos + 2 videos)"},
+        ]})
+        assert r.json()["items"][0]["state"] == "queued"
+    finally:
+        for j in s.query(HarvestJob).filter(HarvestJob.serial == 56909).all():
+            s.delete(j)
+        s.commit()
+        s.close()
+        _rm_collection("ext-cross-album-8")
+
+
+def test_status_post_requires_key(client):
+    r = client.post("/api/ext/status", json={"items": [{"serial": 1}]})
+    assert r.status_code == 401
+
+
+def test_status_post_requires_items(ext_key, client):
+    r = client.post("/api/ext/status", json={"items": []}, headers=H(ext_key))
+    assert r.status_code == 422
 
 
 def test_status_by_url_requires_urls(ext_key, client):

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua/misskon/nicesss → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.4.0
+// @version      1.5.0
 // @description  在 buondua.com / misskon.com / nicesss.com 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列(同一本写真跨站转载也判已入库)
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -226,6 +226,27 @@
     return card.dataset.id;
   }
 
+  // 卡片标题文本(随状态查询上报服务端做跨站标题比对,判「已入库」)
+  function cardTitle(card) {
+    const sel = IS_NICESSS ? "h2.entry-title a"
+      : IS_MISSKON ? "h2.post-box-title a" : ".page-header h2 a.item-link";
+    const a = card.querySelector(sel);
+    return a ? (a.textContent || "").trim() : "";
+  }
+
+  // 详情页标题: og:title 最干净(无分页尾巴的在 JSON-LD 里),退回 h1
+  function detailTitle() {
+    const m = document.querySelector('meta[property="og:title"]');
+    let t = m ? (m.content || "").trim() : "";
+    if (t) {
+      // 去掉 buondua 分页尾巴 " ( Page 1 / 2 )"
+      t = t.replace(/\s*\(\s*Page\s+\d+\s*\/\s*\d+\s*\)\s*$/i, "");
+      return t;
+    }
+    const h = document.querySelector("h1");
+    return h ? (h.textContent || "").trim() : "";
+  }
+
   function ensureDetailHost() {
     if (IS_NICESSS) {
       // 标题 h1 行(.entry-title),徽标内联挂标题右侧
@@ -329,22 +350,30 @@
       resolveUnknown(unknown, cards);
       return;
     }
-    api("GET", "/api/ext/status?serials=" + Array.from(serials).join(","), null,
-      function (ok, data) {
-        if (!ok || !data || !data.items) return;
-        const map = {};
-        data.items.forEach(i => { map[i.serial] = i.state; });
-        cards.forEach(c => {
-          const host = ensureHost(c);
-          const serial = cardSerial(c);
-          if (host) setBadge(host, serial, map[serial] || "new",
-            pending.has(serial) ? "pending" : null);
-        });
-        if (ds) {
-          const host = ensureDetailHost();
-          if (host) setBadge(host, ds, map[ds] || "new", pending.has(ds) ? "pending" : null);
-        }
+    // 状态查询带页面标题: 服务端对「状态 new 且标题与已入库写真等价」的
+    // 序号当场登记进 source_serials 并返回 done —— 跨站转载序号独立,
+    // 服务端只有在用户浏览到该站页面时才能第一次见到那个序号。
+    const dsTitle = ds ? detailTitle() : "";
+    const items = Array.from(serials).map(serial => ({
+      serial: Number(serial),
+      title: ds === serial ? dsTitle : cardTitle(
+        cards.find(c => String(cardSerial(c)) === String(serial)) || {}),
+    }));
+    api("POST", "/api/ext/status", { items }, function (ok, data) {
+      if (!ok || !data || !data.items) return;
+      const map = {};
+      data.items.forEach(i => { map[i.serial] = i.state; });
+      cards.forEach(c => {
+        const host = ensureHost(c);
+        const serial = cardSerial(c);
+        if (host) setBadge(host, serial, map[serial] || "new",
+          pending.has(serial) ? "pending" : null);
       });
+      if (ds) {
+        const host = ensureDetailHost();
+        if (host) setBadge(host, ds, map[ds] || "new", pending.has(ds) ? "pending" : null);
+      }
+    });
   }
 
   // 老帖通道: POST /api/ext/status-by-url 让服务端按 URL 解析序号并判态。

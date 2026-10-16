@@ -22,6 +22,7 @@ from ..db import Collection, HarvestHistory, HarvestJob
 from ..i18n import t
 from ..services import settings_store
 from ..services.harvest import net
+from ..services.harvest.titlematch import titles_match
 from ..services.harvest.worker import enqueue, ACTIVE_JOB_STATES
 from ..services.pikpak import worker as pikpak_worker
 
@@ -199,9 +200,43 @@ async def push_harvest(body: PushBody, s: Session = Depends(require_key)):
     return {"ok": ok, "items": items}
 
 
+def _register_serial_title(s: Session, serial: int, title: str) -> bool:
+    """按标题等价比对,把 serial 登记进命中的 collection.source_serials。
+
+    同一本写真三站序号各自独立,序号只在「本站采集过」时才进得了
+    source_serials;用户在另一站浏览时该站序号服务端无从知晓 —— 脚本
+    查状态时把页面标题带上,这里比对命中即登记(状态查询顺带成了登记
+    通道)。已登记(序号已在)返回 False,避免每 5s 轮询重复写库。
+    """
+    import json as _json
+
+    if not (title or "").strip():
+        return False
+    for col in s.scalars(select(Collection).where(
+            Collection.source_serial.is_not(None))).all():
+        if not titles_match(title, col.title):
+            continue
+        try:
+            known = {col.source_serial} | set(
+                _json.loads(col.source_serials or "[]"))
+        except (ValueError, TypeError):
+            known = {col.source_serial}
+        known.discard(None)
+        if serial in known:
+            return False
+        known.add(serial)
+        col.source_serials = _json.dumps(sorted(known))
+        s.commit()
+        return True
+    return False
+
+
 @router.get("/status")
 async def status_api(serials: str, s: Session = Depends(require_key)):
-    """批量查询入库状态。serials=逗号分隔的源站序号。"""
+    """批量查询入库状态。serials=逗号分隔的源站序号。
+
+    旧入口(不带标题): 只按序号判态。新脚本走 POST /status。
+    """
     try:
         ids = [int(x) for x in serials.split(",") if x.strip()][:MAX_SERIALS]
     except ValueError:
@@ -209,6 +244,38 @@ async def status_api(serials: str, s: Session = Depends(require_key)):
     if not ids:
         raise HTTPException(422, "serials required")
     return {"items": [{"serial": i, "state": state_for_serial(s, i)} for i in ids]}
+
+
+class StatusItem(BaseModel):
+    serial: int
+    title: str = ""
+
+
+class StatusBody(BaseModel):
+    items: list[StatusItem]
+
+
+@router.post("/status")
+async def status_api_v2(body: StatusBody, s: Session = Depends(require_key)):
+    """批量查询入库状态 + 标题登记。
+
+    items 每项 = (序号, 页面标题)。序号命中即返回状态;未命中但标题与
+    已入库写真等价 → 登记进该写真的 source_serials 并返回 done(下次
+    查询序号直接命中,不再做比对)。标题可比对不出(未入库/非同本)按
+    普通判态返回。
+    """
+    items = body.items[:MAX_SERIALS]
+    if not items:
+        raise HTTPException(422, "items required")
+    out = []
+    for it in items:
+        state = state_for_serial(s, it.serial)
+        if state == "new" and it.title.strip():
+            # 登记成功 → 本写真确认已在库(标题等价)
+            if _register_serial_title(s, it.serial, it.title):
+                state = "done"
+        out.append({"serial": it.serial, "state": state})
+    return {"items": out}
 
 
 class StatusByUrlBody(BaseModel):
