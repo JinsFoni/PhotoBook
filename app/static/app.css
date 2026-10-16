@@ -429,13 +429,36 @@ table { border-collapse: collapse; }
 }
 
 .wordmark {
-  font-family: var(--display-latin);
+  /* FoamGirl 同款衬线站名: 思源宋 KR 拉丁子集(自托管), 字重 600 与原 logo 一致;
+     字号比正文明显放大以立住顶栏, 深浅主题均染 currentColor 供扫光取色 */
+  font-family: "PB Wordmark", Georgia, "Times New Roman", serif;
+  font-weight: 600;
   font-size: 19px;
   line-height: 1;
   letter-spacing: 0.01em;
   white-space: nowrap;
   padding-block: var(--s3);
   flex: none;
+}
+/* FoamGirl 同款扫光: 一道斜向光带周期性掠过字形后停顿, 循环。
+   用 background-clip:text 把渐变裁进字形, 深浅底都不会在背景上漏出光带;
+   光带取中性灰, 深底白字上是压暗高光, 浅底深字上是提亮(同 FoamGirl 观感) */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .wordmark {
+    background-image: linear-gradient(105deg, currentColor 40%, #9a9aa0 50%, currentColor 60%);
+    background-size: 300% 100%;
+    background-repeat: no-repeat;
+    background-position-x: 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: wordmark-shine 1.5s ease-in infinite;
+  }
+  @keyframes wordmark-shine {
+    0% { background-position-x: 100%; }
+    66.7% { background-position-x: 0%; }
+    100% { background-position-x: 0%; }
+  }
 }
 
 .nav {

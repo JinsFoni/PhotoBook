@@ -1,0 +1,9 @@
+/* 站名 wordmark 专用字体: 思源宋体 KR 的纯拉丁子集(14KB, 可变 wght 200-900)。
+   与 FoamGirl 的衬线 logo 字形一致; 独立于三套字体风格包, 全主题共用 */
+@font-face {
+  font-family: 'PB Wordmark';
+  src: url('/static/fonts/wordmark-serif.woff2') format('woff2-variations');
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
