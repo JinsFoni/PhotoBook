@@ -26,6 +26,7 @@ from ..database import get_db
 from ..i18n import t
 from ..templating import templates
 from ..services import settings_store
+from ..services.harvest import net as harvest_net
 from ..services.harvest import worker as harvest_worker
 from ..services.storage import worker as storage_worker
 from ..services.storage.base import StorageError, get_backend as _get_backend
@@ -624,6 +625,22 @@ def _pikpak_row(s: Session, j: PikPakJob) -> dict:
     }
 
 
+def _job_source_label(job: HarvestJob) -> str:
+    """来源列显示真实站点名;非三站/老数据解析不出时回退原值(auto/manual)。"""
+    from urllib.parse import urlparse
+    try:
+        host = urlparse(job.url).netloc.lower().removeprefix("www.")
+    except ValueError:
+        return job.source or "auto"
+    if "buondua" in host:
+        return "buondua"
+    if host.endswith(harvest_net.MISSKON_HOST):
+        return "misskon"
+    if host.endswith(harvest_net.NICESSS_HOST):
+        return "nicesss"
+    return job.source or "auto"
+
+
 def _merged_jobs_page(s: Session, status: str, page: int) -> tuple[list, int, dict]:
     """任务队列 = HarvestJob(buondua) + PikPakJob(油猴脚本推送)合并列表。
 
@@ -687,7 +704,7 @@ def _merged_jobs_page(s: Session, status: str, page: int) -> tuple[list, int, di
             rows.append({
                 "kind": "harvest", "id": j.id, "serial": j.serial, "status": j.status,
                 "title": j.title or "", "model": j.model_name or "",
-                "error": _job_display_error(s, j), "kind_label": j.source or "buondua",
+                "error": _job_display_error(s, j), "kind_label": _job_source_label(j),
                 "filesDone": 0, "filesTotal": 0,
                 "bytesDone": j.bytes_done, "bytesTotal": j.bytes_total,
                 "createdAt": local_time_fmt(j.created_at),
