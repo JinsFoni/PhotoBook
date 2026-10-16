@@ -175,9 +175,10 @@ private fun ExploreContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
+                // 品牌词标:Web 同款衬线专字体 + 扫光动画(ui/components/Wordmark)
+                dev.jinsfoni.photobook.ui.components.Wordmark(
                     "Photo Collection",
-                    style = PhotoType.wordmark,
+                    style = PhotoType.wordmarkBrand,
                     color = colors.ink,
                 )
                 // 搜索入口:与图集页一致的描边放大镜(20dp,ink2)
@@ -275,7 +276,9 @@ private fun HeroCarousel(
                     )
                     Text(
                         item.title,
-                        style = PhotoType.heroTitle,
+                        // 轮播标题比详情页 hero 收一档(Web .hero__title
+                        // clamp(18,2.2vw,30),手机视口实渲染 ~18px)
+                        style = PhotoType.heroTitle.copy(fontSize = 20.sp, lineHeight = 23.sp),
                         color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

@@ -13,14 +13,15 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * S2 排序四档:日期轴(发布 published_at / 入库 created_at)× 方向(最新/最早)。
- * 服务端 sort 参数:latest|oldest(发布)、added_latest|added_oldest(入库)。
+ * S2 排序四档:日期轴(入库 created_at / 发布 published_at)× 方向(最新/最早)。
+ * 服务端 sort 参数:added_latest|added_oldest(入库)、latest|oldest(发布)。
+ * 默认按入库日期最新(入库时间轴是本应用的主轴)。
  */
 enum class CollectionSort(val apiValue: String) {
-    PUBLISHED_LATEST("latest"),
-    PUBLISHED_OLDEST("oldest"),
     ADDED_LATEST("added_latest"),
     ADDED_OLDEST("added_oldest"),
+    PUBLISHED_LATEST("latest"),
+    PUBLISHED_OLDEST("oldest"),
 }
 
 data class CollectionsUiState(
@@ -30,7 +31,7 @@ data class CollectionsUiState(
     val items: List<CollectionCard> = emptyList(),
     val total: Int = 0,
     val tag: String? = null,
-    val sort: CollectionSort = CollectionSort.PUBLISHED_LATEST,
+    val sort: CollectionSort = CollectionSort.ADDED_LATEST,
     val error: String? = null,
     val endReached: Boolean = false,
 ) {

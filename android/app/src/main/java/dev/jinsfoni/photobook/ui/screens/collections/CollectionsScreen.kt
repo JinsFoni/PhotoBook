@@ -235,11 +235,12 @@ private fun SortMenu(sort: CollectionSort, onSelect: (CollectionSort) -> Unit, t
             onDismissRequest = { expanded = false },
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
+            // 入库日期在前(默认轴)
             val axes = listOf(
-                stringResource(R.string.sort_by_published) to listOf(
-                    CollectionSort.PUBLISHED_LATEST, CollectionSort.PUBLISHED_OLDEST),
                 stringResource(R.string.sort_by_added) to listOf(
                     CollectionSort.ADDED_LATEST, CollectionSort.ADDED_OLDEST),
+                stringResource(R.string.sort_by_published) to listOf(
+                    CollectionSort.PUBLISHED_LATEST, CollectionSort.PUBLISHED_OLDEST),
             )
             axes.forEachIndexed { ai, (label, options) ->
                 if (ai > 0) HorizontalDivider()

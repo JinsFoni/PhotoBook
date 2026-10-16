@@ -52,6 +52,20 @@ val PhotoSans = FontFamily(
     Font(R.font.archivo_semibold, FontWeight.SemiBold),
 )
 
+// 品牌词标专字体:Web static/fonts/wordmark-serif.woff2(思源宋 KR 拉丁
+// 子集)wght 600 实例化成 ttf;"Photo Collection" 全拉丁无回退需求,
+// 若将来放中文,CustomFallbackBuilder 链上系统 serif 即可。
+val WordmarkBrandFamily: FontFamily by lazy {
+    val ctx: Context = dev.jinsfoni.photobook.PhotoBookApp.instance
+    val face = android.graphics.fonts.Font.Builder(ctx.resources, R.font.wordmark_serif).build()
+    val platform = Typeface.CustomFallbackBuilder(
+        android.graphics.fonts.FontFamily.Builder(face).build(),
+    )
+        .setSystemFallback("serif")
+        .build()
+    FontFamily(typeface = platform)
+}
+
 // 玩酷体没有中文标点/谚文,链到 Gamja Flower(谚文+拉丁兜底),再落系统 sans;
 // 对应 Web 端 G7 栈 "G7 WanKu, G7 GamjaFlower, PingFang SC"。
 private val CuteDisplay: FontFamily by lazy {
@@ -143,6 +157,17 @@ object PhotoType {
         fontSize = 18.sp,
         lineHeight = 23.sp,
         letterSpacing = 0.2.sp,
+    )
+
+    // 品牌词标(Web 端 .wordmark 19px):衬线专字体(思源宋 KR 拉丁子集
+    // wght 600,= Web static/fonts/wordmark.css 的 PB Wordmark,不随
+    // 风格包切换)。纯拉丁文本用;中文回退系统 serif(与 Web 栈一致)
+    val wordmarkBrand: TextStyle get() = TextStyle(
+        fontFamily = WordmarkBrandFamily,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 19.sp,
+        lineHeight = 19.sp,      // 1.0
+        letterSpacing = 0.19.sp, // 0.01em
     )
 
     // 详情/模型 hero 榜下模特名(.byline .model 15px,.model.serif → 衬线)
