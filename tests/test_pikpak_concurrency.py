@@ -64,7 +64,7 @@ def test_download_files_runs_concurrently(clean, monkeypatch):
     active = {"n": 0, "max": 0}
     lock = threading.Lock()
 
-    def fake_download(url, dest, *, max_bytes=0, on_progress=None, stream_key=None):
+    def fake_download(url, dest, *, max_bytes=0, on_progress=None, stream_key=None, **_kw):
         with lock:
             active["n"] += 1
             active["max"] = max(active["max"], active["n"])

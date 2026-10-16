@@ -55,11 +55,13 @@ def download_stream(url: str, dest: Path, *,
                     expected_sha256: str = "",
                     max_bytes: int = 4 * 1024**3,
                     on_progress=None,
-                    stream_key=None) -> Path:
+                    stream_key=None,
+                    use_proxy: bool = True) -> Path:
     """流式下载,支持 Range 断点续传。完成后校验 SHA256。
 
     on_progress(done_bytes, total_bytes) — total 可能为 0(未知)。
     stream_key — 注册键(worker 传 job_id), 看门狗可从其它线程 close 解堵。
+    use_proxy — False 时无视 harvest.proxy 强制直连(pikpak CDN 实测直连可达)。
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
@@ -73,10 +75,11 @@ def download_stream(url: str, dest: Path, *,
     total = 0
     # curl_cffi 0.16.x 的 Response 不支持 with 语句(部分版本才支持),
     # 统一用手动 close + try/finally,流式读完后释放连接。
-    # 代理与 net 同源(settings 表 harvest.proxy,整条采集链路共用)。
+    # 代理与 net 同源(settings 表 harvest.proxy,harvest 采集链路共用)。
     from .net import _proxy
     r = cr.get(url, impersonate="chrome", headers=headers, stream=True,
-               timeout=(20, 120), proxy=_proxy())
+               timeout=(20, 120),
+               proxy=_proxy() if use_proxy else None)
     if stream_key is not None:
         _STREAMS[stream_key] = r
     try:

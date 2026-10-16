@@ -340,7 +340,8 @@ def _download_archive(s, job: PikPakJob, f: PikPakFile, library_root: Path,
     pipeline.download_stream(f.url, dest,
                              max_bytes=MAX_FILE_BYTES,
                              on_progress=on_prog,
-                             stream_key=job.id)
+                             stream_key=job.id,
+                             use_proxy=False)
     prog.finish()
     job = s.get(PikPakJob, job.id)
     if job:
@@ -510,7 +511,8 @@ def _download_files(s, job: PikPakJob, files: list[PikPakFile], album_dir: Path,
                     f.url, dest,
                     max_bytes=MAX_FILE_BYTES,
                     on_progress=on_prog,
-                    stream_key=f"{job.id}:{f.file_id}")
+                    stream_key=f"{job.id}:{f.file_id}",
+                    use_proxy=False)
                 f.status = "done"
                 f.error = None
                 mark_file(f.id, "done", None)
