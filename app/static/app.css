@@ -36,26 +36,23 @@
   --panel-solid: #ffffff;
 
   /* type */
-  /* 标题: EB Garamond 西文书卷气衬线 + 霞鹜文楷屏显版 (楷体,
-     基于 Klee One, 汉字/假名同源风格统一, 自带拉丁字重可兑底)
-     — 文艺书卷风 (原 Bodoni Moda 不覆盖 CJK, 汉字走系统回退) */
-  --display: "EB Garamond", "LXGW WenKai Screen", "Times New Roman", serif;
-  /* 纯拉丁展示文本(品牌字标等)专用: 不排 LXGW —— 强刷时三个字体按到达
-     顺序先后就位, wordmark 依次被 Times→LXGW(笔画粗重, 观感"突然变粗")
-     →Garamond 重排三次; 拉丁文本跳过 LXGW 后只重排一次, 且 LXGW 体积大
-     (整包 css+分片)常比 Garamond 晚到, 正是闪烁源 */
-  --display-latin: "EB Garamond", "Times New Roman", serif;
-  --ui: "Archivo", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  /* 第7组方案: Patrick Hand SC(拉丁/数字) × 字帮玩酷体(汉字+假名) × Gamja Flower(谚文)
+     三者均单字重 400; 谚文由玩酷体缺字自然落 Gamja Flower; 兜底 PingFang SC
+     字号阶梯整体放大 ~9%: 玩酷体汉字字面 78% em / 拉丁 cap 66% em,
+     比原 OPPO Sans(84.8%/71.1%) 小约一档, 等比补偿保持观感字号不变 */
+  --display: "G7 PatrickSC", "G7 WanKu", "G7 GamjaFlower", "PingFang SC", sans-serif;
+  --display-latin: "G7 PatrickSC", sans-serif;
+  --ui: "G7 PatrickSC", "G7 WanKu", "G7 GamjaFlower", "PingFang SC", sans-serif;
 
-  --fs-micro: 11px;
-  --fs-small: 12px;
-  --fs-meta: 13px;
-  --fs-body: 15px;
-  --fs-lead: 17px;
-  --fs-h3: 21px;
-  --fs-h2: clamp(26px, 2.6vw, 36px);
-  --fs-h1: clamp(34px, 4.6vw, 62px);
-  --fs-display: clamp(44px, 8vw, 108px);
+  --fs-micro: 13px;
+  --fs-small: 14px;
+  --fs-meta: 15px;
+  --fs-body: 17px;
+  --fs-lead: 19px;
+  --fs-h3: 23px;
+  --fs-h2: clamp(28px, 2.8vw, 39px);
+  --fs-h1: clamp(37px, 5vw, 68px);
+  --fs-display: clamp(48px, 8.7vw, 118px);
 
   --lh-display: 1.04;
   --lh-tight: 1.2;
@@ -195,7 +192,8 @@ html[data-theme="blur"] { background: #101114; }
 body {
   background: var(--paper);
   color: var(--ink);
-  font-size: var(--fs-body);
+  /* 正文显式走全站字体栈(此前未声明, 一直靠浏览器默认 PingFang) */
+  font-family: var(--ui);  font-size: var(--fs-body);
   font-weight: 400;
   line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
@@ -365,6 +363,7 @@ table { border-collapse: collapse; }
 }
 .page-head__title {
   font-family: var(--display);
+  font-weight: 400; /* 压掉 h1 默认 bold */
   font-size: var(--fs-h1);
   line-height: 1;
   letter-spacing: -0.02em;
@@ -408,7 +407,6 @@ table { border-collapse: collapse; }
 .header--immersive .wordmark,
 .header--immersive .nav__link,
 .header--immersive .icon-btn { color: rgba(255, 255, 255, 0.92); }
-.header--immersive .wordmark em,
 .header--immersive .nav__link:hover,
 .header--immersive .nav__link[aria-current="page"] { color: #fff; }
 .header--immersive .nav__link::after { background: #fff; }
@@ -439,7 +437,6 @@ table { border-collapse: collapse; }
   padding-block: var(--s3);
   flex: none;
 }
-.wordmark em { font-style: italic; }
 
 .nav {
   display: flex;
@@ -929,8 +926,10 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .card__caption-main { min-width: 0; }
 .card__title {
   font-family: var(--display);
-  font-size: var(--fs-h3);
-  line-height: 1.2;
+  /* 显式压掉 h3 的浏览器默认 bold(700) —— 标题体感过粗的根源 */
+  font-weight: 400;
+  font-size: 17px;
+  line-height: 1.25;
   letter-spacing: -0.005em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -977,6 +976,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .model-card .frame { margin-bottom: 0; }
 .model-card__name {
   font-family: var(--display);
+  font-weight: 400; /* 压掉 h3 默认 bold */
   font-size: var(--fs-h3);
   line-height: 1.2;
   margin-top: var(--s3);
@@ -1362,6 +1362,8 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .hero__caption-inner > :first-child { min-width: 0; }
 .hero__title {
   font-family: var(--display);
+  /* 与详情页标题同规格: 700 突出主题 */
+  font-weight: 700;
   font-size: clamp(18px, 2.2vw, 30px);
   line-height: 1.15;
   letter-spacing: -0.01em;
@@ -1467,6 +1469,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .model-head__avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .model-head__name {
   font-family: var(--display);
+  font-weight: 400; /* 压掉 h1 默认 bold */
   font-size: clamp(34px, 4.6vw, 62px);
   line-height: 1;
   letter-spacing: -0.02em;
@@ -1528,10 +1531,11 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 }
 .collection-head__title {
   font-family: var(--display);
-  font-size: clamp(22px, 3vw, 40px);
-  line-height: 1.08;
-  letter-spacing: -0.02em;
-  max-width: 24ch;
+  /* 详情页标题加粗(对齐 foamgirl 观感: 700 突出主题) */
+  font-weight: 700;
+  font-size: clamp(19px, 2vw, 27px);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
 }
 .collection-head__model {
   margin-top: var(--s4);
@@ -1693,7 +1697,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   background: var(--paper-3);
 }
 .profile-head__avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.profile-head__name { font-family: var(--display); font-size: var(--fs-h1); line-height: 1; }
+.profile-head__name { font-family: var(--display); font-weight: 400; /* 压掉 h1 默认 bold */ font-size: var(--fs-h1); line-height: 1; }
 .profile-head__meta { margin-top: var(--s3); color: var(--ink-3); font-size: var(--fs-meta); }
 @media (max-width: 760px) {
   .profile-head { grid-template-columns: 84px minmax(0, 1fr); }
@@ -1829,6 +1833,8 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lang-switch__opt:first-child { border-left: 0; }
 .lang-switch__opt:hover { color: var(--ink); background: var(--paper-3); }
 .lang-switch__opt--on { color: var(--paper-ink); background: var(--ink); }
+/* JS 渲染的分段(主题/字体)用 aria-pressed 标选中, 与 --on 同款高亮 */
+.lang-switch__opt[aria-pressed="true"] { color: var(--paper-ink); background: var(--ink); }
 .lang-switch--login { margin-top: var(--s6); align-self: flex-start; }
 
 /* ---------- 18. Lightbox ------------------------------------------------ */
@@ -2136,6 +2142,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 }
 .state__title {
   font-family: var(--display);
+  font-weight: 400; /* 压掉 h2 默认 bold */
   font-size: var(--fs-h2);
   line-height: 1.1;
   margin-bottom: var(--s4);

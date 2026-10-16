@@ -56,7 +56,7 @@ window.PC = (function () {
   var LB_BG_KEY = "pc.lbBg.v1";  /* 灯箱背景: solid / blur, 全局持久化 */
   var lbBg = "solid";
   try { var _lb = localStorage.getItem(LB_BG_KEY); if (_lb === "blur" || _lb === "solid") lbBg = _lb; } catch (e) {}
-  var state = { theme: "dark", favs: { model: [], collection: [], photo: [] } };
+  var state = { theme: "dark", font: "cute", favs: { model: [], collection: [], photo: [] } };
 
   try {
     var saved = localStorage.getItem(THEME_KEY);
@@ -110,6 +110,33 @@ window.PC = (function () {
     /* 顶栏钮: 三态循环 黑→白→虚化→黑 */
     setTheme(THEMES[(THEMES.indexOf(state.theme) + 1) % THEMES.length]);
   }
+
+  /* ---------- 字体风格(本地偏好): cute / minimal / modern ------------ */
+  var FONT_KEY = "pc.font.v1";
+  var FONTS = ["cute", "minimal", "modern"];
+
+  function applyFont() {
+    document.documentElement.setAttribute("data-font", state.font);
+    var seg = document.querySelector("[data-font-seg]");
+    if (seg) {
+      seg.querySelectorAll("[data-font-opt]").forEach(function (o) {
+        o.setAttribute("aria-pressed", o.getAttribute("data-font-opt") === state.font ? "true" : "false");
+      });
+    }
+  }
+
+  function setFont(v) {
+    if (FONTS.indexOf(v) === -1 || v === state.font) return;
+    state.font = v;
+    try { localStorage.setItem(FONT_KEY, v); } catch (e) {}
+    applyFont();
+  }
+
+  try {
+    var savedFont = localStorage.getItem(FONT_KEY);
+    if (FONTS.indexOf(savedFont) !== -1) state.font = savedFont;
+  } catch (e) { /* storage unavailable */ }
+  applyFont();
 
   /* ---------- 虚化垫底层(blur 主题) -----------------------------------
      整页背后垫一张放大模糊压暗的封面图(复用首页 hero__bg 配方):
@@ -363,7 +390,7 @@ window.PC = (function () {
       header.innerHTML =
         '<div class="wrap header__inner">' +
         '<button class="icon-btn header__burger" type="button" data-drawer-open aria-label="' + t("Open menu") + '">' + icon("menu") + "</button>" +
-        '<a class="wordmark" href="/">Photo&nbsp;<em>Collection</em></a>' +
+        '<a class="wordmark" href="/">Photo&nbsp;Collection</a>' +
         '<nav class="nav" aria-label="' + t("Primary") + '">' +
         NAV.map(function (n) {
           return '<a class="nav__link" href="' + n.href + '"' + (n.key === page ? ' aria-current="page"' : "") + ">" + n.label + "</a>";
@@ -386,7 +413,7 @@ window.PC = (function () {
     if (drawer) {
       drawer.innerHTML =
         '<div class="drawer__top">' +
-        '<a class="wordmark" href="/">Photo&nbsp;<em>Collection</em></a>' +
+        '<a class="wordmark" href="/">Photo&nbsp;Collection</a>' +
         '<button class="icon-btn" type="button" data-drawer-close aria-label="' + t("Close menu") + '">' + icon("close") + "</button>" +
         "</div>" +
         '<nav class="drawer__nav" aria-label="' + t("Mobile") + '">' +
@@ -426,7 +453,7 @@ window.PC = (function () {
         '<div class="wrap">' +
         '<div class="footer__top">' +
         "<div>" +
-        '<p class="footer__wordmark">Photo&nbsp;<em>Collection</em></p>' +
+        '<p class="footer__wordmark">Photo&nbsp;Collection</p>' +
         '<p class="footer__blurb">' + t("A digital archive of editorial photography. {c} collections, {m} models.", { c: stats.collections, m: stats.models }) + "</p>" +
         "</div>" +
         '<div><p class="footer__col-title">' + t("Browse") + "</p>" +
@@ -1374,6 +1401,8 @@ window.PC = (function () {
       if (t.closest("[data-theme-toggle]")) { toggleTheme(); return; }
       var topt = t.closest("[data-theme-opt]");
       if (topt) { setTheme(topt.getAttribute("data-theme-opt")); return; }
+      var fopt = t.closest("[data-font-opt]");
+      if (fopt) { setFont(fopt.getAttribute("data-font-opt")); return; }
       if (t.closest("[data-theme-switch]")) { toggleTheme(); return; }
       if (t.closest("[data-search-open]")) { closeDrawer(); openSearch(); return; }
       if (t.closest("[data-search-close]")) { closeSearch(); return; }

@@ -357,6 +357,13 @@ STRINGS: dict[str, dict[str, str]] = {
     "Interface language. Choice is saved to your account and takes effect at once.": {
         "zh-CN": "界面显示语言。选择会保存到账户并立即生效。",
         "zh-TW": "介面顯示語言。選擇會儲存到帳戶並立即生效。"},
+    "Typeface": {"zh-CN": "字体风格", "zh-TW": "字體風格"},
+    "Three typeface styles: Modern (serif), Minimal (marker), Cute (handwritten, default).": {
+        "zh-CN": "三种字体风格:现代(衬线宋体)、简约(马克笔)、可爱(手写涂鸦, 默认)。",
+        "zh-TW": "三種字體風格:現代(襯線宋體)、簡約(馬克筆)、可愛(手寫塗鴉, 預設)。"},
+    "Modern": {"zh-CN": "现代", "zh-TW": "現代"},
+    "Minimal": {"zh-CN": "简约", "zh-TW": "簡約"},
+    "Cute": {"zh-CN": "可爱", "zh-TW": "可愛"},
     "Session": {"zh-CN": "会话", "zh-TW": "工作階段"},
     "Signed in as {u} ({r}).": {
         "zh-CN": "当前登录:{u}({r})。",

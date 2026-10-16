@@ -16,12 +16,17 @@
    先按默认渲染再被尾部 JS 纠正 → 页面闪一下;
    并在虚化主题下首帧直出垫底背景(同一张图跨页不再重淡入) */
 (function () {
-  var t;
+  var t, f;
   try { t = localStorage.getItem("pc.theme.v1"); } catch (e) {}
   if (t === "dark" || t === "light" || t === "blur") {
     document.documentElement.setAttribute("data-theme", t);
     var m = document.querySelector('meta[name="theme-color"]');
     if (m) m.setAttribute("content", t === "light" ? "#ffffff" : "#0c0d0f");
+  }
+  /* 字体风格与主题同一套机制: 首屏前落到 html[data-font], 避免闪字体 */
+  try { f = localStorage.getItem("pc.font.v1"); } catch (e) {}
+  if (f === "cute" || f === "minimal" || f === "modern") {
+    document.documentElement.setAttribute("data-font", f);
   }
   if (t !== "blur") {
     /* 非虚化: 清掉标记, 回虚化时走淡入 */
@@ -58,15 +63,13 @@
   else document.addEventListener("DOMContentLoaded", adopt);
 })();
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600&family=EB+Garamond:ital,wght@0,400..700;1,400..600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-screen-webfont@1.7.0/style.css">
-<!-- 预取 EB Garamond 正体 woff2: display=swap 下其到达顺序决定 wordmark
-     是否闪粗 —— LXGW(整包中文)常晚到但分片小快, 先落位的可能是它;
-     preload 让 Garamond 与 CSS 几乎同时就位, 首帧即终帧字体 -->
+<!-- 第7组字体: Patrick Hand SC(拉丁) × 字帮玩酷体(汉字+假名) × Gamja Flower(谚文), 全部自托管 -->
+<link rel="stylesheet" href="/static/fonts/g7.css?v={{ asset_ver }}">
+<link rel="stylesheet" href="/static/fonts/packs.css?v={{ asset_ver }}">
 <link rel="preload" as="font" type="font/woff2" crossorigin
-      href="https://fonts.gstatic.com/s/ebgaramond/v33/SlGUmQSNjdsmc35JDF1K5GR1SDk_YAPI.woff2">
+      href="/static/fonts/g7/patricksc-400.woff2">
+<link rel="preload" as="font" type="font/woff2" crossorigin
+      href="/static/fonts/g7/wanku-400.woff2">
 <link rel="stylesheet" href="/static/app.css?v={{ asset_ver }}">
 </head>
 <body data-page="{{ page }}">

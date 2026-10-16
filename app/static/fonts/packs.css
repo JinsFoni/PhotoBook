@@ -1,0 +1,54 @@
+/* 字体风格包: 设置页三选一, 由 html[data-font] 控制。
+   cute(默认) = 方案7: Patrick Hand SC × 字帮玩酷体 × Gamja Flower —— @font-face 在 g7.css, 变量在 app.css
+   minimal    = 方案6: Neucha(拉丁) × 霞鹜漫黑(汉字+假名) × Poor Story(谚文)
+   modern     = 方案4b: Times(拉丁) × 思源宋体 SC(汉字+假名) × 思源宋体 KR(谚文), 全衬线 */
+
+@font-face {
+  font-family: 'G6 Neucha';
+  src: url('/static/fonts/packs/neucha-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'G6 MarkerGothic';
+  src: url('/static/fonts/packs/markergothic-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'G6 PoorStory';
+  src: url('/static/fonts/packs/poorstory-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'G4 NotoSerifSC';
+  src: url('/static/fonts/packs/notoserifsc.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'G4 NotoSerifKR';
+  src: url('/static/fonts/packs/notoserifkr-hangul.woff2') format('woff2-variations');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 每组只覆写 --display / --ui / --display-latin 三个变量;
+   特异性 html[data-font=…] 高于 app.css 的 :root, 无视加载顺序生效。
+   字号阶梯三套共用(按方案7字面放大的那套)。 */
+html[data-font="minimal"] {
+  --display: "G6 Neucha", "G6 MarkerGothic", "G6 PoorStory", "PingFang SC", sans-serif;
+  --ui: "G6 Neucha", "G6 MarkerGothic", "G6 PoorStory", "PingFang SC", sans-serif;
+  --display-latin: "G6 Neucha", sans-serif;
+}
+html[data-font="modern"] {
+  --display: "Times New Roman", "G4 NotoSerifSC", "G4 NotoSerifKR", serif;
+  --ui: "Times New Roman", "G4 NotoSerifSC", "G4 NotoSerifKR", serif;
+  --display-latin: "Times New Roman", serif;
+}
