@@ -1,13 +1,5 @@
-/* 第7组方案: Patrick Hand SC(拉丁) × 字帮玩酷体(汉字+假名) × Gamja Flower(谚文)
-   玩酷体排在前接管拉丁之外的 CJK(含假名), 谚文它没有, 自动落 Gamja Flower;
-   Patrick Hand SC 只在最前接管拉丁与数字 */
-@font-face {
-  font-family: 'G7 PatrickSC';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/static/fonts/g7/patricksc-400.woff2') format('woff2');
-}
+/* 第7组方案: 字帮玩酷体(ASCII拉丁+汉字+假名, 全量子集) × Gamja Flower(谚文+缺字兜底)
+   玩酷体原生缺 ',' '>', 自动落 Gamja Flower; 兜底 PingFang SC(app.css 变量栈) */
 @font-face {
   font-family: 'G7 WanKu';
   font-style: normal;

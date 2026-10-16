@@ -36,13 +36,13 @@
   --panel-solid: #ffffff;
 
   /* type */
-  /* 第7组方案: Patrick Hand SC(拉丁/数字) × 字帮玩酷体(汉字+假名) × Gamja Flower(谚文)
-     三者均单字重 400; 谚文由玩酷体缺字自然落 Gamja Flower; 兜底 PingFang SC
+  /* 第7组方案: 字帮玩酷体(ASCII拉丁+汉字+假名, 全量子集 2.4MB) × Gamja Flower(谚文+缺字兜底)
+     玩酷体原生缺 ',' '>', 自动落 Gamja Flower; 兜底 PingFang SC
      字号阶梯整体放大 ~9%: 玩酷体汉字字面 78% em / 拉丁 cap 66% em,
      比原 OPPO Sans(84.8%/71.1%) 小约一档, 等比补偿保持观感字号不变 */
-  --display: "G7 PatrickSC", "G7 WanKu", "G7 GamjaFlower", "PingFang SC", sans-serif;
-  --display-latin: "G7 PatrickSC", sans-serif;
-  --ui: "G7 PatrickSC", "G7 WanKu", "G7 GamjaFlower", "PingFang SC", sans-serif;
+  --display: "G7 WanKu", "G7 GamjaFlower", "PingFang SC", sans-serif;
+  --display-latin: "G7 WanKu", sans-serif;
+  --ui: "G7 WanKu", "G7 GamjaFlower", "PingFang SC", sans-serif;
 
   --fs-micro: 13px;
   --fs-small: 14px;
@@ -1963,6 +1963,10 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lightbox__stage {
   flex: 1;
   position: relative;
+  z-index: 1; /* 自建层叠上下文: 主图/垫底的层级交替全关在 stage 内部,
+                  不再与 stage 外的顶/底栏(z2, 相对 .lightbox 根层)跨层比较
+                  —— 此前切图交叉时入场定框拿内联 z2 且 DOM 序在 bar 之后,
+                  同层叠上下文里后来居上盖住顶栏, 新图揭示瞬间标题/按钮被图淹没 */
   display: grid;
   place-items: center;
   padding: 0 var(--pad);
