@@ -112,8 +112,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "Your profile": {"zh-CN": "个人中心", "zh-TW": "個人中心"},
     "Skip to content": {"zh-CN": "跳到主要内容", "zh-TW": "跳至主要內容"},
     "A digital archive of editorial photography. {c} collections, {m} models.": {
-        "zh-CN": "一本编辑摄影的数字档案馆。{c} 个写真集,{m} 位模特。",
-        "zh-TW": "一本時尚攝影的數位檔案館。{c} 個寫真集,{m} 位模特兒。"},
+        "zh-CN": "写真集的数字档案馆\n{c} 个写真集，{m} 位模特",
+        "zh-TW": "寫真集的數位檔案館\n{c} 個寫真集，{m} 位模特兒"},
     "All photographs are licensed to the archive.": {
         "zh-CN": "所有照片均授权收录于档案馆。",
         "zh-TW": "所有照片均授權收錄於檔案館。"},
@@ -228,8 +228,8 @@ STRINGS: dict[str, dict[str, str]] = {
     # ---- Models 页 ----------------------------------------------------------
     "Models page": {"zh-CN": "模特", "zh-TW": "模特兒"},
     "Profiles in the archive. Each one collects the sittings we have published with that model.": {
-        "zh-CN": "档案馆中的模特档案。每份档案收录该模特已发布的全部写真。",
-        "zh-TW": "檔案館中的模特兒檔案。每份檔案收錄該模特兒已發佈的全部寫真。"},
+        "zh-CN": "眉间藏春色，眼底映星河",
+        "zh-TW": "眉間藏春色，眼底映星河"},
     "Search by name or stage name": {
         "zh-CN": "按名字或艺名搜索", "zh-TW": "按名字或藝名搜尋"},
     "Search models": {"zh-CN": "搜索模特", "zh-TW": "搜尋模特兒"},
@@ -263,8 +263,8 @@ STRINGS: dict[str, dict[str, str]] = {
 
     # ---- Collections 页 -----------------------------------------------------
     "Every published sitting in the archive, newest first.": {
-        "zh-CN": "档案馆中所有已发布的写真,按时间从新到旧。",
-        "zh-TW": "檔案館中所有已發佈的寫真,按時間從新到舊。"},
+        "zh-CN": "镜中藏绝色，画里见佳人",
+        "zh-TW": "鏡中藏絕色，畫裡見佳人"},
     "Search titles and models": {"zh-CN": "搜索标题与模特", "zh-TW": "搜尋標題與模特兒"},
     "Search collections": {"zh-CN": "搜索写真集", "zh-TW": "搜尋寫真集"},
     "Any model": {"zh-CN": "不限模特", "zh-TW": "不限模特兒"},

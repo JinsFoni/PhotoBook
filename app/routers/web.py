@@ -127,8 +127,10 @@ async def discovery(request: Request, s: Session = Depends(get_db)):
         "featured": [_collection_payload(s, c) for c in featured],
         "latest": [_collection_payload(s, c) for c in latest],
         "models": [_model_payload(s, m, [c for c in cols if c.model_id == m.id]) for m in models],
-        "tags": [{"name": t.name, "collections": tag_counts.get(t.name, {}).get("collections", 0),
-                  "models": len(tag_counts.get(t.name, {}).get("models", set()))} for t in tags],
+        "tags": sorted(
+            [{"name": t.name, "collections": tag_counts.get(t.name, {}).get("collections", 0),
+              "models": len(tag_counts.get(t.name, {}).get("models", set()))} for t in tags],
+            key=lambda d: (-d["collections"], d["name"])),
         "stats": {"collections": len(cols), "models": len(models)},
     }
     return templates.TemplateResponse(request, "discovery.html", {

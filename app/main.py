@@ -322,13 +322,24 @@ def _boot_context(request: Request, s=None) -> dict:
         "path": request.url.path,
         "stats": {"collections": None, "models": None},
         "tags": [],
-        "suggestions": ["Editorial", "Studio", "Outdoor", "Monochrome"],
+        "suggestions": [],
+        "tag_grid": [],
     }
     try:
         if s is not None:
             boot["stats"]["collections"] = s.query(C).filter_by(status="published").count()
             boot["stats"]["models"] = s.query(M).filter_by(status="published").count()
             boot["tags"] = [t.name for t in s.scalars(select(T).order_by(T.name)).all()[:8]]
+            boot["suggestions"] = boot["tags"]
+            cols = s.scalars(select(C).where(C.status == "published")).all()
+            tc: dict = {}
+            for c in cols:
+                for tg in c.tags:
+                    tc[tg.name] = tc.get(tg.name, 0) + 1
+            boot["tag_grid"] = [{"name": tg.name, "collections": tc.get(tg.name, 0)}
+                                for tg in s.scalars(select(T).order_by(T.name)).all()]
+            # 数量多的在前(发现页底部与搜索页同一份), 同数按名称
+            boot["tag_grid"].sort(key=lambda d: (-d["collections"], d["name"]))
     except Exception:
         pass
     return boot

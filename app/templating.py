@@ -51,7 +51,8 @@ def boot_json(request: Request) -> str:
         "i18n": i18n.js_strings(lang),
         "stats": {"collections": None, "models": None},
         "tags": [],
-        "suggestions": ["Editorial", "Studio", "Outdoor", "Monochrome"],
+        "suggestions": [],
+        "tag_grid": [],
         "blur_src": _blur_src(request),
     }
     try:
@@ -67,6 +68,18 @@ def boot_json(request: Request) -> str:
                 select(func.count(Model.id)).where(Model.status == "published"))
             boot["tags"] = [t.name for t in s.scalars(
                 select(Tag).order_by(Tag.name).limit(8)).all()]
+            boot["suggestions"] = boot["tags"]
+            # 搜索空状态的标签网格: 与发现页「按标签浏览」同源同展示(全部标签+写真集数)
+            cols = s.scalars(select(Collection).where(
+                Collection.status == "published")).all()
+            tc: dict = {}
+            for c in cols:
+                for tg in c.tags:
+                    tc[tg.name] = tc.get(tg.name, 0) + 1
+            boot["tag_grid"] = [{"name": tg.name, "collections": tc.get(tg.name, 0)}
+                                for tg in s.scalars(select(Tag).order_by(Tag.name)).all()]
+            # 数量多的在前(发现页底部与搜索页同一份), 同数按名称
+            boot["tag_grid"].sort(key=lambda d: (-d["collections"], d["name"]))
         finally:
             s.close()
     except Exception:

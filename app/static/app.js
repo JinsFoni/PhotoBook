@@ -454,7 +454,7 @@ window.PC = (function () {
         '<div class="footer__top">' +
         "<div>" +
         '<p class="footer__wordmark">Photo&nbsp;Collection</p>' +
-        '<p class="footer__blurb">' + t("A digital archive of editorial photography. {c} collections, {m} models.", { c: stats.collections, m: stats.models }) + "</p>" +
+        '<p class="footer__blurb" style="white-space:pre-line">' + t("A digital archive of editorial photography. {c} collections, {m} models.", { c: stats.collections, m: stats.models }) + "</p>" +
         "</div>" +
         '<div><p class="footer__col-title">' + t("Browse") + "</p>" +
         '<a class="footer__link" href="/">' + t("Discovery") + "</a>" +
@@ -482,13 +482,14 @@ window.PC = (function () {
     if (!box) return;
 
     if (payload === null) {
-      var suggestions = (window.PB_BOOT && window.PB_BOOT.suggestions) || ["Editorial", "Studio", "Outdoor"];
+      var grid = (window.PB_BOOT && window.PB_BOOT.tag_grid) || [];
       box.innerHTML =
         '<div class="search__group">' +
         '<p class="search__group-title">' + t("Try a tag") + "</p>" +
         '<div class="chip-row">' +
-        suggestions.map(function (s) {
-          return '<button class="chip" type="button" data-search-suggest="' + escapeHtml(s) + '">' + escapeHtml(s) + "</button>";
+        grid.map(function (tg) {
+          return '<a class="chip" href="/collections?tag=' + encodeURIComponent(tg.name) + '">' + escapeHtml(tg.name) +
+            '<span class="num" style="color:var(--ink-3);margin-left:6px">' + tg.collections + "</span></a>";
         }).join("") +
         "</div></div>";
       return;
@@ -528,10 +529,11 @@ window.PC = (function () {
     }
     if (payload.tags.length) {
       html += '<div class="search__group"><p class="search__group-title">' + t("Tags") + "</p>" +
+        '<div class="chip-row">' +
         payload.tags.map(function (t) {
-          return '<a class="search-row" href="/collections?tag=' + encodeURIComponent(t) + '">' +
-            '<span class="search-row__name">' + escapeHtml(t) + "</span></a>";
-        }).join("") + "</div>";
+          return '<a class="chip" href="/collections?tag=' + encodeURIComponent(t) + '">' + escapeHtml(t) + "</a>";
+        }).join("") +
+        "</div></div>";
     }
     box.innerHTML = html;
   }
