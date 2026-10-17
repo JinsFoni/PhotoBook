@@ -224,10 +224,10 @@ fun LightboxScreen(
                 // 收藏态订阅仓库流(可观察),点击后红心立即变色
                 val favorites by vm.favoritesState.collectAsState()
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(44.dp),
+                    horizontalArrangement = Arrangement.spacedBy(32.dp),
                     modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(bottom = 8.dp),
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp),
                 ) {
                     if (cur != null) {
                         val key = "${detail.slug}:${cur.idx}"
