@@ -18,7 +18,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from ..auth import create_session, verify_password
@@ -160,7 +160,33 @@ def _collection_cover(s: Session, c: Collection) -> str | None:
     return ph.filename if ph else None
 
 
-def _collection_payload(s: Session, c: Collection) -> dict:
+def _photo_counts(s: Session, cols: list[Collection]) -> dict[int, int]:
+    """一批合集的照片数,一条 GROUP BY(替代 len(c.photos) 的全库 ORM 加载)。"""
+    if not cols:
+        return {}
+    rows = s.execute(
+        select(Photo.collection_id, func.count(Photo.id))
+        .where(Photo.collection_id.in_([c.id for c in cols]))
+        .group_by(Photo.collection_id)).all()
+    return dict(rows)
+
+
+def load_photos(s: Session, cols: list[Collection]) -> None:
+    """显式批量加载 photos 列表(photos 关系是 lazy=select,按需加载)。"""
+    if not cols:
+        return
+    photos = s.scalars(
+        select(Photo).where(Photo.collection_id.in_([c.id for c in cols]))
+        .order_by(Photo.collection_id, Photo.sort_order)).all()
+    by_col: dict[int, list[Photo]] = {}
+    for p in photos:
+        by_col.setdefault(p.collection_id, []).append(p)
+    for c in cols:
+        c.photos = by_col.get(c.id, [])
+
+
+def _collection_payload(s: Session, c: Collection,
+                        counts: dict[int, int] | None = None) -> dict:
     cover = _collection_cover(s, c)
     return {
         "id": c.id, "slug": c.slug, "title": c.title,
@@ -172,11 +198,12 @@ def _collection_payload(s: Session, c: Collection) -> dict:
         "photos": [{"idx": i, "file": p.filename, "w": p.width, "h": p.height}
                    for i, p in enumerate(c.photos)],
         "tags": [t.name for t in c.tags],
-        "count": len(c.photos),
+        "count": (counts or {}).get(c.id, len(c.photos)),
     }
 
 
-def _collection_card(s: Session, c: Collection) -> dict:
+def _collection_card(s: Session, c: Collection,
+                     counts: dict[int, int] | None = None) -> dict:
     """列表瘦身条目(无 photos 数组)。"""
     cover = _collection_cover(s, c)
     return {
@@ -186,21 +213,24 @@ def _collection_card(s: Session, c: Collection) -> dict:
         "model_name": c.model.name if c.model else "未分类",
         "cover": cover,
         "coverThumb": f"t/s{THUMB_SHORT_CARD}/{cover}.webp" if cover else None,
-        "count": len(c.photos),
+        "count": (counts or {}).get(c.id, 0),
         "tags": [t.name for t in c.tags],
     }
 
 
-def _model_payload(s: Session, m: Model, collections: list[Collection] | None = None) -> dict:
+def _model_payload(s: Session, m: Model, collections: list[Collection] | None = None,
+                   counts: dict[int, int] | None = None) -> dict:
     works = collections if collections is not None else m.collections
-    photo_count = sum(len(c.photos) for c in works)
+    photo_count = sum((counts or {}).get(c.id, 0) for c in works)
     latest = max((c.published_at or "" for c in works), default="")
     avatar = m.avatar_path
-    if not avatar:  # 头像兜底:第一张合集封面(同 web.py)
+    if not avatar:  # 头像兜底:封面照片(不拖全 photos)
         for c in works:
-            if c.photos:
-                avatar = c.photos[0].filename
-                break
+            if c.cover_photo_id:
+                ph = s.get(Photo, c.cover_photo_id)
+                if ph:
+                    avatar = ph.filename
+                    break
     return {
         "id": m.id, "slug": m.slug, "name": m.name, "stage": m.stage_name or "",
         "avatar": avatar, "hero": m.hero_path or avatar,
@@ -224,6 +254,7 @@ def _published_collections(s: Session) -> list[Collection]:
 async def mobile_discover(s: Session = Depends(get_db),
                           if_none_match: str | None = Header(default=None)):
     cols = _published_collections(s)
+    counts = _photo_counts(s, cols)
     featured = [c for c in cols if c.featured][:4] or cols[:4]
     # 12 个:发现页轮播吃前 12(客户端 HeroCarousel take(12));网格只展示前 6。
     # 最新入库 = 入库时间(created_at)新→旧,同刻按 id 兜底,与写真 tab 的
@@ -241,10 +272,13 @@ async def mobile_discover(s: Session = Depends(get_db),
             if c.model:
                 d["models"].add(c.model.slug)
 
+    # 轮播/网格要照片数组: 只有 featured + latest 两个小集合真要
+    load_photos(s, list(dict.fromkeys(featured + latest)))
+
     return _etag_response({
-        "featured": [_collection_payload(s, c) for c in featured],
-        "latest": [_collection_payload(s, c) for c in latest],
-        "models": [_model_payload(s, m, [c for c in cols if c.model_id == m.id])
+        "featured": [_collection_payload(s, c, counts) for c in featured],
+        "latest": [_collection_payload(s, c, counts) for c in latest],
+        "models": [_model_payload(s, m, [c for c in cols if c.model_id == m.id], counts)
                    for m in models],
         "tags": [{"name": t.name, "collections": tag_counts.get(t.name, {}).get("collections", 0),
                   "models": len(tag_counts.get(t.name, {}).get("models", set()))} for t in tags],
@@ -273,7 +307,8 @@ async def mobile_collections(s: Session = Depends(get_db), tag: str = "",
     total = len(cols)
     start = (page - 1) * page_size
     items = cols[start:start + page_size]
-    return {"items": [_collection_card(s, c) for c in items],
+    page_counts = _photo_counts(s, items)
+    return {"items": [_collection_card(s, c, page_counts) for c in items],
             "total": total, "page": page, "pageSize": page_size}
 
 
@@ -283,7 +318,8 @@ async def mobile_collection_detail(slug: str, s: Session = Depends(get_db)):
                                           Collection.status == "published"))
     if not c:
         raise ApiError("not_found", "Collection not found", 404)
-    payload = _collection_payload(s, c)
+    load_photos(s, [c])
+    payload = _collection_payload(s, c, _photo_counts(s, [c]))
     payload["coverThumb"] = (f"t/s{THUMB_SHORT_HERO}/{payload['cover']}.webp"
                              if payload["cover"] else None)
     payload["model"] = ({"slug": c.model.slug, "name": c.model.name}
@@ -306,8 +342,9 @@ async def mobile_models(s: Session = Depends(get_db),
     if featured:
         models = [m for m in models if m.featured]
     cols = _published_collections(s)
+    counts = _photo_counts(s, cols)
     return _etag_response(
-        {"items": [_model_payload(s, m, [c for c in cols if c.model_id == m.id])
+        {"items": [_model_payload(s, m, [c for c in cols if c.model_id == m.id], counts)
                    for m in models], "total": len(models)},
         if_none_match)
 
@@ -319,8 +356,9 @@ async def mobile_model_detail(slug: str, s: Session = Depends(get_db)):
     if not m:
         raise ApiError("not_found", "Model not found", 404)
     works = [c for c in _published_collections(s) if c.model_id == m.id]
-    payload = _model_payload(s, m, works)
-    payload["collections"] = [_collection_card(s, c) for c in works]
+    work_counts = _photo_counts(s, works)
+    payload = _model_payload(s, m, works, work_counts)
+    payload["collections"] = [_collection_card(s, c, work_counts) for c in works]
     return payload
 
 
@@ -341,6 +379,7 @@ async def mobile_search(q: str = Query(""), s: Session = Depends(get_db)):
                               (m.agency or "")).lower()][:8]
 
     cols = _published_collections(s)
+    counts = _photo_counts(s, cols)
     hit_cols = [c for c in cols
                 if like in (c.title + " " +
                             (c.model.name if c.model else "") + " " +
@@ -351,19 +390,21 @@ async def mobile_search(q: str = Query(""), s: Session = Depends(get_db)):
 
     def _model_card(m: Model) -> dict:
         avatar = m.avatar_path
-        if not avatar:
+        if not avatar:  # 头像兜底:封面照片(不拖全 photos)
             for c in m.collections:
-                if c.photos:
-                    avatar = c.photos[0].filename
-                    break
+                if c.cover_photo_id:
+                    ph = s.get(Photo, c.cover_photo_id)
+                    if ph:
+                        avatar = ph.filename
+                        break
         return {"slug": m.slug, "name": m.name, "stage": m.stage_name or "",
-                "avatar": avatar, "thumb": (f"t/160/{avatar}.webp" if avatar else None),
+                "avatar": avatar, "thumb": (f"t/s{THUMB_SHORT_CARD}/{avatar}.webp" if avatar else None),
                 "count": len(m.collections), "tags": [t.name for t in m.tags]}
 
     return {
         "q": q,
         "models": [_model_card(m) for m in hit_models],
-        "collections": [_collection_card(s, c) for c in hit_cols],
+        "collections": [_collection_card(s, c, counts) for c in hit_cols],
         "tags": hit_tags,
     }
 
@@ -387,17 +428,22 @@ async def mobile_favorites_resolve(s: Session = Depends(get_db),
         return _etag_response(out, if_none_match)
 
     cols = _published_collections(s)
+    counts = _photo_counts(s, cols)
     if favs["model"]:
         models = s.scalars(select(Model).where(Model.status == "published")
                            .order_by(desc(Model.featured), Model.name)).all()
-        out["models"] = [_model_payload(s, m, [c for c in cols if c.model_id == m.id])
+        out["models"] = [_model_payload(s, m, [c for c in cols if c.model_id == m.id], counts)
                          for m in models if m.slug in favs["model"]]
     if favs["collection"]:
-        out["collections"] = [_collection_card(s, c) for c in cols
+        out["collections"] = [_collection_card(s, c, counts) for c in cols
                               if c.slug in favs["collection"]]
     if (favs["photo"]):
         photos = []
-        for c in cols:
+        # 只有含收藏照片的合集才需要照片数组, 显式加载这一小撮
+        fav_col_slugs = {k.split(":")[0] for k in favs["photo"]}
+        photo_cols = [c for c in cols if c.slug in fav_col_slugs]
+        load_photos(s, photo_cols)
+        for c in photo_cols:
             for i, p in enumerate(c.photos):
                 if f"{c.slug}:{i}" in favs["photo"]:
                     photos.append({

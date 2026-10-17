@@ -7,11 +7,10 @@ import random
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload
 
 from ..auth import COOKIE_NAME, create_session, destroy_session, verify_password
 from ..database import SessionLocal
-from ..db import Collection, User
+from ..db import Collection, Model, User
 from ..i18n import t
 from ..templating import templates
 
@@ -47,22 +46,32 @@ async def set_language(request: Request, lang: str = Form(""), next: str = Form(
 
 
 def _login_cover(s) -> dict:
-    """随机挑一张已发布写真的照片做登录页背景。"""
-    cols = s.scalars(
-        select(Collection).where(Collection.status == "published")
-        .options(joinedload(Collection.photos), joinedload(Collection.model))
-        .order_by(Collection.id)).unique().all()
-    if not cols:
+    """随机挑一张已发布写真的照片做登录页背景。
+
+    只取标量列(合集 id/标题/照片文件名), 绝不 joinedload 全库照片 ——
+    那会把 2.5 万张 Photo 拖成 ORM 对象, 登录页 TTFB 2s+(实测)。
+    """
+    from sqlalchemy import func
+
+    from ..db import Photo
+    rows = s.execute(
+        select(Collection.id, Collection.title, Model.name, func.count(Photo.id))
+        .join(Photo, Photo.collection_id == Collection.id)
+        .outerjoin(Model, Collection.model_id == Model.id)
+        .where(Collection.status == "published")
+        .group_by(Collection.id, Collection.title, Model.name)
+        .having(func.count(Photo.id) >= 3)).all()
+    if not rows:
         return {}
-    c = random.choice(cols)
-    if len(c.photos) < 3:
+    cid, title, model_name, n = random.choice(rows)
+    p = s.scalar(select(Photo.filename).where(Photo.collection_id == cid)
+                 .order_by(Photo.sort_order).offset(2).limit(1))
+    if not p:
         return {}
-    p = c.photos[2]
     return {
-        "login_cover": p.filename,
-        "login_title": c.title,
-        "login_meta": t("{n} photos · {m}", n=len(c.photos),
-                        m=c.model.name if c.model else t("未分类")),
+        "login_cover": p,
+        "login_title": title,
+        "login_meta": t("{n} photos · {m}", n=n, m=model_name or t("未分类")),
     }
 
 

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import require_login
-from ..db import Collection, Model, Tag
+from ..db import Collection, Model, Photo, Tag
 from ..database import get_db
 from ..i18n import t
 from ..services.media import thumb_url
@@ -18,17 +18,20 @@ router = APIRouter(prefix="/api/search", dependencies=[Depends(require_login)])
 def _thumb(rel: str | None) -> str:
     if not rel:
         return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
-    return thumb_url(rel.lstrip("/"), 160)
+    # 全站只预热 s900/s2400 两档,其余规格冷生成会回源云盘
+    return thumb_url(rel.lstrip("/"), 900, short=True)
 
 
-def _model_thumb(m: Model) -> str:
-    """搜索行缩略图:头像缺省时用第一张合集封面。"""
+def _model_thumb(s: Session, m: Model) -> str:
+    """搜索行缩略图:头像缺省时用第一张合集封面(标量查询,不拖全 photos)。"""
     rel = m.avatar_path
     if not rel:
-        for c in m.collections:
-            if c.photos:
-                rel = c.photos[0].filename
-                break
+        rel = s.scalar(
+            select(Photo.filename)
+            .join(Collection, Collection.id == Photo.collection_id)
+            .where(Collection.model_id == m.id, Collection.status == "published")
+            .order_by(Collection.published_at.desc(), Photo.sort_order)
+            .limit(1))
     return _thumb(rel)
 
 
@@ -57,15 +60,25 @@ async def search(q: str = Query(""), s: Session = Depends(get_db)):
     tags = s.scalars(select(Tag).order_by(Tag.name)).all()
     hit_tags = [t.name for t in tags if q.lower() in t.name.lower()][:8]
 
+    # 照片数 + 封面文件名:两条聚合/标量查询(替代逐合集加载全部照片)
+    counts = dict(s.execute(
+        select(Photo.collection_id, func.count(Photo.id))
+        .where(Photo.collection_id.in_([c.id for c in hit_cols]))
+        .group_by(Photo.collection_id)).all()) if hit_cols else {}
+    covers = dict(s.execute(
+        select(Photo.collection_id, func.min(Photo.filename))
+        .where(Photo.collection_id.in_([c.id for c in hit_cols]))
+        .group_by(Photo.collection_id)).all()) if hit_cols else {}
+
     return {
         "q": q,
         "models": [{"slug": m.slug, "name": m.name, "tags": [t.name for t in m.tags],
-                    "count": len(m.collections), "thumb": _model_thumb(m)}
+                    "count": len(m.collections), "thumb": _model_thumb(s, m)}
                    for m in hit_models],
         "collections": [{"slug": c.slug, "title": c.title,
                          "model_name": c.model.name if c.model else t("未分类"),
-                         "count": len(c.photos), "date": c.published_at or "",
-                         "thumb": _thumb(c.photos[0].filename if c.photos else None)}
+                         "count": counts.get(c.id, 0), "date": c.published_at or "",
+                         "thumb": _thumb(covers.get(c.id))}
                         for c in hit_cols],
         "tags": hit_tags,
     }

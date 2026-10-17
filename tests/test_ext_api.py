@@ -19,6 +19,11 @@ def ext_key(admin_client):
     """
     from app.database import SessionLocal
     from app.services import settings_store
+    from app.routers import ext_api
+
+    # 标题快照是进程级缓存(生产上 TTL 60s), 测试间必须清, 否则上个
+    # 用例的合集快照会串到下个用例
+    ext_api._invalidate_title_cache()
     from app.routers.ext_api import get_or_create_api_key
 
     s = SessionLocal()

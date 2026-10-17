@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua/misskon/nicesss → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.6.0
+// @version      1.7.0
 // @description  在 buondua.com / misskon.com / nicesss.com 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列(同一本写真跨站转载也判已入库)
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -379,10 +379,32 @@
   // 老帖通道: POST /api/ext/status-by-url 让服务端按 URL 解析序号并判态。
   // 请求带 titles(url → 页面标题): 状态 new 且标题与已入库写真等价时,
   // 服务端登记序号并返回 done —— 老帖列表页卡片取不到序号, 这是唯一登记通道。
-  // 返回的 serial 同时回填徽标(后续轮询就能按序号查, 不再走这条通道)。
+  // 服务端返回的 serial 持久化到 GM 存储: 后续轮询(甚至下次访问)该 URL
+  // 直接并入按序号的 /status 通道, 不再每 5s 重复走服务端解析+回源取页面。
+  function resolvedSerial(url) {
+    return GM_getValue("pb_serial:" + url, null);
+  }
+
+  function rememberSerial(url, serial) {
+    try { GM_setValue("pb_serial:" + url, String(serial)); } catch (_) {}
+  }
+
   function resolveUnknown(urls, cards) {
+    // 已解析过的 URL 直接并入按序号的主通道; 只把全新的交给 URL 通道
+    const known = urls.filter(u => resolvedSerial(u));
+    const fresh = urls.filter(u => !resolvedSerial(u));
+    if (!fresh.length) {
+      if (known.length) queryBySerial(known.map(u => ({
+        url: u, serial: resolvedSerial(u),
+        title: u === location.href ? detailTitle() : cardTitle(
+          cards.find(c => {
+            const a = c.querySelector("a[href*='://misskon.com/']");
+            return a && a.href === u;
+          }) || {})}), cards));
+      return;
+    }
     const titles = {};
-    urls.forEach(u => {
+    fresh.forEach(u => {
       if (u === location.href) {
         titles[u] = detailTitle();
         return;
@@ -394,36 +416,60 @@
       if (card) titles[u] = cardTitle(card);
     });
     api("POST", "/api/ext/status-by-url",
-      { urls: urls, titles: titles },
+      { urls: fresh, titles: titles },
       function (ok, data) {
         if (!ok || !data || !data.items) return;
         const byUrl = {};
-        data.items.forEach(i => { byUrl[i.url] = i; });
-        cards.forEach(c => {
-          const a = c.querySelector("a[href*='://misskon.com/']");
-          if (!a) return;
-          const item = byUrl[a.href];
-          const host = ensureHost(c);
-          if (!host) return;
-          if (!item || item.serial == null) {
-            setBadge(host, "", item && item.state ? item.state : "new", null);
-            return;
-          }
-          setBadge(host, String(item.serial), item.state,
-            pending.has(String(item.serial)) ? "pending" : null);
+        data.items.forEach(i => {
+          byUrl[i.url] = i;
+          if (i.serial != null) rememberSerial(i.url, i.serial);
         });
-        if (isDetailPage() && !serialFromLocation()) {
-          const item = byUrl[location.href];
-          const host = ensureDetailHost();
-          if (!host) return;
-          if (!item || item.serial == null) {
-            setBadge(host, "", item && item.state ? item.state : "new", null);
-          } else {
-            setBadge(host, String(item.serial), item.state,
-              pending.has(String(item.serial)) ? "pending" : null);
-          }
-        }
+        // 已解析的并入一起刷徽标
+        known.forEach(u => {
+          if (!byUrl[u]) byUrl[u] = { url: u, serial: resolvedSerial(u), state: null };
+        });
+        applyUnknown(byUrl, cards);
       });
+  }
+
+  // 已知序号的 URL → 并入主状态查询(带标题, 顺带维持跨站登记通道)
+  function queryBySerial(entries, cards) {
+    const items = entries.map(e => ({ serial: Number(e.serial), title: e.title || "" }));
+    api("POST", "/api/ext/status", { items }, function (ok, data) {
+      if (!ok || !data || !data.items) return;
+      const byUrl = {};
+      data.items.forEach((i, k) => {
+        if (entries[k]) byUrl[entries[k].url] = { url: entries[k].url, serial: i.serial, state: i.state };
+      });
+      applyUnknown(byUrl, cards);
+    });
+  }
+
+  function applyUnknown(byUrl, cards) {
+    cards.forEach(c => {
+      const a = c.querySelector("a[href*='://misskon.com/']");
+      if (!a) return;
+      const item = byUrl[a.href];
+      const host = ensureHost(c);
+      if (!host) return;
+      if (!item || item.serial == null) {
+        setBadge(host, "", item && item.state ? item.state : "new", null);
+        return;
+      }
+      setBadge(host, String(item.serial), item.state,
+        pending.has(String(item.serial)) ? "pending" : null);
+    });
+    if (isDetailPage() && !serialFromLocation()) {
+      const item = byUrl[location.href];
+      const host = ensureDetailHost();
+      if (!host) return;
+      if (!item || item.serial == null) {
+        setBadge(host, "", item && item.state ? item.state : "new", null);
+      } else {
+        setBadge(host, String(item.serial), item.state,
+          pending.has(String(item.serial)) ? "pending" : null);
+      }
+    }
   }
 
   // ---- 点击推送 ----------------------------------------------------------------

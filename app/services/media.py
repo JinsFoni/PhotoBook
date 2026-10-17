@@ -316,6 +316,13 @@ def serve_media(rel: str, request: Request) -> Response:
 
 
 def serve_thumb(spec: str, request: Request) -> Response:
+    """缩略图只从缓存或本地原图生成,绝不回源云盘。
+
+    全站只预热 s900/s2400 两档,入库时生成完才上传/删原图 —— 页面也只
+    请求这两档,因此"缓存缺失 + 本地原图已删"只能是异常态(预热没跑完/
+    手动删了缓存),此时宁可 404 也不能为一张缩略图去云盘拉几十 MB 原图。
+    原图按需回源只发生在 /media(查看原图),见 serve_media()。
+    """
     m = THUMB_RE.match(spec)
     if not m:
         raise HTTPException(404)
@@ -344,16 +351,9 @@ def serve_thumb(spec: str, request: Request) -> Response:
 
     src = _safe_path(rel)
     if not src.is_file():
-        # 原图不在本地但缓存也没有: 按存储优先级逐个尝试回源下载再生成
-        from .storage import remote_urls
-        for url in remote_urls(rel):
-            data = _make_webp_from_remote_checked(url, w, h, q, short)
-            if data is not None:
-                cache.parent.mkdir(parents=True, exist_ok=True)
-                cache.write_bytes(data)
-                _trim_heap()
-                return Response(data, media_type="image/webp",
-                                headers={"Cache-Control": "public, max-age=31536000, immutable"})
+        # 本地原图已删(上传完成后)而缓存缺失:预热保障窗口外的异常态,
+        # 不回源 —— 云盘单张 1~2s 的拉取+解码会拖死请求路径。预热
+        # (preheat_all)会在下次启动补齐,这里直接 404。
         raise HTTPException(404)
 
     # 生成:缩到目标宽(裁高比),WebP 按尺寸分档
@@ -378,66 +378,7 @@ def _trim_heap() -> None:
         libc.malloc_trim(0)
 
 
-def _make_webp_from_remote(url: str, w: int, h: int | None, q: int,
-                           short: bool = False) -> bytes | None:
-    """从外部存储拉原图生成缩放 WebP(本地原图缺失时的回源路径)。
-
-    仅缓存缺失的零星请求会走到这里(上传 worker 保证删除前两档已就绪),
-    单次拉取有超时与大小上限,失败返回 None(→ 404,不阻塞请求)。
-    """
-    import httpx
-    try:
-        resp = httpx.get(url, timeout=30.0, follow_redirects=True)
-        resp.raise_for_status()
-        if len(resp.content) > 200 * 1024 * 1024:
-            return None
-        with _gen_sem:
-            im = _open_tolerant(io.BytesIO(resp.content))
-            try:
-                sw, sh = im.size
-                if short:
-                    # 短边钳制:横图钳高,竖图/方图钳宽;只缩不放,等比不裁
-                    if sw > sh:
-                        th = min(w, sh)
-                        tw = int(th * sw / sh)
-                    else:
-                        tw = min(w, sw)
-                        th = int(tw * sh / sw)
-                else:
-                    tw = min(w, sw)
-                    if h:
-                        target_ratio = w / h
-                        src_ratio = sw / sh
-                        if src_ratio > target_ratio:
-                            nw = int(sh * target_ratio)
-                            x0 = (sw - nw) // 2
-                            im = im.crop((x0, 0, x0 + nw, sh))
-                        else:
-                            nh = int(sw / target_ratio)
-                            y0 = max(0, (sh - nh) // 3)
-                            im = im.crop((0, y0, sw, y0 + nh))
-                    th = h if h else int(tw * sh / sw)
-                im = im.resize((tw, th), Image.LANCZOS)
-                buf = io.BytesIO()
-                im.save(buf, "WEBP", quality=q, method=4)
-                return buf.getvalue()
-            finally:
-                im.close()
-    except Exception:
-        log.warning("remote thumb regen failed: %s w=%s", url[:120], w, exc_info=True)
-        return None
-
-
-def _make_webp_from_remote_checked(url: str, w: int, h: int | None, q: int,
-                                   short: bool = False) -> bytes | None:
-    """_make_webp_from_remote 的多存储版本。
-
-    与单存储时期不同,失败可能意味着该存储的这份文件坏了/不可达,而不只是
-    网络抖动 —— 返回 None 让调用方落到下一优先级存储。实现上无差别,
-    单独命名只为语义清晰。
-    """
-    return _make_webp_from_remote(url, w, h, q, short)
-
+# ---- URL 拼装 -------------------------------------------------------------------
 
 def thumb_url(rel: str | None, w: int, h: int | None = None, short: bool = False) -> str:
     if not rel:

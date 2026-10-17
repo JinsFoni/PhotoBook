@@ -107,9 +107,13 @@ class Collection(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
     model: Mapped[Model | None] = relationship(back_populates="collections")
+    # photos 不能 selectin: 任何碰到 Collection 的查询(列表页/状态判定/封面)
+    # 都会拖出全库数万 Photo ORM 对象(NAS 实测 0.3s+/页)。默认 lazy=select,
+    # 真正要照片列表的页面(详情/收藏/轮播)用 load_photos() 显式批量加载;
+    # 只要数量的用 _photo_counts() 聚合。
     photos: Mapped[list["Photo"]] = relationship(
         back_populates="collection", cascade="all, delete-orphan",
-        order_by="Photo.sort_order", lazy="selectin",
+        order_by="Photo.sort_order", lazy="select",
         foreign_keys="Photo.collection_id")
     tags: Mapped[list["Tag"]] = relationship(
         secondary="collection_tags", lazy="selectin", order_by="CollectionTag.pos")

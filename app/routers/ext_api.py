@@ -9,6 +9,8 @@ from __future__ import annotations
 import hmac
 import json
 import secrets
+import threading
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -207,28 +209,69 @@ def _register_serial_title(s: Session, serial: int, title: str) -> bool:
     source_serials;用户在另一站浏览时该站序号服务端无从知晓 —— 脚本
     查状态时把页面标题带上,这里比对命中即登记(状态查询顺带成了登记
     通道)。已登记(序号已在)返回 False,避免每 5s 轮询重复写库。
+
+    性能: 全量候选快照缓存在进程内(TTL 60s), 避免每个未知标题都全表
+    加载 289 个合集 ORM(连带 photos 时代实测单标题 0.4s, 一页 24 卡
+    就是 10s)。快照是标量列, 比对纯内存, 写库只在命中时发生一次。
     """
     import json as _json
 
     if not (title or "").strip():
         return False
-    for col in s.scalars(select(Collection).where(
-            Collection.source_serial.is_not(None))).all():
-        if not titles_match(title, col.title):
-            continue
+
+    # ---- 内存缓存: (id, title, source_serial, source_serials 原文) 快照 ----
+    global _title_cache_data, _title_cache_at
+    now = time.monotonic()
+    with _title_cache_lock:
+        if now - _title_cache_at > 60 or _title_cache_data is None:
+            _title_cache_data = s.execute(
+                select(Collection.id, Collection.title, Collection.source_serial,
+                       Collection.source_serials)
+                .where(Collection.source_serial.is_not(None))).all()
+            _title_cache_at = now
+        snapshot = _title_cache_data
+
+    def _load(json_raw: str | None) -> list:
         try:
-            known = {col.source_serial} | set(
-                _json.loads(col.source_serials or "[]"))
+            return _json.loads(json_raw or "[]")
         except (ValueError, TypeError):
-            known = {col.source_serial}
+            return []
+
+    for cid, col_title, col_serial, raw_serials in snapshot:
+        if not titles_match(title, col_title):
+            continue
+        known = {col_serial, *_load(raw_serials)}
+        known.discard(None)
+        if serial in known:
+            return False
+        # 缓存快照可能滞后: 登记前按 DB 现值重读一次,防并发覆盖
+        fresh = s.execute(
+            select(Collection.source_serials, Collection.source_serial)
+            .where(Collection.id == cid)).first()
+        fresh_raw, fresh_serial = fresh if fresh else ("", None)
+        known = {fresh_serial, *_load(fresh_raw)}
         known.discard(None)
         if serial in known:
             return False
         known.add(serial)
+        col = s.get(Collection, cid)
         col.source_serials = _json.dumps(sorted(known))
         s.commit()
+        _invalidate_title_cache()
         return True
     return False
+
+
+_title_cache_data: list | None = None
+_title_cache_at: float = 0.0
+_title_cache_lock = threading.Lock()
+
+
+def _invalidate_title_cache() -> None:
+    global _title_cache_data, _title_cache_at
+    with _title_cache_lock:
+        _title_cache_data = None
+        _title_cache_at = 0.0
 
 
 @router.get("/status")

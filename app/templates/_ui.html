@@ -26,9 +26,9 @@
 {%- endmacro %}
 
 {% macro frame(rel, w, ar='2/3', h=None, alt='', cls='frame', eager=False) -%}
+{# 只预热 s900/s2400 短边档, 这里统一走短边钳制(等比不裁), 裁切交给 CSS object-fit #}
 <div class="{{ cls }} skeleton" style="aspect-ratio:{{ ar }}">
-  <img src="{{ media(rel, w, h) }}"
-       srcset="{{ media(rel, (w * 0.5) | round | int, h) }} {{ (w * 0.5) | round | int }}w, {{ media(rel, w, h) }} {{ w }}w{% if h %}, {{ media(rel, (w * 1.6) | round | int, h) }} {{ (w * 1.6) | round | int }}w{% endif %}"
+  <img src="{{ media_short(rel, 900 if w <= 900 else 2400) }}"
        sizes="(max-width: 760px) 50vw, 25vw"
        alt="{{ alt }}" loading="{{ 'eager' if eager else 'lazy' }}" decoding="async">
 </div>

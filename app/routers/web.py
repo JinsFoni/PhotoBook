@@ -6,8 +6,8 @@ import json
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import desc, select
-from sqlalchemy.orm import Session
+from sqlalchemy import desc, func, select
+from sqlalchemy.orm import Session, selectinload
 
 from ..auth import require_login
 from ..db import Collection, Favorite, Model, Photo, Tag, User
@@ -16,6 +16,32 @@ from ..i18n import t
 from ..templating import templates
 
 router = APIRouter(dependencies=[Depends(require_login)])
+
+
+def _photo_counts(s: Session, cols: list[Collection]) -> dict[int, int]:
+    """一批合集的照片数,一条 GROUP BY(替代 len(c.photos) 的全库 ORM 加载)。"""
+    if not cols:
+        return {}
+    rows = s.execute(
+        select(Photo.collection_id, func.count(Photo.id))
+        .where(Photo.collection_id.in_([c.id for c in cols]))
+        .group_by(Photo.collection_id)).all()
+    return dict(rows)
+
+
+def load_photos(s: Session, cols: list[Collection]) -> None:
+    """显式批量加载 photos 列表(详情/收藏/轮播等真要照片数组的页面)。"""
+    if not cols:
+        return
+    ids = [c.id for c in cols]
+    photos = s.scalars(
+        select(Photo).where(Photo.collection_id.in_(ids))
+        .order_by(Photo.collection_id, Photo.sort_order)).all()
+    by_col: dict[int, list[Photo]] = {}
+    for p in photos:
+        by_col.setdefault(p.collection_id, []).append(p)
+    for c in cols:
+        c.photos = by_col.get(c.id, [])
 
 
 def _fav_keys(s: Session, user_id: int) -> dict[str, set[str]]:
@@ -39,9 +65,10 @@ def _collection_cover(s: Session, c: Collection) -> str | None:
     return ph.filename if ph else None
 
 
-def _collection_card(s: Session, c: Collection) -> dict:
+def _collection_card(s: Session, c: Collection, counts: dict[int, int] | None = None) -> dict:
     """列表/网格卡片的瘦身条目: 不带 photos 数组, 体积约为完整 payload 的 1/30。
-    用在哪: /collections 虚拟化数据池(万级条目也轻)。"""
+    用在哪: /collections 虚拟化数据池(万级条目也轻)。
+    counts: 预聚合的照片数(调用方 _photo_counts 一次算好); 缺了按封面兜底。"""
     return {
         "id": c.id, "slug": c.slug, "title": c.title,
         "date": c.published_at or "",
@@ -50,12 +77,13 @@ def _collection_card(s: Session, c: Collection) -> dict:
         "model_slug": c.model.slug if c.model else "",
         "model_name": c.model.name if c.model else t("未分类"),
         "cover": _collection_cover(s, c),
-        "count": len(c.photos),
+        "count": (counts or {}).get(c.id, 0),
         "tags": [t.name for t in c.tags],
     }
 
 
-def _collection_payload(s: Session, c: Collection) -> dict:
+def _collection_payload(s: Session, c: Collection,
+                        counts: dict[int, int] | None = None) -> dict:
     return {
         "id": c.id, "slug": c.slug, "title": c.title,
         "date": c.published_at or "", "featured": c.featured,
@@ -65,22 +93,25 @@ def _collection_payload(s: Session, c: Collection) -> dict:
         "photos": [{"id": p.id, "file": p.filename, "w": p.width, "h": p.height}
                    for p in c.photos],
         "tags": [t.name for t in c.tags],
-        "count": len(c.photos),
+        "count": (counts or {}).get(c.id, len(c.photos)),
     }
 
 
-def _model_payload(s: Session, m: Model, collections: list[Collection] | None = None) -> dict:
+def _model_payload(s: Session, m: Model, collections: list[Collection] | None = None,
+                   counts: dict[int, int] | None = None) -> dict:
     works = collections if collections is not None else m.collections
-    photo_count = sum(len(c.photos) for c in works)
+    photo_count = sum((counts or {}).get(c.id, 0) for c in works)
     # 最新活动日期:作品集里最新的发布日期(模特页「排序:最新」用)
     latest = max((c.published_at or "" for c in works), default="")
     # 头像兜底:没设头像时用第一张合集封面
     avatar = m.avatar_path
     if not avatar:
         for c in works:
-            if c.photos:
-                avatar = c.photos[0].filename
-                break
+            if c.cover_photo_id:
+                ph = s.get(Photo, c.cover_photo_id)
+                if ph:
+                    avatar = ph.filename
+                    break
     return {
         "id": m.id, "slug": m.slug, "name": m.name, "stage": m.stage_name or "",
         "avatar": avatar, "hero": m.hero_path or avatar,
@@ -95,7 +126,7 @@ def _model_payload(s: Session, m: Model, collections: list[Collection] | None = 
 def _published_collections(s: Session) -> list[Collection]:
     return list(s.scalars(
         select(Collection).where(Collection.status == "published")
-        .options()  # photos lazy selectin via relationship
+        .options(selectinload(Collection.model))
         .order_by(desc(Collection.published_at), desc(Collection.id))).all())
 
 
@@ -105,6 +136,7 @@ def _published_collections(s: Session) -> list[Collection]:
 async def discovery(request: Request, s: Session = Depends(get_db)):
     user = request.state.user
     cols = _published_collections(s)
+    counts = _photo_counts(s, cols)
     # 轮播图顺序 = 最新入库(created_at 新→旧, 同刻按 id 兜底);cols 自身是
     # 发布日期序, 不能直接截断。勾了 featured 的优先, 没有则全库兜底。
     by_added = sorted(cols, key=lambda c: (c.created_at, c.id), reverse=True)
@@ -123,10 +155,13 @@ async def discovery(request: Request, s: Session = Depends(get_db)):
             if c.model:
                 d["models"].add(c.model.slug)
 
+    # 轮播需要照片数组: 只有 featured(≤16) + latest(≤6) 两个小集合真要照片
+    load_photos(s, [c for c in dict.fromkeys(featured + latest)])
     payload = {
-        "featured": [_collection_payload(s, c) for c in featured],
-        "latest": [_collection_payload(s, c) for c in latest],
-        "models": [_model_payload(s, m, [c for c in cols if c.model_id == m.id]) for m in models],
+        "featured": [_collection_payload(s, c, counts) for c in featured],
+        "latest": [_collection_payload(s, c, counts) for c in latest],
+        "models": [_model_payload(s, m, [c for c in cols if c.model_id == m.id], counts)
+                   for m in models],
         "tags": sorted(
             [{"name": t.name, "collections": tag_counts.get(t.name, {}).get("collections", 0),
               "models": len(tag_counts.get(t.name, {}).get("models", set()))} for t in tags],
@@ -150,7 +185,8 @@ async def collections_page(request: Request, s: Session = Depends(get_db),
     models = s.scalars(select(Model).where(Model.status == "published").order_by(Model.name)).all()
     tags = s.scalars(select(Tag).order_by(Tag.name)).all()
 
-    items = [_collection_card(s, c) for c in cols]
+    counts = _photo_counts(s, cols)
+    items = [_collection_card(s, c, counts) for c in cols]
 
     tag_counts = {}
     for c in cols:
@@ -178,14 +214,17 @@ async def collection_detail(request: Request, slug: str, s: Session = Depends(ge
         return templates.TemplateResponse(request, "notfound.html",
                                           {"user": user, "page": "collections", "text": text},
                                           status_code=404)
-    payload = _collection_payload(s, c)
+    load_photos(s, [c])
+    counts = _photo_counts(s, [c])
+    payload = _collection_payload(s, c, counts)
     same_model = [x for x in (s.scalars(
         select(Collection).where(Collection.model_id == c.model_id,
                                  Collection.status == "published")).all()
         if c.model_id else []) if x.slug != c.slug]
     others = [x for x in _published_collections(s) if x.slug != c.slug and x.model_id != c.model_id][:5]
     next_cols = (same_model + others)[:5]
-    payload["next"] = [_collection_payload(s, x) for x in next_cols]
+    next_counts = _photo_counts(s, next_cols)
+    payload["next"] = [_collection_card(s, x, next_counts) for x in next_cols]
     payload["next_aside"] = c.model.name if (same_model and c.model) else ""
     return templates.TemplateResponse(request, "collection.html", {
         "user": user, "page": "collections",
@@ -201,11 +240,13 @@ async def models_page(request: Request, s: Session = Depends(get_db),
     user = request.state.user
     models = s.scalars(select(Model).where(Model.status == "published").order_by(Model.name)).all()
     cols = _published_collections(s)
+    counts = _photo_counts(s, cols)
     agencies = sorted({m.agency for m in models if m.agency})
     tag_set = sorted({t.name for m in models for t in m.tags})
 
     payload = {
-        "models": [_model_payload(s, m, [c for c in cols if c.model_id == m.id]) for m in models],
+        "models": [_model_payload(s, m, [c for c in cols if c.model_id == m.id], counts)
+                   for m in models],
         "agencies": agencies, "tags": tag_set,
         "filters": {"q": q, "gender": gender, "tag": tag, "agency": agency},
     }
@@ -228,7 +269,8 @@ async def model_detail(request: Request, slug: str, s: Session = Depends(get_db)
     # 写真集按最新在前(与全站列表一致); 无发布日期的排最后
     works = [c for c in m.collections if c.status == "published"]
     works.sort(key=lambda c: (c.published_at or "", c.id), reverse=True)
-    payload["works"] = [_collection_payload(s, c) for c in works]
+    work_counts = _photo_counts(s, works)
+    payload["works"] = [_collection_card(s, c, work_counts) for c in works]
     return templates.TemplateResponse(request, "model.html", {
         "user": user, "page": "models",
         "data_json": json.dumps(payload, ensure_ascii=False),
@@ -244,16 +286,21 @@ async def favorites_page(request: Request, s: Session = Depends(get_db), tab: st
 
     models = s.scalars(select(Model).where(Model.status == "published")).all()
     cols = _published_collections(s)
-    model_items = [_model_payload(s, m, [c for c in cols if c.model_id == m.id])
+    counts = _photo_counts(s, cols)
+    model_items = [_model_payload(s, m, [c for c in cols if c.model_id == m.id], counts)
                    for m in models if m.slug in favs["model"]]
-    collection_items = [_collection_payload(s, c) for c in cols if c.slug in favs["collection"]]
+    collection_items = [_collection_card(s, c, counts) for c in cols if c.slug in favs["collection"]]
 
     # 收藏的照片:target_key = "<collection_slug>:<idx>"
     # w/h 必带: justified 照片墙(layoutPhotoWall)按宽高比分行,图片未加载时
     # 只能读模板内联 aspect-ratio,缺了会全部按 2/3 兜底 → 横图卡留洞。
     # gi 是本页照片列表的全局下标, 灯箱按它直接定位当前张。
+    # 只有含收藏照片的合集才需要照片数组, 显式加载这一小撮
+    fav_col_slugs = {k.split(":")[0] for k in favs["photo"]}
+    photo_cols = [c for c in cols if c.slug in fav_col_slugs]
+    load_photos(s, photo_cols)
     photo_items = []
-    for c in cols:
+    for c in photo_cols:
         for i, p in enumerate(c.photos):
             key = f"{c.slug}:{i}"
             if key in favs["photo"]:
@@ -284,7 +331,8 @@ async def profile_page(request: Request, s: Session = Depends(get_db)):
     user = request.state.user
     favs = _fav_keys(s, user.id)
     cols = _published_collections(s)
-    recent = [_collection_payload(s, c) for c in cols if c.slug in favs["collection"]][:3]
+    counts = _photo_counts(s, cols)
+    recent = [_collection_card(s, c, counts) for c in cols if c.slug in favs["collection"]][:3]
     payload = {
         "user": {"name": user.username, "role": user.role},
         "counts": {k: len(v) for k, v in favs.items()},

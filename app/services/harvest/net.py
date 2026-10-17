@@ -424,13 +424,29 @@ def _serial_from_misskon_url(url: str) -> int:
     return int(m.group(1))
 
 
+_misskon_serial_cache: dict[str, int] = {}
+_misskon_serial_cache_max = 2000
+
+
 def _misskon_serial_from_page(url: str) -> int:
-    """老式 URL(slug 无序号)从详情页 body class 的 postid-N 取序号。"""
+    """老式 URL(slug 无序号)从详情页 body class 的 postid-N 取序号。
+
+    结果按 URL 缓存: 油猴脚本每 5s 轮询一次状态, 同一页 URL 反复解析
+    意味着每轮都真实回源拉一次 misskon 详情页(单次 1s+, 且占采集代理),
+    缓存后整页只有第一次慢。
+    """
+    cached = _misskon_serial_cache.get(url)
+    if cached is not None:
+        return cached
     html = fetch_html(url)
     m = MISSKON_POSTID_RE.search(html)
     if not m:
         raise ValueError(f"URL 无序号且页面无 postid: {url}")
-    return int(m.group(1))
+    serial = int(m.group(1))
+    if len(_misskon_serial_cache) >= _misskon_serial_cache_max:
+        _misskon_serial_cache.clear()
+    _misskon_serial_cache[url] = serial
+    return serial
 
 
 def _misskon_title(html: str) -> str:

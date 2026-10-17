@@ -288,6 +288,12 @@ def test_misskon_parse_via_dispatch():
 
 
 MISSKON_LEGACY_URL = "https://misskon.com/xiuren-no-962-model-xiao-reba-44-photos"
+
+
+def _clear_misskon_serial_cache():
+    """老帖序号解析结果按 URL 进程级缓存(生产特性), 同一 URL 在多个
+    用例间复用时必须清, 否则 mock 的页面内容不生效。"""
+    net._misskon_serial_cache.clear()
 MISSKON_LEGACY_HTML = """
 <html><head><title>XIUREN No.962: Model Xiao Reba (小热巴) (44 photos) – MissKon.com</title></head>
 <body class="post-template-default single single-post postid-25634">
@@ -303,6 +309,7 @@ MISSKON_LEGACY_HTML = """
 
 def test_misskon_legacy_url_serial_from_postid(monkeypatch):
     """老帖 slug 无 <序号>- 前缀 → 序号回退页面 body 的 postid-N。"""
+    _clear_misskon_serial_cache()
     monkeypatch.setattr(net, "fetch_html",
                         lambda url, **kw: MISSKON_LEGACY_HTML)
     assert net.serial_from_url(MISSKON_LEGACY_URL) == 25634
@@ -340,6 +347,7 @@ def test_misskon_direct_mediafire_link():
 
 def test_misskon_legacy_no_postid_raises(monkeypatch):
     """既无 slug 序号又无 postid → 仍报 ValueError(回中文消息)。"""
+    _clear_misskon_serial_cache()  # 同 URL 可能被上一个用例缓存过成功结果
     monkeypatch.setattr(
         net, "fetch_html",
         lambda url, **kw: "<html><body><h1>404</h1></body></html>")
