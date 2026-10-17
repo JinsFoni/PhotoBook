@@ -84,6 +84,16 @@ def test_models_page_and_detail(admin_client):
     assert d["slug"] == "yang-chenchen"
 
 
+def test_model_detail_photo_count(admin_client):
+    """详情页 photoCount 必须传 works + counts 算出,缺省兜底恒为 0。"""
+    r = admin_client.get("/models/yang-chenchen")
+    assert r.status_code == 200
+    d = _pb_data(r.text)
+    assert d["photoCount"] > 0
+    # count = 已发布合集数,与 works 列表一致
+    assert d["count"] == len(d["works"]) > 0
+
+
 def test_unknown_collection_404(admin_client):
     assert admin_client.get("/collections/nope-nope").status_code == 404
 
