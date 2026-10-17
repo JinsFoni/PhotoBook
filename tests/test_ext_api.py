@@ -268,6 +268,41 @@ def test_status_post_no_false_positive(ext_key, client):
         _rm_collection("ext-cross-album-7")
 
 
+def test_status_post_generic_series_count_guard(ext_key, client):
+    """泛化系列标题必须被真实张数守卫拦下(44755 实录):库里 100 张那本
+    「[AI Generated] 诛仙-陆雪琪」在库,上报 310 张的同名标题 → 不登记,
+    照常返回 new(否则该批次永远显示已入库、不被下载)。"""
+    import json as _json
+
+    from app.database import SessionLocal
+    from app.db import Collection, Photo
+
+    s = SessionLocal()
+    try:
+        c = Collection(slug="ext-cross-album-11", title="[AI Generated] 诛仙-陆雪琪",
+                       status="published", source_serial=47799,
+                       source_serials=_json.dumps([47799]))
+        s.add(c)
+        s.commit()
+        # 100 张那本: photos 表落 100 行 filename
+        for i in range(100):
+            s.add(Photo(collection_id=c.id, filename=f"ext11-{i:03d}.jpg"))
+        s.commit()
+        r = client.post("/api/ext/status", headers=H(ext_key), json={"items": [
+            {"serial": 44755,
+             "title": "[AI Generated] 诛仙-陆雪琪 (310 photos)  - ( Page 1 / 16 )"},
+        ]})
+        assert r.json()["items"][0] == {"serial": 44755, "state": "new"}
+        # 张数相等 → 照常登记
+        r2 = client.post("/api/ext/status", headers=H(ext_key), json={"items": [
+            {"serial": 42981,
+             "title": "[AI Generated] 诛仙-陆雪琪 (100 photos)  -"},
+        ]})
+        assert r2.json()["items"][0] == {"serial": 42981, "state": "done"}
+    finally:
+        _rm_collection("ext-cross-album-11")
+
+
 def test_status_post_queued_not_rechecked(ext_key, client):
     """状态不是 new(排队中)时跳过标题比对 —— 排队任务完成后序号自会登记。"""
     _mk_collection_with_title(119035, "ext-cross-album-8",

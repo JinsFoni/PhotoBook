@@ -15,16 +15,16 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import __version__
 from ..database import get_db
-from ..db import Collection, HarvestHistory, HarvestJob
+from ..db import Collection, HarvestHistory, HarvestJob, Photo
 from ..i18n import t
 from ..services import settings_store
 from ..services.harvest import net
-from ..services.harvest.titlematch import titles_match
+from ..services.harvest.titlematch import title_matches_collection
 from ..services.harvest.worker import enqueue, ACTIVE_JOB_STATES
 from ..services.pikpak import worker as pikpak_worker
 
@@ -213,21 +213,29 @@ def _register_serial_title(s: Session, serial: int, title: str) -> bool:
     性能: 全量候选快照缓存在进程内(TTL 60s), 避免每个未知标题都全表
     加载 289 个合集 ORM(连带 photos 时代实测单标题 0.4s, 一页 24 卡
     就是 10s)。快照是标量列, 比对纯内存, 写库只在命中时发生一次。
+    快照带各合集的真实照片数(GROUP BY 一条)—— 入库 title 不带
+    「(N photos)」尾缀, 标题等价必须以真实张数守卫, 否则泛化系列标题
+    ([AI Generated] 诛仙-陆雪琪)的不同批次全会误登记(44755 实录)。
     """
     import json as _json
 
     if not (title or "").strip():
         return False
 
-    # ---- 内存缓存: (id, title, source_serial, source_serials 原文) 快照 ----
+    # ---- 内存缓存: (id, title, source_serial, source_serials 原文, 张数) ----
     global _title_cache_data, _title_cache_at
     now = time.monotonic()
     with _title_cache_lock:
         if now - _title_cache_at > 60 or _title_cache_data is None:
-            _title_cache_data = s.execute(
-                select(Collection.id, Collection.title, Collection.source_serial,
-                       Collection.source_serials)
-                .where(Collection.source_serial.is_not(None))).all()
+            counts = dict(s.execute(
+                select(Photo.collection_id, func.count(Photo.id))
+                .group_by(Photo.collection_id)).all())
+            _title_cache_data = [
+                (cid, col_title, col_serial, raw_serials, counts.get(cid))
+                for cid, col_title, col_serial, raw_serials in s.execute(
+                    select(Collection.id, Collection.title,
+                           Collection.source_serial, Collection.source_serials)
+                    .where(Collection.source_serial.is_not(None))).all()]
             _title_cache_at = now
         snapshot = _title_cache_data
 
@@ -237,8 +245,8 @@ def _register_serial_title(s: Session, serial: int, title: str) -> bool:
         except (ValueError, TypeError):
             return []
 
-    for cid, col_title, col_serial, raw_serials in snapshot:
-        if not titles_match(title, col_title):
+    for cid, col_title, col_serial, raw_serials, col_photos in snapshot:
+        if not title_matches_collection(title, col_title, col_photos):
             continue
         known = {col_serial, *_load(raw_serials)}
         known.discard(None)

@@ -66,6 +66,7 @@ def _migrate() -> None:
     _backfill_source_serial()
     _backfill_cross_site_serials()
     _repair_cross_site_serials()
+    _purge_generic_series_serials()
     _fix_url_unsafe_slugs()
 
 
@@ -211,10 +212,10 @@ def _backfill_cross_site_serials() -> None:
     """
     import json
 
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
-    from .db import Collection, HarvestHistory
-    from .services.harvest.titlematch import titles_match
+    from .db import Collection, HarvestHistory, Photo
+    from .services.harvest.titlematch import title_matches_collection
 
     s = SessionLocal()
     try:
@@ -226,11 +227,16 @@ def _backfill_cross_site_serials() -> None:
         hist = s.scalars(select(HarvestHistory)).all()
         if not hist:
             return
+        counts = dict(s.execute(
+            select(Photo.collection_id, func.count(Photo.id))
+            .group_by(Photo.collection_id)).all())
         fixed = 0
         for col in cols:
             own = {col.source_serial}
             extra = [h.serial for h in hist
-                     if h.serial not in own and titles_match(h.title, col.title)]
+                     if h.serial not in own
+                     and title_matches_collection(h.title, col.title,
+                                                  counts.get(col.id))]
             if not extra:
                 # 无跨站序号也要落个空数组, 避免每次启动重跑全量比对
                 col.source_serials = json.dumps([])
@@ -258,10 +264,10 @@ def _repair_cross_site_serials() -> None:
     """
     import json
 
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
-    from .db import Collection, HarvestHistory, Setting
-    from .services.harvest.titlematch import titles_match
+    from .db import Collection, HarvestHistory, Photo, Setting
+    from .services.harvest.titlematch import title_matches_collection
 
     s = SessionLocal()
     try:
@@ -272,6 +278,9 @@ def _repair_cross_site_serials() -> None:
         fixed = 0
         cols = s.scalars(select(Collection).where(
             Collection.source_serial.is_not(None))).all()
+        counts = dict(s.execute(
+            select(Photo.collection_id, func.count(Photo.id))
+            .group_by(Photo.collection_id)).all())
         others = [(c.id, c.source_serial, c.title) for c in cols]
         for col in cols:
             try:
@@ -281,11 +290,13 @@ def _repair_cross_site_serials() -> None:
                 known = {col.source_serial}
             extra = sorted({serial for _cid, serial, title in others
                             if serial not in known and serial is not None
-                            and titles_match(title, col.title)}
+                            and title_matches_collection(
+                                title, col.title, counts.get(col.id))}
                            | {h.serial for h in s.scalars(
                                select(HarvestHistory).where(
                                    HarvestHistory.serial.not_in(known))).all()
-                              if titles_match(h.title, col.title)})
+                              if title_matches_collection(
+                                  h.title, col.title, counts.get(col.id))})
             if extra:
                 col.source_serials = json.dumps(sorted(known | set(extra)))
                 fixed += 1
@@ -296,6 +307,78 @@ def _repair_cross_site_serials() -> None:
     except Exception:
         s.rollback()
         logging.getLogger("photobook").exception("cross-site serial repair failed")
+    finally:
+        s.close()
+
+
+def _purge_generic_series_serials() -> None:
+    """一次性修复:泛化系列标题误登记的跨站序号,从 source_serials 清除(44755 实录)。
+
+    旧版跨站登记只做文本等价比对,入库 title 又不带「(N photos)」尾缀,
+    泛化系列标题(同模特同角色名,如「[AI Generated] 诛仙-陆雪琪」)的
+    不同批次写真全部被吸进同一个 source_serials —— 油猴脚本在那批写真
+    上永远显示「已入库」,永不下载。现按新判据(真实张数守卫)重放每个
+    source_serials 里的序号:标题等价但张数不等(或文本不再等价)的序号
+    移除;移除后重算回补(漏登记的还能补进来)。幂等标记防重跑。
+    """
+    import json
+
+    from sqlalchemy import func, select
+
+    from .db import Collection, HarvestHistory, Photo, Setting
+    from .services.harvest.titlematch import title_matches_collection
+
+    s = SessionLocal()
+    try:
+        if s.get(Setting, "backfill.cross_site_v3") is not None:
+            return
+        s.add(Setting(key="backfill.cross_site_v3", value="1"))
+        s.commit()
+        cols = s.scalars(select(Collection).where(
+            Collection.source_serial.is_not(None))).all()
+        if not cols:
+            return
+        counts = dict(s.execute(
+            select(Photo.collection_id, func.count(Photo.id))
+            .group_by(Photo.collection_id)).all())
+        hist_titles = dict(s.execute(
+            select(HarvestHistory.serial, HarvestHistory.title)).all())
+        cleaned = 0
+        for col in cols:
+            raw = col.source_serials
+            if not raw:
+                continue
+            try:
+                serials = [x for x in json.loads(raw) if x is not None]
+            except (ValueError, TypeError):
+                continue
+            if not serials:
+                continue
+            col_photos = counts.get(col.id)
+            kept, dropped = [], []
+            for serial in serials:
+                title = hist_titles.get(serial)
+                # history 无行的序号:当初由其他 collection 的 source_serial
+                # 反向登记(同判据文本等价)。没有标题可比,保守保留 ——
+                # 新登记通道已带张数守卫,不再产生新污染。
+                if title is None or title_matches_collection(
+                        title, col.title, col_photos):
+                    kept.append(serial)
+                else:
+                    dropped.append(serial)
+            if dropped:
+                log = logging.getLogger("photobook")
+                log.info("purged polluted cross-site serials %s from %s (kept %s)",
+                         dropped, col.slug, kept)
+                col.source_serials = json.dumps(sorted(set(kept)))
+                cleaned += 1
+        s.commit()
+        if cleaned:
+            logging.getLogger("photobook").info(
+                "purged generic-series serials on %d collections", cleaned)
+    except Exception:
+        s.rollback()
+        logging.getLogger("photobook").exception("generic-series purge failed")
     finally:
         s.close()
 

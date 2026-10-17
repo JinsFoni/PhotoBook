@@ -13,15 +13,15 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from pathlib import Path
 
 from .. import media, settings_store
-from ...db import Collection, HarvestHistory, HarvestJob
+from ...db import Collection, HarvestHistory, HarvestJob, Photo
 from ...database import SessionLocal
 from . import net, pipeline
 from .filters import check_title
-from .titlematch import titles_match
+from .titlematch import photo_count, title_matches_collection, titles_match
 
 log = logging.getLogger("harvest")
 
@@ -104,11 +104,18 @@ def _link_cross_site_serials(s, col) -> None:
       —— history 只记本服务采集过的,用户早前手动导入的不在里面)。
 
     与 database._backfill_cross_site_serials 同一判据;那次管存量,
-    这次管新增。失败只记日志,不阻断入库。
+    这次管新增。比对带真实张数守卫(title_matches_collection)—— 入库
+    title 不带「(N photos)」尾缀,纯文本等价会把泛化系列标题(同模特
+    同角色名)的不同批次全吸进 source_serials(44755 实录)。
+    失败只记日志,不阻断入库。
     """
     import json
 
+    from .titlematch import title_matches_collection
+
     try:
+        col_photos = s.scalar(select(func.count(Photo.id)).where(
+            Photo.collection_id == col.id))
         known = {col.source_serial}
         try:
             known |= set(json.loads(col.source_serials or "[]"))
@@ -119,14 +126,20 @@ def _link_cross_site_serials(s, col) -> None:
                 select(HarvestHistory.serial, HarvestHistory.title)).all():
             if serial in known:
                 continue
-            if titles_match(title, col.title):
+            # history 标题带源站张数尾缀 → 用真实张数守卫
+            if title_matches_collection(title, col.title, col_photos):
                 extra.append(serial)
-        for serial, other_title in s.execute(
-                select(Collection.source_serial, Collection.title).where(
-                    Collection.source_serial.is_not(None))).all():
+        for serial, other_title, other_photos in s.execute(
+                select(Collection.source_serial, Collection.title,
+                       func.count(Photo.id))
+                .outerjoin(Photo, Photo.collection_id == Collection.id)
+                .where(Collection.source_serial.is_not(None))
+                .group_by(Collection.id, Collection.source_serial,
+                          Collection.title)).all():
             if serial in known:
                 continue
-            if titles_match(other_title, col.title):
+            # 双方 title 都无张数尾缀(目录名互比)→ 退回纯文本判定
+            if title_matches_collection(other_title, col.title, col_photos):
                 extra.append(serial)
         if extra:
             col.source_serials = json.dumps(sorted(known | set(extra)))
@@ -268,9 +281,14 @@ def _run_job(job_id: int) -> None:
         #    source_serials(如其他站是早期/手动导入,history 无行)。
         #    slug 是各站标题的直接 slug 化,尾缀写法不同必不等 → 用标题
         #    等价比对兜底;命中即把本站序号补登记,任务标 exists,不白下。
+        #    比对带真实张数守卫:target.title 带源站「(N photos)」尾缀,
+        #    库内 title 没有 —— 泛化系列标题的不同批次不能误判 exists
+        #    (否则该批次永远不被下载, 44755 实录)。
         for c in s.scalars(select(Collection).where(
                 Collection.source_serial.is_not(None))).all():
-            if not titles_match(target.title, c.title):
+            c_photos = s.scalar(select(func.count(Photo.id)).where(
+                Photo.collection_id == c.id))
+            if not title_matches_collection(target.title, c.title, c_photos):
                 continue
             import json as _json
             try:
