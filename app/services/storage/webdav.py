@@ -64,6 +64,8 @@ class WebDavBackend:
         folder = _upload_folder(st.root_dir, remote_folder)
         # 网盘驱动(115 等)偶发对瞬时高频 PUT 返回 405/429/5xx,
         # 退避重试两次,避免单张抖动让整个任务失败(断点续传会跳过已成功的)。
+        # 网络异常(超时/连接中断,如实测容器重启瞬间)同样可重试 —— 否则
+        # 一次抖动就把整个任务判死, 断点续传失去意义。
         last: httpx.Response | None = None
         for attempt in range(3):
             if attempt:
@@ -71,8 +73,15 @@ class WebDavBackend:
             with _client(st) as client:
                 if attempt == 0:
                     _mkcol_all(client, folder)
-                last = client.put(_dav_path(st.root_dir, remote_folder, filename),
-                                  content=data)
+                try:
+                    last = client.put(_dav_path(st.root_dir, remote_folder, filename),
+                                      content=data)
+                except httpx.HTTPError:
+                    if attempt == 2:
+                        raise
+                    log.warning("webdav upload %s network error (attempt %d), retrying",
+                                filename, attempt + 1)
+                    continue
             if last.status_code in (200, 201, 204):
                 # WebDAV 不会改文件名, 返回 root/relative 约定路径
                 return "/".join(p for p in (_upload_folder(st.root_dir, remote_folder),

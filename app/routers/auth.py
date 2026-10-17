@@ -46,32 +46,40 @@ async def set_language(request: Request, lang: str = Form(""), next: str = Form(
 
 
 def _login_cover(s) -> dict:
-    """随机挑一张已发布写真的照片做登录页背景。
+    """随机挑几本已发布写真做登录页散落墙, 前端每 3s 轮换一套。
 
-    只取标量列(合集 id/标题/照片文件名), 绝不 joinedload 全库照片 ——
+    只取标量列(合集 id/照片文件名), 绝不 joinedload 全库照片 ——
     那会把 2.5 万张 Photo 拖成 ORM 对象, 登录页 TTFB 2s+(实测)。
+    首套随 HTML 直出(无 JS 也有完整画面), 其余套进 JSON 由脚本轮换。
     """
+    import json
+
     from sqlalchemy import func
 
     from ..db import Photo
+    from ..services.media import thumb_url
     rows = s.execute(
-        select(Collection.id, Collection.title, Model.name, func.count(Photo.id))
+        select(Collection.id)
         .join(Photo, Photo.collection_id == Collection.id)
-        .outerjoin(Model, Collection.model_id == Model.id)
         .where(Collection.status == "published")
-        .group_by(Collection.id, Collection.title, Model.name)
-        .having(func.count(Photo.id) >= 3)).all()
-    if not rows:
+        .group_by(Collection.id)
+        .having(func.count(Photo.id) >= 8)).all()
+    cids = [r[0] for r in rows]
+    if not cids:
         return {}
-    cid, title, model_name, n = random.choice(rows)
-    p = s.scalar(select(Photo.filename).where(Photo.collection_id == cid)
-                 .order_by(Photo.sort_order).offset(2).limit(1))
-    if not p:
+    random.shuffle(cids)
+    sets: list[list[str]] = []
+    for cid in cids[:5]:
+        files = s.scalars(
+            select(Photo.filename).where(Photo.collection_id == cid)
+            .order_by(Photo.sort_order).limit(4)).all()
+        if len(files) >= 4:
+            sets.append([thumb_url(f.lstrip("/"), 900, short=True) for f in files])
+    if len(sets) < 2:
         return {}
     return {
-        "login_cover": p,
-        "login_title": title,
-        "login_meta": t("{n} photos · {m}", n=n, m=model_name or t("未分类")),
+        "login_shots": sets[0],
+        "login_sets_json": json.dumps(sets, ensure_ascii=False),
     }
 
 

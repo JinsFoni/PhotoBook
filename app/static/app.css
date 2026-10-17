@@ -1187,64 +1187,91 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 }
 
 /* ---------- 12. Login --------------------------------------------------- */
-
+/* 整页散落照片墙: 无标题, 表单浮在玻璃层上, 垫底随虚化主题 */
 .login {
   min-height: 100vh;
-  display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
+  position: relative;
+  overflow: hidden;
 }
 
-.login__visual {
-  position: relative;
-  background: var(--void);
-  overflow: hidden;
-  min-height: 100vh;
+.login__wall {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
 }
-.login__visual img {
+/* 顶部压暗纱: 顶栏 wordmark/主题钮在三种主题下都可读 */
+.login__wall::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 130px;
+  z-index: 1;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent);
+  pointer-events: none;
+}
+.login__shot {
+  position: absolute;
+  margin: 0;
+  width: clamp(180px, 24vw, 320px);
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 6px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+  /* 散落感: 各自固定倾角 + 依次入场; img 静止承载滤镜, 动画全在外层 */
+  transform: rotate(var(--tilt, 0deg));
+  opacity: 0;
+  animation: login-shot-in 700ms var(--ease) forwards;
+  animation-delay: calc(var(--i) * 90ms);
+}
+@keyframes login-shot-in {
+  from { opacity: 0; transform: rotate(var(--tilt, 0deg)) translateY(26px) scale(0.97); }
+  to   { opacity: 1; transform: rotate(var(--tilt, 0deg)) translateY(0) scale(1); }
+}
+.login__shot img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center;
+  display: block;
 }
-.login__visual-caption {
-  position: absolute;
-  left: var(--s6);
-  right: var(--s6);
-  bottom: var(--s6);
-  z-index: 2;
-  color: #fff;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--s4);
-  text-shadow: 0 1px 24px rgba(0, 0, 0, 0.5);
-}
-.login__visual::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0) 46%);
-}
+/* 轮换层: 新图绝对定位盖在旧图上交叉淡入(figure 本身已是定位上下文) */
+/* 四张的散点布局: 左右两翼各两张, 中央整块让位给居中登录框;
+   --i/--tilt 由模板按序号注入(下面 nth-child 只管定位) */
+.login__shot--1 { left: 5%;  top: 9%;  --tilt: -5deg; }
+.login__shot--2 { left: 17%; bottom: 9%; --tilt: 3deg; }
+.login__shot--3 { right: 5%; top: 9%;  --tilt: 4deg; }
+.login__shot--4 { right: 16%; bottom: 9%; --tilt: -2deg; }
 
 .login__panel {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   padding: var(--s6) var(--pad) var(--s7);
+  /* 表单侧压暗渐变: 左透右暗, 保证玻璃层下文字对比度 */
+  background: linear-gradient(100deg, transparent 30%, rgba(0, 0, 0, 0.42) 68%);
 }
 .login__top {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
+/* 玻璃层: 毛玻璃托住表单, 散落图在背后透出来(居中) */
 .login__form-wrap {
-  margin: auto 0;
+  margin: auto;
   width: 100%;
   max-width: 400px;
+  padding: var(--s6);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--paper) 72%, transparent);
+  backdrop-filter: blur(22px) saturate(1.15);
+  -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
 }
-.login__title { margin-bottom: var(--s3); }
-.login__note { margin-bottom: var(--s7); color: var(--ink-2); font-size: var(--fs-meta); }
+.login__note { margin-bottom: var(--s6); color: var(--ink-2); font-size: var(--fs-meta); }
 .login__row {
   display: flex;
   align-items: center;
@@ -1258,14 +1285,43 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   color: var(--ink-3);
   padding-top: var(--s5);
   border-top: 1px solid var(--line);
-  margin-top: var(--s7);
+  margin-top: var(--s6);
+}
+/* wordmark/主题钮浮在照片墙上: 固定白色, 可读性由 wall 顶部压暗纱保证 */
+.login__top .wordmark,
+.login__top .icon-btn {
+  color: #fff;
+}
+.login__top .icon-btn { text-shadow: 0 1px 18px rgba(0, 0, 0, 0.65); }
+
+/* 中等宽度: 照片收窄并更靠边, 给居中表单让出通道 */
+@media (max-width: 1440px) and (min-width: 981px) {
+  .login__shot {
+    width: clamp(170px, 20vw, 250px);
+  }
+  .login__shot--1 { left: -2%; }
+  .login__shot--2 { left: 7%; }
+  .login__shot--3 { right: -2%; }
+  .login__shot--4 { right: 6%; }
 }
 
 @media (max-width: 980px) {
-  .login { grid-template-columns: 1fr; }
-  .login__visual { min-height: 34vh; }
-  .login__panel { padding-inline: var(--pad); }
-  .login__form-wrap { margin-top: var(--s7); }
+  /* 窄屏: 照片墙退成顶部两张, 表单占下方 */
+  .login { min-height: 100svh; }
+  .login__shot {
+    width: clamp(140px, 40vw, 220px);
+  }
+  .login__shot--3, .login__shot--4 { display: none; }
+  .login__shot--1 { left: -4%; top: 4%; }
+  .login__shot--2 { left: auto; right: -6%; bottom: auto; top: 8%; }
+  .login__panel {
+    background: none;
+    padding-inline: var(--pad);
+  }
+  .login__form-wrap {
+    margin: auto;
+    padding: var(--s5);
+  }
 }
 
 /* ---------- 13. Hero + contact sheet ------------------------------------ */
