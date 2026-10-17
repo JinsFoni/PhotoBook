@@ -128,7 +128,7 @@ def _blur_src(request: Request) -> str | None:
     整个合集的照片拖成 ORM 对象。请求内缓存: base.html 同时渲染
     blur_src_json 和 boot_json(内部也调这里), 一页只算一次。
     """
-    cached = getattr(request.state, "_blur_src", None)
+    cached = getattr(request.state, "_blur_src", _SENTINEL)
     if cached is not _SENTINEL:
         return cached
     path = request.url.path

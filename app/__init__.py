@@ -4,4 +4,4 @@
 内嵌串行采集 Worker。架构见 docs/architecture.md。
 """
 
-__version__ = "1.7.6"
+__version__ = "1.7.7"
