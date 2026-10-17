@@ -300,6 +300,57 @@ def test_status_by_url_requires_urls(ext_key, client):
     assert r.status_code == 422
 
 
+MISSKON_OLD_URL = "https://misskon.com/jp-sena-natsuki-nai-yue-senaism-79-photos/"
+
+
+def _mock_misskon_postid(monkeypatch):
+    """老帖序号来自页面 body 的 postid-N;测试里屏蔽真实网络。"""
+    from app.services.harvest import net
+    monkeypatch.setattr(net, "fetch_html",
+                        lambda url, **kw:
+                        '<body class="single postid-85932"></body>')
+
+
+def test_status_by_url_title_registers_cross_site_serial(ext_key, client, monkeypatch):
+    """老帖(无序号 URL)通道同样做标题比对:状态 new 且标题等价 → 登记 + done。
+
+    misskon 老帖卡片本地取不到序号,status-by-url 是它唯一的登记通道;
+    不带 titles 的旧请求照常只按序号判态(向后兼容由旧用例覆盖)。
+    """
+    _mock_misskon_postid(monkeypatch)
+    _mk_collection_with_title(43940, "ext-cross-album-9",
+                              "[JP] Sena Natsuki (奈月セナ) - Senaism")
+    try:
+        r = client.post("/api/ext/status-by-url", headers=H(ext_key),
+                        json={"urls": [MISSKON_OLD_URL],
+                              "titles": {MISSKON_OLD_URL:
+                                         "[JP] Sena Natsuki (奈月セナ): Senaism (79 photos)"}})
+        item = r.json()["items"][0]
+        assert item["serial"] == 85932, item
+        assert item["state"] == "done", item
+        # 登记生效: 纯序号查询(GET 旧入口)也命中
+        r2 = client.get("/api/ext/status?serials=85932", headers=H(ext_key))
+        assert r2.json()["items"][0]["state"] == "done"
+    finally:
+        _rm_collection("ext-cross-album-9")
+
+
+def test_status_by_url_title_no_false_positive(ext_key, client, monkeypatch):
+    """老帖标题比对不上(非同一本)→ 不登记,照常返回 new。"""
+    _mock_misskon_postid(monkeypatch)
+    _mk_collection_with_title(43940, "ext-cross-album-10",
+                              "[JP] Sena Natsuki (奈月セナ) - SILK of the MOON")
+    try:
+        r = client.post("/api/ext/status-by-url", headers=H(ext_key),
+                        json={"urls": [MISSKON_OLD_URL],
+                              "titles": {MISSKON_OLD_URL:
+                                         "[JP] Sena Natsuki (奈月セナ): Senaism (79 photos)"}})
+        item = r.json()["items"][0]
+        assert item == {"url": MISSKON_OLD_URL, "serial": 85932, "state": "new"}, item
+    finally:
+        _rm_collection("ext-cross-album-10")
+
+
 def test_status_deleted_collection_becomes_new(ext_key, client):
     """历史 done 但合集已删 → 可重新下载(不是已入库)。"""
     _hist(9990003, "done")

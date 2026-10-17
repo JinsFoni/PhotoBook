@@ -280,6 +280,9 @@ async def status_api_v2(body: StatusBody, s: Session = Depends(require_key)):
 
 class StatusByUrlBody(BaseModel):
     urls: list[str]
+    # url → 页面标题(可选)。老帖通道与 /status v2 同源:状态 new 且标题
+    # 与已入库写真等价 → 登记进 source_serials 并返回 done。
+    titles: dict[str, str] = {}
 
 
 # ---- PikPak(油猴脚本 PikPak to PhotoBook)-----------------------------------
@@ -341,6 +344,10 @@ async def status_by_url(body: StatusByUrlBody, s: Session = Depends(require_key)
     只能把 URL 交给服务端:序号能解析的按序号判态,解析不出的回
     state=new + serial=null(脚本照常显示「下载」,点了推送时再由
     /harvest 从 URL 解析)。
+
+    脚本 1.6.0 起随 urls 带上 titles(url → 页面标题):状态 new 且
+    标题与已入库写真等价 → 登记进 source_serials 并返回 done(老帖
+    列表页卡片取不到序号,这是它们唯一的登记通道)。
     """
     urls = [u.strip() for u in (body.urls or []) if u.strip()][:MAX_SERIALS]
     if not urls:
@@ -352,8 +359,12 @@ async def status_by_url(body: StatusByUrlBody, s: Session = Depends(require_key)
         except ValueError:
             items.append({"url": url, "serial": None, "state": "new"})
             continue
-        items.append({"url": url, "serial": serial,
-                      "state": state_for_serial(s, serial)})
+        state = state_for_serial(s, serial)
+        if state == "new" and (body.titles.get(url) or "").strip():
+            # 登记成功 → 本写真确认已在库(标题等价)
+            if _register_serial_title(s, serial, body.titles[url]):
+                state = "done"
+        items.append({"url": url, "serial": serial, "state": state})
     return {"items": items}
 
 

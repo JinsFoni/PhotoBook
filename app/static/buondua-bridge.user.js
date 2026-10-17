@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua/misskon/nicesss → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.5.0
+// @version      1.6.0
 // @description  在 buondua.com / misskon.com / nicesss.com 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列(同一本写真跨站转载也判已入库)
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -377,10 +377,24 @@
   }
 
   // 老帖通道: POST /api/ext/status-by-url 让服务端按 URL 解析序号并判态。
+  // 请求带 titles(url → 页面标题): 状态 new 且标题与已入库写真等价时,
+  // 服务端登记序号并返回 done —— 老帖列表页卡片取不到序号, 这是唯一登记通道。
   // 返回的 serial 同时回填徽标(后续轮询就能按序号查, 不再走这条通道)。
   function resolveUnknown(urls, cards) {
+    const titles = {};
+    urls.forEach(u => {
+      if (u === location.href) {
+        titles[u] = detailTitle();
+        return;
+      }
+      const card = cards.find(c => {
+        const a = c.querySelector("a[href*='://misskon.com/']");
+        return a && a.href === u;
+      });
+      if (card) titles[u] = cardTitle(card);
+    });
     api("POST", "/api/ext/status-by-url",
-      { urls: urls },
+      { urls: urls, titles: titles },
       function (ok, data) {
         if (!ok || !data || !data.items) return;
         const byUrl = {};
