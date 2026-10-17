@@ -2111,21 +2111,13 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .lightbox[data-zoom="true"] .lightbox__under { opacity: 0 !important; }
 
 /* ---------- 灯箱全屏态(:fullscreen 元素即 .lightbox) ----------------------
-   布局与普通态一致: 顶/底栏本来就悬浮在图上, stage 占满视口, 照片 contain
-   适配不裁切。全屏仅改背景为纯黑(去虚化毛玻璃)并隐藏底部进度条;
-   垫底层与放大模式同理隐藏 */
+   纯观影模式: 顶栏(标题/封面/头像/关闭)、底栏(计数/全屏/氛围/收藏/下载)、
+   左右箭头全部隐藏, 只剩画面本身 —— 键盘 ←/→ 切图、Esc 退出;
+   全屏仅另改背景为纯黑(去虚化毛玻璃)并隐藏底部进度条 */
 .lightbox:fullscreen { background: #000; backdrop-filter: none; -webkit-backdrop-filter: none; }
-/* 全屏底为纯黑, 栏字色走白字投影(与 blur 模式同配方) */
-.lightbox:fullscreen .lightbox__title,
-.lightbox:fullscreen .lightbox__counter,
-.lightbox:fullscreen .lightbox__nav,
-.lightbox:fullscreen .icon-btn,
-.lightbox:fullscreen .fav,
-.lightbox:fullscreen .btn--ghost { color: rgba(255, 255, 255, 0.94); text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45); }
-.lightbox:fullscreen .icon-btn:hover,
-.lightbox:fullscreen .fav:hover,
-.lightbox:fullscreen .lightbox__nav:hover { color: #ffffff; }
-.lightbox:fullscreen .fav[aria-pressed="true"] { color: var(--accent); }
+.lightbox:fullscreen .lightbox__bar,
+.lightbox:fullscreen .lightbox__foot,
+.lightbox:fullscreen .lightbox__nav { display: none; }
 /* 全屏下隐藏底部进度条 */
 .lightbox:fullscreen .lightbox__progress { display: none; }
 /* 全屏下铺满即裁切, 垫底层含图会从裁切边缘穿帮, 隐藏 */

@@ -921,9 +921,9 @@ window.PC = (function () {
   }
 
   /* ---------- 灯箱全屏 -----------------------------------------------------
-     浏览器 Fullscreen API 作用于灯箱元素本身;全屏态顶/底栏改悬浮在图上
-     (图铺满视口, 栏不能还在顶部压出一行)。退出途径: 按钮、Esc/F11 原生
-     退出、关灯箱 —— fullscreenchange 里统一刷新按钮态 */
+     浏览器 Fullscreen API 作用于灯箱元素本身;全屏为纯观影模式, 顶/底栏与
+     箭头由 CSS :fullscreen 隐藏。退出途径: Esc/F11 原生退出、关灯箱
+     —— fullscreenchange 里统一刷新按钮态 */
   function fullscreenEl() {
     return document.fullscreenElement;
   }
