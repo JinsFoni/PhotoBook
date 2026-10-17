@@ -101,8 +101,10 @@ def _model_payload(s: Session, m: Model, collections: list[Collection] | None = 
                    counts: dict[int, int] | None = None) -> dict:
     works = collections if collections is not None else m.collections
     photo_count = sum((counts or {}).get(c.id, 0) for c in works)
-    # 最新活动日期:作品集里最新的发布日期(模特页「排序:最新」用)
-    latest = max((c.published_at or "" for c in works), default="")
+    # 模特页「排序:最新」= 最新作品的入库日期(与写真列表「最新入库」同语义),
+    # 不是源站发布日期 —— 刚入库的老作品模特也应排前
+    _latest = max((c.created_at for c in works if c.created_at), default=None)
+    latest = _latest.date().isoformat() if _latest else ""
     # 头像兜底:没设头像时用第一张合集封面
     avatar = m.avatar_path
     if not avatar:

@@ -31,8 +31,8 @@
     <span class="filters__count num" data-count></span>
 
     <select class="select" data-f-sort aria-label="{{ t('Sort') }}">
+      <option value="latest" selected>{{ t('Sort: Latest') }}</option>
       <option value="featured">{{ t('Sort: Recommended') }}</option>
-      <option value="latest">{{ t('Sort: Latest') }}</option>
       <option value="name">{{ t('Sort: Name') }}</option>
     </select>
 
@@ -60,7 +60,7 @@
   var D = window.PB_DATA;
   var grid = document.querySelector("[data-grid]");
   var empty = document.querySelector("[data-empty]");
-  var f = { name: D.filters.q || "", gender: D.filters.gender || "", tag: D.filters.tag || "", agency: D.filters.agency || "", sort: "featured" };
+  var f = { name: D.filters.q || "", gender: D.filters.gender || "", tag: D.filters.tag || "", agency: D.filters.agency || "", sort: "latest" };
 
   /* ---- 虚拟化常量(与 /collections 及 CSS 严格同步) ----------------------
      列数: >1180px 为 6, ≤1180px 为 3; 手机 760px 以下 CSS 整体降级全量渲染。
@@ -282,7 +282,7 @@
   document.querySelector("[data-f-sort]").addEventListener("change", function (e) { f.sort = e.target.value; render(); });
   document.querySelectorAll("[data-f-reset]").forEach(function (b) {
     b.addEventListener("click", function () {
-      f = { name: "", gender: "", tag: "", agency: "", sort: "featured" };
+      f = { name: "", gender: "", tag: "", agency: "", sort: "latest" };
       document.querySelector("[data-f-name]").value = "";
       document.querySelector("[data-f-gender]").value = "";
       tagSel.value = ""; agencySel.value = "";

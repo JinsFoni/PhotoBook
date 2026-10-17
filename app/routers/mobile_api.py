@@ -222,7 +222,9 @@ def _model_payload(s: Session, m: Model, collections: list[Collection] | None = 
                    counts: dict[int, int] | None = None) -> dict:
     works = collections if collections is not None else m.collections
     photo_count = sum((counts or {}).get(c.id, 0) for c in works)
-    latest = max((c.published_at or "" for c in works), default="")
+    # 与 web 端 _model_payload 对齐: latest = 最新作品的入库日期(非源站发布日期)
+    _latest = max((c.created_at for c in works if c.created_at), default=None)
+    latest = _latest.date().isoformat() if _latest else ""
     avatar = m.avatar_path
     if not avatar:  # 头像兜底:封面照片(不拖全 photos)
         for c in works:
