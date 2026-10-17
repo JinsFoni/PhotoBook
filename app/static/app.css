@@ -1238,10 +1238,11 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 /* 轮换层: 新图绝对定位盖在旧图上交叉淡入(figure 本身已是定位上下文) */
 /* 四张的散点布局: 左右两翼各两张, 中央整块让位给居中登录框;
    --i/--tilt 由模板按序号注入(下面 nth-child 只管定位) */
-.login__shot--1 { left: 5%;  top: 9%;  --tilt: -5deg; }
-.login__shot--2 { left: 17%; bottom: 9%; --tilt: 3deg; }
-.login__shot--3 { right: 5%; top: 9%;  --tilt: 4deg; }
-.login__shot--4 { right: 16%; bottom: 9%; --tilt: -2deg; }
+/* 左右两翼刻意不对称: 左侧一上一下贴角, 右侧两张错落中段/贴边, 避免镜像感 */
+.login__shot--1 { left: 5%;  top: 9%;      --tilt: -5deg; }
+.login__shot--2 { left: 17%; bottom: 9%;   --tilt: 3deg; }
+.login__shot--3 { right: 16%; top: 6%;     --tilt: 5deg; }
+.login__shot--4 { right: 4%; bottom: 5%;  --tilt: -4deg; }
 
 .login__panel {
   position: relative;
@@ -1250,8 +1251,9 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   display: flex;
   flex-direction: column;
   padding: var(--s6) var(--pad) var(--s7);
-  /* 表单侧压暗渐变: 左透右暗, 保证玻璃层下文字对比度 */
-  background: linear-gradient(100deg, transparent 30%, rgba(0, 0, 0, 0.42) 68%);
+  /* 表单侧轻度压暗: 渐变止于中部登录框一带, 右翼照片保持明亮 */
+  background: linear-gradient(100deg, transparent 34%, rgba(0, 0, 0, 0.22) 60%,
+                              rgba(0, 0, 0, 0.08) 78%, transparent 96%);
 }
 .login__top {
   display: flex;
@@ -1301,8 +1303,8 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   }
   .login__shot--1 { left: -2%; }
   .login__shot--2 { left: 7%; }
-  .login__shot--3 { right: -2%; }
-  .login__shot--4 { right: 6%; }
+  .login__shot--3 { right: 9%; top: 12%; }
+  .login__shot--4 { right: 2%; bottom: 6%; }
 }
 
 @media (max-width: 980px) {

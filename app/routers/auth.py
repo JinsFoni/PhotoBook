@@ -57,7 +57,7 @@ def _login_cover(s) -> dict:
     from sqlalchemy import func
 
     from ..db import Photo
-    from ..services.media import thumb_url
+    from ..services.media import thumb_url, _cache_path
     rows = s.execute(
         select(Collection.id)
         .join(Photo, Photo.collection_id == Collection.id)
@@ -73,8 +73,14 @@ def _login_cover(s) -> dict:
         files = s.scalars(
             select(Photo.filename).where(Photo.collection_id == cid)
             .order_by(Photo.sort_order).limit(4)).all()
-        if len(files) >= 4:
-            sets.append([thumb_url(f.lstrip("/"), 900, short=True) for f in files])
+        if len(files) < 4:
+            continue
+        # 登录页图不回源: 只挑 s900 档已在磁盘缓存的图, 缺档的照片整本跳过
+        # (没预热过的图会 404, onerror 隐藏后右侧照片就空了)。
+        urls = [thumb_url(f.lstrip("/"), 900, short=True) for f in files
+                if _cache_path(900, None, 78, f.lstrip("/"), short=True).is_file()]
+        if len(urls) >= 4:
+            sets.append(urls[:4])
     if len(sets) < 2:
         return {}
     return {
@@ -100,7 +106,9 @@ async def login_page(request: Request):
         ctx = _login_ctx(s)
     finally:
         s.close()
-    return templates.TemplateResponse(request, "login.html", {"error": None, "username": "", **ctx})
+    return templates.TemplateResponse(request, "login.html", {
+        "error": None, "username": "",
+        "login_shots": [], "login_sets_json": "[]", **ctx})
 
 
 @router.post("/login")
@@ -125,8 +133,9 @@ async def login_submit(request: Request, username: str = Form(""), password: str
         ctx = _login_ctx(s2)
     finally:
         s2.close()
-    return templates.TemplateResponse(request, "login.html",
-                                      {"error": error, "username": username, **ctx}, status_code=401)
+    return templates.TemplateResponse(request, "login.html", {
+        "error": error, "username": username,
+        "login_shots": [], "login_sets_json": "[]", **ctx}, status_code=401)
 
 
 @router.post("/logout")
