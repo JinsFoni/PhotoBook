@@ -30,6 +30,7 @@ class PhotoDownloader @Inject constructor(
 
     fun download(url: String, fileName: String) {
         android.util.Log.w("PhotoDl", "start $url -> $fileName")
+        toast("开始下载…")
         scope.launch {
             runCatching {
                 android.util.Log.w("PhotoDl", "fetching...")
@@ -59,7 +60,18 @@ class PhotoDownloader @Inject constructor(
                 values.clear()
                 values.put(MediaStore.Images.Media.IS_PENDING, 0)
                 resolver.update(uri, values, null, null)
-            }.onFailure { android.util.Log.w("PhotoDl", "FAIL", it) }
+                toast("已保存到相册 Pictures/PhotoBook")
+            }.onFailure {
+                android.util.Log.w("PhotoDl", "FAIL", it)
+                toast("下载失败: ${it.message ?: "未知错误"}")
+            }
+        }
+    }
+
+    /** Toast 须在主线程弹(下载在 IO 线程,统一 post 回主线程)。 */
+    private fun toast(msg: String) {
+        android.os.Handler(context.mainLooper).post {
+            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
