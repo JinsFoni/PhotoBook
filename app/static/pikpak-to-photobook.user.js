@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PikPak to PhotoBook
 // @namespace    photobook.bridge
-// @version      1.3.0
+// @version      1.3.1
 // @description  在 mypikpak.com 勾选文件/文件夹,一键推送到 PhotoBook 任务队列下载入库。勾选的文件夹就是写真集(里面是写真图片),标签第一个作为模特名。修复原脚本分享页文件夹下载 100 条限制。
 // @author       PhotoBook
 // @match        https://mypikpak.com/*
@@ -761,7 +761,7 @@
       bg.prog(0, totalFiles);
 
       resolveLinks(items, function (done, n) {
-        bg.title(`正在解析直链 ${done} / ${n}`);
+        bg.title(`正在解析直链 ${done} / ${n} 个文件…`);
         bg.prog(done, n);
       }).then(function (r) {
         if (!r.items.length) {
@@ -889,52 +889,65 @@
     },
   };
 
-  // 逐个勾选项解析其中每个文件的直链(PikPak 直链带时效, 推送前解析;
-  // 并发 8 平衡速度与限流)。一个勾选项 = 一个 item, files 按相对路径排列。
+  // 逐个文件解析直链(PikPak 直链带时效, 推送前解析; 全局并发 8 平衡
+  // 速度与限流)。一个勾选项 = 一个 item, files 按相对路径排列。
+  // 进度按「文件」回调: 一个勾选项可能含上百个文件, 若按勾选项回调,
+  // 只勾一项时进度条会一直停在 0, 直到全部解析完才跳一次。
   function resolveLinks(items, onProg) {
       const CONC = 8;
-      let i = 0, ok = 0, fail = 0;
-      const total = items.reduce(function (n, it) { return n + it._files.length; }, 0);
+      let doneFiles = 0, ok = 0, fail = 0;
+      const total = items.reduce(function (n, it) {
+        return n + ((it._files && it._files.length) || 0);
+      }, 0);
 
+      // 展平成文件级任务; 结果按 _files 原下标回填, 保持写入顺序。
+      const tasks = [];
+      items.forEach(function (it) {
+        it._links = new Array((it._files || []).length);
+        (it._files || []).forEach(function (f, idx) {
+          tasks.push({ item: it, idx: idx, file: f });
+        });
+      });
+
+      let cursor = 0;
       function worker() {
-        if (i >= items.length) return Promise.resolve();
-        const item = items[i++];
-        if (!item._files.length) return worker();
-        const out = [];
-        let j = 0;
-        return (function next() {
-          if (j >= item._files.length) {
-            if (out.length) {
-              ok++;
-              item.files = out;
-            } else {
-              fail++;
-            }
-            return null;
-          }
-          const f = item._files[j++];
-          return getDownloadLink(f.id).then(function (info) {
-            out.push({
-              file_id: f.id,
-              name: f.name || "pikpak",
-              url: info.web_content_link,
-              rel: f.rel || f.name || f.id,
-              size: parseInt(f.size) || parseInt(info.size) || 0,
-            });
-          }).catch(function (e) {
-            console.warn("[PB] link failed", f && f.name, e);
-          }).then(next);
-        })().then(function () {
-          if (onProg) onProg(ok + fail, total);
+        if (cursor >= tasks.length) return Promise.resolve();
+        const t = tasks[cursor++];
+        const f = t.file;
+        return getDownloadLink(f.id).then(function (info) {
+          t.item._links[t.idx] = {
+            file_id: f.id,
+            name: f.name || "pikpak",
+            url: info.web_content_link,
+            rel: f.rel || f.name || f.id,
+            size: parseInt(f.size) || parseInt(info.size) || 0,
+          };
+        }).catch(function (e) {
+          console.warn("[PB] link failed", f && f.name, e);
+        }).then(function () {
+          doneFiles++;
+          if (onProg) onProg(doneFiles, total);
           return worker();
         });
       }
 
       const ws = [];
-      for (let k = 0; k < CONC; k++) ws.push(worker());
+      for (let k = 0; k < Math.min(CONC, tasks.length); k++) ws.push(worker());
       return Promise.all(ws).then(function () {
-        return { items: items.filter(function (it) { return it.files && it.files.length; }),
-                 ok: ok, fail: fail };
+        const out = [];
+        items.forEach(function (it) {
+          // 失败的文件在 _links 里留空, filter 掉即得到原顺序的直链
+          const files = (it._links || []).filter(Boolean);
+          it._links = null;   // 临时数组不随 item 进入请求体
+          if (files.length) {
+            it.files = files;
+            ok++;
+            out.push(it);
+          } else if ((it._files || []).length) {
+            fail++;
+          }
+        });
+        return { items: out, ok: ok, fail: fail };
       });
   }
 
