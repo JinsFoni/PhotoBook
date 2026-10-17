@@ -91,6 +91,22 @@ class LoginViewModelTest {
         assertFalse(vm2.state.value.addServerMode)
     }
 
+    @Test
+    fun `logged out with existing profile shows address input prefilled with profile host`() =
+        runTest(dispatcher.scheduler) {
+            // 401 强登出/手动登出清了 token 但档案还在:登录页必须带地址输入,
+            // 预填该档案自己的 host(剥 scheme 与 /api/mobile 前缀),
+            // 否则服务器地址变了用户没有任何入口可改
+            val store = FakeSessionStore()
+            store.addProfile("http://10.0.0.5:8000/api/mobile/", "tk", "demo")
+            store.clearSession()
+            val repo = AuthRepository(api, store)
+            val vm2 = LoginViewModel(repo, store)
+            dispatcher.scheduler.advanceUntilIdle()
+            assertTrue(vm2.state.value.addServerMode)
+            assertEquals("10.0.0.5:8000", vm2.state.value.baseUrl)
+        }
+
     /** 真实 IO(OkHttp 线程)+ 虚拟 Main 调度:轮询并持续推进虚拟时间。 */
     private fun waitUntil(cond: () -> Boolean) {
         var waited = 0L

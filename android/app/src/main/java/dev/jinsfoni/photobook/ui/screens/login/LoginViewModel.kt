@@ -47,13 +47,24 @@ class LoginViewModel @Inject constructor(
     val events: SharedFlow<LoginEvent> = _events.asSharedFlow()
 
     init {
-        // 首次使用(无任何服务器档案):登录页直接带地址输入,预填默认地址。
+        // 无有效会话时登录页带地址输入:
+        // - 首次使用(无任何档案): 预填默认地址,登录走 addServer 落档
+        // - 已登出(401 强登出/手动登出清了 token 但档案还在): 预填该档案的
+        //   地址(剥掉 API 前缀只显示 host)——否则登录页只剩用户名/密码,
+        //   服务器地址变了(换 IP/端口/实例)时用户没有任何入口可改。
         // 避免"装好 app 只能连编译期写死的服务器"——地址由用户填,登录走 addServer 落档。
         viewModelScope.launch {
-            if (session.profiles.first().isEmpty()) {
-                _state.value = _state.value.copy(
+            val profiles = session.profiles.first()
+            when {
+                profiles.isEmpty() -> _state.value = _state.value.copy(
                     addServerMode = true,
                     baseUrl = SessionStore.DEFAULT_BASE_URL,
+                )
+                session.currentToken().isBlank() -> _state.value = _state.value.copy(
+                    addServerMode = true,
+                    baseUrl = SessionStore.displayUrl(
+                        (profiles.firstOrNull { it.id == session.activeProfileId.first() }
+                            ?: profiles.first()).baseUrl),
                 )
             }
         }
