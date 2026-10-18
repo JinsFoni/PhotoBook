@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua/misskon/nicesss → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.7.2
+// @version      1.7.3
 // @description  在 buondua.com / misskon.com / nicesss.com 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列(同一本写真跨站转载也判已入库)
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -428,10 +428,6 @@
           byUrl[i.url] = i;
           if (i.serial != null) rememberSerial(i.url, i.serial);
         });
-        // 已解析的并入一起刷徽标
-        known.forEach(u => {
-          if (!byUrl[u]) byUrl[u] = { url: u, serial: resolvedSerial(u), state: null };
-        });
         applyUnknown(byUrl, cards);
       });
   }
@@ -456,6 +452,9 @@
       const item = byUrl[a.href];
       const host = ensureHost(c);
       if (!host) return;
+      // state 为空 = resolveUnknown 对「本次没查状态、只补序号」的 known URL 的兜底项:
+      // 不能重画(会把已有徽标抹成空白), 跳过等下一轮主通道/查询回调来画
+      if (item && item.state == null) return;
       if (!item || item.serial == null) {
         setBadge(host, "", item && item.state ? item.state : "new", null);
         return;
@@ -467,6 +466,7 @@
       const item = byUrl[location.href];
       const host = ensureDetailHost();
       if (!host) return;
+      if (item && item.state == null) return;
       if (!item || item.serial == null) {
         setBadge(host, "", item && item.state ? item.state : "new", null);
       } else {
