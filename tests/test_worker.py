@@ -212,10 +212,14 @@ def test_run_job_cross_site_title_duplicate(monkeypatch, s):
         s.commit()
         worker._run_job(job.id)
         s.expire_all()
-        assert s.get(HarvestJob, job.id).status == "exists"
+        j = s.get(HarvestJob, job.id)
+        assert j.status == "exists"
         assert calls == []                      # 没下载
         row = s.get(Collection, c.id)
         assert 980003 in json.loads(row.source_serials)   # 序号已登记
+        # 任务行可见的去重说明: 指向已入库的写真集
+        assert j.collection_slug == "workermodel-worker-import-album-x2"
+        assert "已入库" in (j.error or "")
     finally:
         _cleanup([SERIALS[2]], slug="workermodel-worker-import-album-x2")
 

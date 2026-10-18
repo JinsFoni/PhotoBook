@@ -19,6 +19,7 @@ from pathlib import Path
 from .. import media, settings_store
 from ...db import Collection, HarvestHistory, HarvestJob, Photo
 from ...database import SessionLocal
+from ...i18n import t
 from . import net, pipeline
 from .filters import check_title
 from .titlematch import photo_count, title_matches_collection, titles_match
@@ -268,13 +269,13 @@ def _run_job(job_id: int) -> None:
         title_part = sanitize_path_part(target.title or f"serial-{job.serial}")
         dest_dir = library_root / model_part / title_part
         if dest_dir.exists() and any(dest_dir.iterdir()):
-            _finish(s, job, "exists")
+            _finish(s, job, "exists", t("→ 归档目录已存在,待下次扫描入库"))
             s.commit()
             return
         from .. import library_import
         if library_import.collection_exists(s, target.model_name, title_part,
                                             str(conf["harvest.unsorted_dir"])):
-            _finish(s, job, "exists")
+            _finish(s, job, "exists", t("→ 已导入过,跳过"))
             s.commit()
             return
         # ③ 跨站等价预检:同一本写真在其他站已入库,本站序号没登记进
@@ -302,7 +303,12 @@ def _run_job(job_id: int) -> None:
                 c.source_serials = _json.dumps(sorted(known))
             log.info("cross-site duplicate: serial %s ≡ %s (collection %s)",
                      job.serial, c.source_serial, c.slug)
-            _finish(s, job, "exists")
+            # 任务行可见的去重说明: 内容已入库(挂在同内容另一站序号的写真集上)
+            job.collection_slug = c.slug
+            _finish(s, job, "exists", t("→ 同内容已入库({n} 张): {title}",
+                                        n=s.scalar(select(func.count(Photo.id)).where(
+                                            Photo.collection_id == c.id)) or 0,
+                                        title=c.title[:60] if c.title else c.slug))
             s.commit()
             return
 
@@ -451,7 +457,7 @@ def _run_job(job_id: int) -> None:
         if _run_tokens.get(job_id) == token:  # 僵尸线程不得写终态
             job = s.get(HarvestJob, job_id)
             if job:
-                _finish(s, job, "exists")
+                _finish(s, job, "exists", t("→ 已导入过,跳过"))
                 s.commit()
     except Exception as e:
         if _run_tokens.get(job_id) == token:
