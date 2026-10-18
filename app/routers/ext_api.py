@@ -418,6 +418,10 @@ async def status_by_url(body: StatusByUrlBody, s: Session = Depends(require_key)
             return _serial_from_url(url)
         except ValueError:
             return None
+        except Exception:
+            # 回源拉详情页失败(源站限流 403/超时): 不让单条坏 URL 打翻
+            # 整批, 按「解析不出序号」同路回 new, 脚本下次轮询再重试
+            return None
 
     urls = [u.strip() for u in (body.urls or []) if u.strip()][:MAX_SERIALS]
     if not urls:
