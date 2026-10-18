@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua/misskon/nicesss → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.7.0
+// @version      1.7.1
 // @description  在 buondua.com / misskon.com / nicesss.com 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列(同一本写真跨站转载也判已入库)
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -102,7 +102,9 @@
       headers: Object.assign({ "X-PhotoBook-Key": KEY },
         body ? { "Content-Type": "application/json" } : {}),
       data: body ? JSON.stringify(body) : null,
-      timeout: 15000,
+      // misskon 老帖整页 URL 解析走服务端回源, 冷缓存时即使服务端已
+      // 并发也可能超过 15s —— 放宽到 30s(解析结果服务端有缓存, 只慢一次)
+      timeout: 30000,
       onload: function (r) {
         let data = null;
         try { data = JSON.parse(r.responseText); } catch (_) {}

@@ -6,11 +6,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import json
 import secrets
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -33,6 +35,11 @@ router = APIRouter(prefix="/api/ext")
 API_KEY_SETTING = "ext.api_key"
 # 单次状态查询/推送的 serial 数上限(一页卡片 24~48 个, 留余量)
 MAX_SERIALS = 100
+# status-by-url 回源解析序号的并发上限(老帖整页 URL 都要拉详情页,
+# 逐个串行 1s+ 会超过脚本 30s 超时; 并发太高对源站不礼貌)
+_URL_RESOLVE_WORKERS = 5
+_url_resolve_pool = ThreadPoolExecutor(
+    max_workers=_URL_RESOLVE_WORKERS, thread_name_prefix="pb-url-resolve")
 # PikPak 单次推送的勾选项个数上限(每人一次勾几个/几十个写真集)
 MAX_PIKPAK_ITEMS = 5000
 # 单次推送展开后的文件总数上限(勾选项较多时总量兜底, 防请求体过大)
@@ -399,15 +406,31 @@ async def status_by_url(body: StatusByUrlBody, s: Session = Depends(require_key)
     脚本 1.6.0 起随 urls 带上 titles(url → 页面标题):状态 new 且
     标题与已入库写真等价 → 登记进 source_serials 并返回 done(老帖
     列表页卡片取不到序号,这是它们唯一的登记通道)。
+
+    序号解析可能回源拉 misskon 详情页(单条 1s+, 冷缓存整页几十条
+    串行会超过脚本超时), 放线程池并发做; 池内不碰 DB, 判态与标题
+    登记回到协程用请求级 Session 串行做(SQLAlchemy Session 非线
+    程安全)。整个解析走 to_thread, 避免 fetch 的同步 IO 卡住事件循环。
     """
+
+    def resolve(url: str) -> int | None:
+        try:
+            return _serial_from_url(url)
+        except ValueError:
+            return None
+
     urls = [u.strip() for u in (body.urls or []) if u.strip()][:MAX_SERIALS]
     if not urls:
         raise HTTPException(422, "urls required")
+
+    def _resolve_all() -> list[int | None]:
+        return list(_url_resolve_pool.map(resolve, urls))
+
+    serials = await asyncio.to_thread(_resolve_all)
+
     items = []
-    for url in urls:
-        try:
-            serial = _serial_from_url(url)
-        except ValueError:
+    for url, serial in zip(urls, serials):
+        if serial is None:
             items.append({"url": url, "serial": None, "state": "new"})
             continue
         state = state_for_serial(s, serial)
