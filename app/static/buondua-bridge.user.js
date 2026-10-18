@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua/misskon/nicesss → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.7.1
+// @version      1.7.2
 // @description  在 buondua.com / misskon.com / nicesss.com 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列(同一本写真跨站转载也判已入库)
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -347,11 +347,13 @@
     const unknown = unknownUrls();
     if (!serials.size && !unknown.length) return;
 
-    // 无序号可查(整页都是老帖): 直接走 URL 解析通道
-    if (!serials.size && unknown.length) {
+    // 无序号可查(整页都是老帖): 直接走 URL 解析通道。
+    // 混合页(部分卡片有 slug 序号、部分是老帖)两条通道都要走: 老帖的
+    // unknown 在纯序号分支里不能丢(tag/搜索页实测 1.7.1 只查到 1 张)。
+    if (unknown.length) {
       resolveUnknown(unknown, cards);
-      return;
     }
+    if (!serials.size) return;
     // 状态查询带页面标题: 服务端对「状态 new 且标题与已入库写真等价」的
     // 序号当场登记进 source_serials 并返回 done —— 跨站转载序号独立,
     // 服务端只有在用户浏览到该站页面时才能第一次见到那个序号。
@@ -511,6 +513,7 @@
 
   // ---- 启动 + 监听 --------------------------------------------------------------
   let lastQuery = 0;
+  let queryTimer = null;   // 未声明会在严格模式下每轮抛 ReferenceError, 中断轮询链
 
   function loop() {
     queryAndRender();
