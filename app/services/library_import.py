@@ -21,7 +21,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import Collection, Model, Photo
@@ -201,7 +201,26 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
 
     # 幂等:已导入过 → 原样跳过(文件留在 library,不动);
     # 必须在健康检查之前 —— 定时扫描会反复遇到已入库目录,不能白全量解码
+    # 例外:slug 命中但张数不同 → 同名不同批(同系列泛化标题的压缩包内
+    # 目录名一样,如「诛仙-陆雪琪」的 25/121/310 三批),目录改名追加
+    # " (N)" 后照常入库;张数相同视为同批重复,仍跳过。
     if collection_exists(s, model_name, title, unsorted_dir):
+        existing = s.scalar(select(Collection).where(
+            Collection.slug == collection_slug(s, model_name, title, unsorted_dir)))
+        existing_n = s.scalar(select(func.count(Photo.id))
+                              .where(Photo.collection_id == existing.id)) if existing else 0
+        if existing is not None and existing_n != len(images):
+            n = 2
+            while collection_exists(s, model_name, f"{title} ({n})", unsorted_dir):
+                n += 1
+            new_dir = parent / f"{title} ({n})"
+            album_dir.rename(new_dir)
+            log.warning("import %s: slug 已入库但张数不同(库 %d / 本批 %d)"
+                        " → 改名 %r 重新判定", title, existing_n, len(images),
+                        new_dir.name)
+            return import_album(s, new_dir, media_root, library_root=library_root,
+                                unsorted_dir=unsorted_dir, today=today,
+                                tags=tags, thumbs=thumbs)
         stats["skipped"] = True
         log.info("skip (already imported): %s / %s", model_name or unsorted_dir, title)
         return stats

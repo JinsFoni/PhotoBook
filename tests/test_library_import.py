@@ -172,6 +172,33 @@ def test_import_is_idempotent(tmp_path):
     assert (lib / "Yeha" / "Idem Album" / "001.jpg").exists()
 
 
+def test_import_same_slug_different_photo_count(tmp_path):
+    """slug 撞名但张数不同 → 同名不同批,改名追加序号照常入库。
+
+    「诛仙-陆雪琪」实录:同系列泛化标题的压缩包内目录名一样,
+    旧逻辑按 slug 幂等跳过 → 1.5GB 下载成果躺在 library 不入库。
+    """
+    lib, media = tmp_path / "library", tmp_path / "media"
+    _album(lib, "未分类", "Series Album", n=3)          # 第一批 3 张
+
+    with SessionLocal() as s:
+        stats = library_import.import_library(s, lib, media)
+        assert stats["imported"] == 1
+        # 同名目录再来一批,张数不同(2 张)→ 不再跳过
+        _album(lib, "未分类", "Series Album", n=2)
+        stats = library_import.import_library(s, lib, media)
+        assert stats["imported"] == 1 and stats["skipped"] == 0
+        b = _collection(s, "未分类-series-album-(2)")
+        assert b is not None and len(b.photos) == 2
+        assert b.title == "Series Album (2)"
+        # 张数相同(3 张)→ 视为同批重复,仍跳过
+        _album(lib, "未分类", "Series Album", n=3)
+        stats = library_import.import_library(s, lib, media)
+        assert stats["imported"] == 0 and stats["skipped"] == 1
+        assert s.scalar(select(func.count()).select_from(Collection)
+                        .where(Collection.slug == "未分类-series-album")) == 1
+
+
 def test_collection_exists_helper(tmp_path):
     lib, media = tmp_path / "library", tmp_path / "media"
     _album(lib, "Yeha", "Probe Album", n=1)

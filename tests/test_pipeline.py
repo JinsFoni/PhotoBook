@@ -46,15 +46,16 @@ def test_archive_ignores_junk_when_detecting_inner_dir(tmp_path):
 
 
 def test_archive_inner_dir_refuses_existing(tmp_path):
-    """自带目录名已存在且非空 → 防覆盖。"""
+    """自带目录名已存在且非空 → 追加 (N) 序号落盘,不丢包。"""
     src = tmp_path / "extract"
     (src / "Album").mkdir(parents=True)
     (src / "Album" / "a.jpg").write_bytes(b"x")
     lib = tmp_path / "library"
     (lib / "M" / "Album").mkdir(parents=True)
     (lib / "M" / "Album" / "sentinel").write_text("1")
-    with pytest.raises(FileExistsError):
-        archive_collection(src, lib, model_name="M", title="T")
+    dest = archive_collection(src, lib, model_name="M", title="T")
+    assert dest == lib / "M" / "Album (2)"
+    assert (dest / "a.jpg").exists()
     # 原内容未被破坏
     assert (lib / "M" / "Album" / "sentinel").exists()
 
@@ -66,8 +67,15 @@ def test_archive_refuses_existing_nonempty(tmp_path):
     lib = tmp_path / "library"
     dest = archive_collection(src, lib, model_name="M", title="T")
     (dest / "sentinel").write_text("1")
-    with pytest.raises(FileExistsError):
-        archive_collection(src, lib, model_name="M", title="T")
+    (src / "a.jpg").write_bytes(b"x")       # 新一批再解压出同名文件
+    dest2 = archive_collection(src, lib, model_name="M", title="T")
+    assert dest2.name == "T (2)"
+    assert (dest2 / "a.jpg").exists()
+    # (2) 也被占 → 顺延 (3)
+    (dest2 / "sentinel").write_text("1")
+    (src / "a.jpg").write_bytes(b"x")
+    dest3 = archive_collection(src, lib, model_name="M", title="T")
+    assert dest3.name == "T (3)"
 
 
 def test_archive_sanitizes_names(tmp_path):

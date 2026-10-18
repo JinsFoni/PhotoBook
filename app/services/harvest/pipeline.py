@@ -230,7 +230,10 @@ def archive_collection(archive_path: Path, library_root: Path, *,
 
     写真目录名优先用解压产物自带的顶层目录(压缩包内一般已按标题建好目录,
     不再额外套一层标题目录);产物根层没有唯一目录时才回退到传入的 title。
-    目标已存在 → 抛 FileExistsError(由调用方标记「已存在」)。
+    目标已存在非空 → 目录名追加 " (N)" 序号落盘,不丢包(权威去重在下载
+    前的预检:history/dest_dir/collection_exists/跨站等价)。同名不同批
+    ——同系列泛化标题的压缩包内目录名一样——若在这里抛 FileExistsError,
+    1.5GB 下载成果直接报废(任务 375/376/378 实录)。
     """
     model_part = sanitize_path_part(model_name) if model_name else sanitize_path_part(unsorted_dir)
     inner = _sole_top_dir(archive_path)
@@ -239,7 +242,10 @@ def archive_collection(archive_path: Path, library_root: Path, *,
         title_part = sanitize_path_part(title)
     target = library_root / model_part / title_part
     if target.exists() and any(target.iterdir()):
-        raise FileExistsError(str(target))
+        n = 2
+        while (library_root / model_part / f"{title_part} ({n})").exists():
+            n += 1
+        target = library_root / model_part / f"{title_part} ({n})"
     target.parent.mkdir(parents=True, exist_ok=True)
     if inner is not None:
         # 整体改名过去:归档目录名即压缩包自带的标题目录名
