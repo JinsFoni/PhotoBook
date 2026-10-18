@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
@@ -361,6 +362,24 @@ def thumb(spec: str, request: Request):
 # 静态资源(design 系统的 css/js)
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+# ---- 静态资源长缓存 + 页面/接口 gzip ----------------------------------------
+# 跳转延迟的大头曾是静态资源: 响应只带 ETag 无 Cache-Control, 启发式新鲜度为 0,
+# 每次整页导航 woff2(玩酷体 2.4MB)+ css/js 全量重新走网络。URL 由
+# ASSET_VER 版本号(templates.py 按 mtime 生成 ?v=)兜底内容更新, 因此
+# immutable 长缓存不会脏。/media /t/ 不加: 图源 URL 无版本号, 交给启发式缓存。
+@app.middleware("http")
+async def static_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
+
+# HTML/JSON 压缩传输(258KB 的 /collections HTML → 约 1/3);字体已 woff2 自压,
+# minimum_size 以下不压。放 GZip 无 Compressible 类型误伤问题, 图片/webp 已压缩不重压。
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 # ---- PWA ---------------------------------------------------------------------
