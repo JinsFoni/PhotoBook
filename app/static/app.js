@@ -41,7 +41,9 @@ window.PC = (function () {
     logout: '<path d="M9 4H5v16h4M14 8l4 4-4 4M18 12H9"/>',
     expand: '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>',
     compress: '<path d="M9 4v5H4M15 4v5h5M20 15h-5v5M4 15h5v5"/>',
-    blur: '<circle cx="12" cy="12" r="4.2"/><path d="M12 3.2v2.2M12 18.6v2.2M3.2 12h2.2M18.6 12h2.2M5.8 5.8l1.6 1.6M16.6 16.6l1.6 1.6M18.2 5.8l-1.6 1.6M7.4 16.6l-1.6 1.6" stroke-dasharray="1.5 2.4"/>'
+    blur: '<circle cx="12" cy="12" r="4.2"/><path d="M12 3.2v2.2M12 18.6v2.2M3.2 12h2.2M18.6 12h2.2M5.8 5.8l1.6 1.6M16.6 16.6l1.6 1.6M18.2 5.8l-1.6 1.6M7.4 16.6l-1.6 1.6" stroke-dasharray="1.5 2.4"/>',
+    home: '<path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5"/>',
+    "user-circle": '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.2 18.4a6.8 6.8 0 0 1 11.6 0"/>'
   };
 
   function icon(name, cls) {
@@ -409,6 +411,21 @@ window.PC = (function () {
         "</div></div>";
     }
 
+    var tabbar = document.querySelector("[data-tabbar]");
+    if (tabbar) {
+      /* 移动端底部悬浮导航(≤900px 由 CSS 显示): 四项主路径。
+         收藏不进 tabbar —— 顶栏心形图标直达, 个人中心页也有入口 */
+      var tabs = NAV.concat([
+        { href: "/profile", label: t("Profile"), key: "profile" }
+      ]);
+      var TAB_ICON = { discovery: "home", models: "image", collections: "grid", favorites: "heart", profile: "user-circle" };
+      tabbar.innerHTML = tabs.map(function (n) {
+        return '<a class="tabbar__item" href="' + n.href + '"' + (n.key === page ? ' aria-current="page"' : "") + ">" +
+          icon(TAB_ICON[n.key] || "grid") +
+          "<span>" + n.label + "</span></a>";
+      }).join("");
+    }
+
     var drawer = document.querySelector("[data-drawer]");
     if (drawer) {
       drawer.innerHTML =
@@ -596,7 +613,7 @@ window.PC = (function () {
 
   function lightboxSrc(p, w) {
     if (!w) return "/media/" + p.file;             /* 真原图:下载 / 1:1 放大 */
-    return "/t/s" + w + "/" + p.file + ".webp";    /* 短边档:竖图钳宽横图钳高,等比不裁 */
+    return "/t/s" + w + "/" + p.file;    /* 短边档:竖图钳宽横图钳高,等比不裁 */
   }
 
   /* 灯箱显示档: 恒短边 2400, 与后端 PREHEAT_SHORT 一一对应。

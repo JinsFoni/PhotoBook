@@ -2297,6 +2297,14 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 
 /* ---------- 21. Responsive chrome --------------------------------------- */
 
+/* ---------- 21a. 移动端底部悬浮导航(毛玻璃胶囊) --------------------------- */
+/* 桌面端不渲染样式(nav 在顶栏); ≤900px 汉堡抽屉退居兜底, tabbar 为主导航。
+   同顶栏 immersive 源: 半透明深底 + backdrop-filter; 悬浮胶囊圆角 + 细描边。
+   safe-area: iPhone 底部 Home 条不打到图标 */
+.tabbar {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .nav { display: none; }
   .header__burger { display: grid; }
@@ -2306,7 +2314,58 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   .header__end [data-theme-toggle] { display: none; }
   .header__inner { gap: var(--s3); }
   .wordmark { font-size: 17px; }
+
+  .tabbar {
+    position: fixed;
+    left: 40px;
+    right: 40px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + var(--s2));
+    z-index: 85; /* 顶栏 60 之下, 抽屉/搜索 90/95 与灯箱 120+ 之下 */
+    display: flex;
+    justify-content: space-around;
+    /* 胶囊: 左右两端完全半圆(半径取高度一半), 悬浮离底 */
+    padding: 4px var(--s3);
+    border-radius: 999px;
+    background: rgba(8, 9, 10, 0.35);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    /* 独立合成层, 同 .header: 防滚动重模糊抖动 */
+    transform: translateZ(0);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  }
+  .tabbar__item {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 5px 0;
+    border-radius: 999px;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: var(--fs-micro);
+    letter-spacing: 0.04em;
+    transition: color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+  }
+  .tabbar__item svg {
+    width: 20px;
+    height: 20px;
+    transition: transform var(--t-fast) var(--ease);
+  }
+  .tabbar__item:hover { color: #fff; }
+  .tabbar__item[aria-current="page"] {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.14);
+  }
+  .tabbar__item[aria-current="page"] svg { transform: translateY(-1px); }
+
+  /* 悬浮栏遮挡兜底: 留白挂在 .shell 上(main 之后还有 footer 版权行),
+     footer 不再被 tabbar 盖住 */
+  .shell { padding-bottom: calc(52px + var(--s3) + env(safe-area-inset-bottom, 0px)); }
+
+  /* 灯箱/抽屉/搜索打开时 tabbar 让位(body.is-locked 统一挂, 全屏层之下不参与) */
+  .is-locked .tabbar { opacity: 0; pointer-events: none; }
 }
+
 
 /* ---------- 22. Reduced motion ------------------------------------------ */
 
