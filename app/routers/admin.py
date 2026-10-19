@@ -30,7 +30,7 @@ from ..services.harvest import net as harvest_net
 from ..services.harvest import worker as harvest_worker
 from ..services.storage import worker as storage_worker
 from ..services.storage.base import StorageError, get_backend as _get_backend
-from ..services.storage import purge_remote_of_collection
+from ..services.storage import collect_remote_paths, purge_remote_async
 
 log = logging.getLogger("photobook.admin")
 
@@ -275,8 +275,8 @@ async def admin_model_update(request: Request, model_id: int, s: Session = Depen
 
 
 @router.post("/models/{model_id}/delete")
-async def admin_model_delete(request: Request, model_id: int, s: Session = Depends(get_db),
-                             back: str = Form("")):
+def admin_model_delete(request: Request, model_id: int, s: Session = Depends(get_db),
+                       back: str = Form("")):
     m = s.get(Model, model_id)
     flash = ""
     if m:
@@ -284,18 +284,18 @@ async def admin_model_delete(request: Request, model_id: int, s: Session = Depen
         # ORM 无级联(DB 层 model_id SET NULL 只会留下无主写真集), 显式删
         victims = [(c.id, c.slug, [p.filename for p in c.photos])
                    for c in s.scalars(select(Collection).where(Collection.model_id == model_id)).all()]
+        # 远端清单必须在删行前快照(photo_uploads 随 photos 级联删除)
+        remote = {col_id: collect_remote_paths(col_id, s) for col_id, _sl, _fn in victims}
         for col_id, slug, filenames in victims:
-            # 远端同步清理(尽力而为): 失败不阻断本地删除
-            try:
-                purge_remote_of_collection(col_id)
-            except Exception:
-                log.exception("remote purge failed: collection %s", col_id)
             col = s.scalar(select(Collection).where(Collection.slug == slug))
             if col:
                 s.delete(col)
         s.delete(m)
         s.commit()
-        for _col_id, slug, filenames in victims:
+        for col_id, slug, filenames in victims:
+            # 远端清理走后台: 一个模特名下几百张 × 每个存储一次 DELETE,
+            # 同步做要几分钟(见 storage.purge_remote_async)
+            purge_remote_async(remote.get(col_id) or {}, col_id, slug)
             media.purge_collection_files(slug, filenames)
         tagging.prune_empty_tags(s)
         flash = t("模特已删除: {n}", n=m.name)
@@ -449,18 +449,23 @@ async def admin_collection_update(request: Request, col_id: int, s: Session = De
 
 
 @router.post("/collections/{col_id}/delete")
-async def admin_collection_delete(request: Request, col_id: int, s: Session = Depends(get_db),
-                                  back: str = Form("")):
+def admin_collection_delete(request: Request, col_id: int, s: Session = Depends(get_db),
+                            back: str = Form("")):
+    """删除写真集: DB + 本地照片/缩略图即时清, 远端文件后台清。
+
+    两个性能坑(2026-10-20 实测):
+    1. 远端清理曾是同步的 —— WebDAV 只能逐张 DELETE, 115 盘 0.48s/张,
+       137 张的写真集要 70s+;现在丢后台线程池, 响应只等本地删除。
+    2. 原 handler 是 async def 里做同步网络/文件 IO, 会把事件循环钉死,
+       删一本期间整站(包括 /healthz)无响应 —— 改成同步 def 交给线程池。
+    """
     c = s.get(Collection, col_id)
     flash = ""
     if c:
         slug, filenames = c.slug, [p.filename for p in c.photos]
         model_id = c.model_id
-        # 远端同步清理(尽力而为): 失败不阻断本地删除
-        try:
-            purge_remote_of_collection(col_id)
-        except Exception:
-            log.exception("remote purge failed: collection %s", col_id)
+        # 远端清单必须在删行前快照: photo_uploads 随 photos 级联删除
+        remote_paths = collect_remote_paths(col_id, s)
         s.delete(c)
         # 名下写真集删光后模特一并删除(前台模特无写真即不可见, 留着成死链)
         if model_id is not None:
@@ -468,6 +473,7 @@ async def admin_collection_delete(request: Request, col_id: int, s: Session = De
             if m and not s.scalar(select(Collection.id).where(Collection.model_id == model_id).limit(1)):
                 s.delete(m)
         s.commit()
+        purge_remote_async(remote_paths, col_id, slug)
         media.purge_collection_files(slug, filenames)
         tagging.prune_empty_tags(s)
         flash = t("写真集已删除: {t}", t=c.title or slug)
