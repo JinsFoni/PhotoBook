@@ -230,9 +230,12 @@ class OpenListBackend:
         out: dict[str, int] = {}
         page = 1
         while True:
+            # refresh=True: 刚传完就校验/刚删完就守卫时, OpenList 的目录缓存
+            # 可能还没刷新(实测会漏掉刚上传的文件 → 误判校验失败并重传,
+            # 更糟的是删目录守卫看不见新文件)。强制回源列表, 只多几十毫秒。
             body = _call(st, "POST", "/api/fs/list", what="list",
                          json={"path": "/" + folder, "page": page,
-                               "per_page": _PAGE, "refresh": False})
+                               "per_page": _PAGE, "refresh": page == 1})
             if body.get("code") != 200:
                 if _not_found(body):
                     return {}

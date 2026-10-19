@@ -420,10 +420,14 @@ WebDAV 的 MKCOL 与 OpenList 的 `fs/mkdir` 在网盘驱动上都不便宜:115 
 | 删除 | `DELETE`(404 视为已删) | `POST /api/fs/remove {dir,names[]}` |
 | 列目录 | `PROPFIND Depth:1`(XML) | `POST /api/fs/list`(JSON,分页) |
 | 错误语义 | HTTP 状态码 | **永远 HTTP 200**,成败看 body 的 `code`;路径不存在 = `code 500` + `object not found` |
+| 目录缓存 | 无 | `fs/list` 默认读 OpenList 的目录缓存,刚上传/刚删除时可能滞后 → 统一 `refresh=true`(代价:773 文件目录 123 盘 2.8s / 115 盘 0.6s) |
 | 直链 | `/d/<path>` | `/d/<path>`(同一个 OpenList 直链,302 到网盘 CDN) |
 
 `webdav` backend 不调用任何 `/api/*`,换成别的 WebDAV 服务端行为一致;
 `openlist` backend 不碰 `/dav`。
+
+115 盘的删除是上游异步的: `fs/remove` 偶发回 `errno 990009 删除操作尚未执行完成`,
+重试(1.5s/4s 退避)后即可;后台清理的日志里看到它重试属于正常现象。
 
 ### 测试
 

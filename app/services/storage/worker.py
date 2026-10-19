@@ -342,7 +342,11 @@ def _verify_job(s, st: Storage, backend, job: UploadJob,
         except Exception:
             log.exception("re-upload after verify failed: %s -> %s", rel, st.name)
             continue
-        if got != rp:  # 理论上不会(两家都不改名), 保守地按新路径记账
+        if got != rp:  # 理论上不会(两家都不改名), 保守地把 DB 记录也跟着改
+            s.query(PhotoUpload).filter(
+                PhotoUpload.storage_id == st.id,
+                PhotoUpload.remote_path == rp).update(
+                {"remote_path": got}, synchronize_session=False)
             files[got] = files.pop(rp)
     bad = verify_uploads(backend, st, {rp: size for rp, (_rel, size) in files.items()})
     if bad:
