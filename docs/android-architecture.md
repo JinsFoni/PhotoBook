@@ -119,10 +119,15 @@ app/src/main/kotlin/dev/jinsfoni/photobook/
 
 | 场景 | URL | 说明 |
 |---|---|---|
-| 卡片/列表 | `/t/400/{path}.webp` | placeholder data-URI 占位 → crossfade |
-| 详情照片墙 | `/t/800` | 2 列瀑布,`w/h` 算宽高比占位,零跳动 |
-| 灯箱 fit | `/t/1800` | telephoto 显示 |
+| 卡片/列表 | `/t/s900/{path}` | 服务端下发 `coverThumb` 前缀 rel,客户端直拼;placeholder data-URI → crossfade |
+| 详情照片墙 | `/t/s900/{path}` | 2 列瀑布,`w/h` 算宽高比占位,零跳动 |
+| 灯箱 fit | `/t/s2400/{path}` | telephoto 显示(短边钳制,4K 零上采样) |
 | 灯箱放大 | `/media/{path}` 原图 | telephoto 子采样 tile 解码,4GB 上限图片可控内存 |
+
+> `{path}` 尾段保留源文件真实后缀(jpg/png/webp),**客户端不得再附加 `.webp`** ——
+> 服务端按最后一段后缀识别源文件,`x.jpg.webp` 会被当成名为 `x.jpg.webp` 的源文件而 404。
+> 缩略图输出恒为 WebP,由响应头 `Content-Type` 标明,与 URL 后缀无关。
+
 
 - Coil `ImageLoader` 全局单例:鉴权头拦截器、磁盘缓存 256MB、`respectCacheHeaders(false)`(缩略图内容寻址,永不失效)、内存缓存默认
 - 内存压力:灯箱打开时列表自动停驻加载(Coil 生命周期天然支持)

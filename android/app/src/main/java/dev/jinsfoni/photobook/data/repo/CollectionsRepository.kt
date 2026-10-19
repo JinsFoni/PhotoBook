@@ -127,7 +127,7 @@ class CollectionsRepository @Inject constructor(
             date = dto.date,
             tags = dto.tags,
             count = dto.count,
-            // 详情 payload 无 heroCoverThumb;coverThumb 已是 "t/s900/x.webp" 形式
+            // 详情 payload 无 heroCoverThumb;coverThumb 已是 "t/s900/x.jpg" 前缀形式
             heroUrl = dto.coverThumb?.let { MediaUrls.fromPrefixed(base, it) }
                 ?: dto.cover?.let { MediaUrls.original(base, it) },
             modelName = dto.model?.name ?: dto.model_name,
@@ -149,7 +149,7 @@ class CollectionsRepository @Inject constructor(
         slug = slug,
         title = title,
         modelName = model_name,
-        // coverThumb 服务端已是 "t/s900/x.webp" 前缀 rel,直拼即可(全站统一低清档)
+        // coverThumb 服务端已是 "t/s900/x.jpg" 前缀 rel,直拼即可(全站统一低清档)
         imageUrl = coverThumb?.let { MediaUrls.fromPrefixed(base, it) },
         // hero 轮播全屏宽,900 缩略图拉伸会糊 → /t/s2400/ 短边档(同灯箱 previewUrl)
         heroUrl = cover?.let { MediaUrls.thumbShortSide(base, it, 2400) },
@@ -161,7 +161,7 @@ class CollectionsRepository @Inject constructor(
         slug = slug,
         title = title,
         modelName = model_name,
-        // S2 列表卡的 coverThumb 同为 "t/s900/…webp" 前缀 rel,直拼(origin 根)
+        // S2 列表卡的 coverThumb 同为 "t/s900/…jpg" 前缀 rel,直拼(origin 根)
         imageUrl = coverThumb?.let { MediaUrls.fromPrefixed(base, it) },
         // hero 轮播全屏宽 → /t/s2400/ 短边档(同灯箱 previewUrl)
         heroUrl = cover?.let { MediaUrls.thumbShortSide(base, it, 2400) },

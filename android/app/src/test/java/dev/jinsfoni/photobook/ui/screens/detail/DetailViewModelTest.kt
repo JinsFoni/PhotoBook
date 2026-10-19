@@ -65,7 +65,7 @@ class DetailViewModelTest {
             MockResponse().setBody(
                 """{"id":1,"slug":"a","title":"TA","date":"2025.09","model_slug":"m",
                    "model_name":"M1","cover":"a/cover.jpg",
-                   "coverThumb":"t/s900/a/cover.webp",
+                   "coverThumb":"t/s900/a/cover.jpg",
                    "photos":[{"idx":0,"file":"a/p0.jpg","w":900,"h":1350}],
                    "tags":["x"],"count":1,"model":{"slug":"m","name":"M1"}}""".replace("\n", "")
             )
@@ -89,9 +89,9 @@ class DetailViewModelTest {
         val d = vm.state.value.detail!!
         assertEquals("TA", d.title)
         // coverThumb 已带 t/s900 前缀 → 直拼,不得再包 /t/
-        assertEquals("http://localhost:8000/t/s900/a/cover.webp", d.heroUrl)
+        assertEquals("http://localhost:8000/t/s900/a/cover.jpg", d.heroUrl)
         assertEquals(1, d.photos.size)
-        assertEquals("http://localhost:8000/t/s900/a/p0.jpg.webp", d.photos[0].thumbUrl)
+        assertEquals("http://localhost:8000/t/s900/a/p0.jpg", d.photos[0].thumbUrl)
         assertNull(vm.state.value.error)
     }
 
