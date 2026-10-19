@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import shutil
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,6 +56,16 @@ MAX_FILE_BYTES = 8 * 1024**3
 # 图片目录下载并发数: PikPak CDN 按连接限速(~0.9MB/s/连接, 2026-10 实测,
 # 多路可线性叠加), 4 路已把一本写真压到 ~2 分钟; 再高收益小且可能触发限流
 DOWNLOAD_CONCURRENCY = 4
+
+# 单文件尝试次数: PikPak CDN 会随机 reset 连接(同一链接实测单次成功率约四成,
+# 与并发无关), 一次失败不代表文件不可达。小步退避重试, 否则一本写真会
+# 残缺入库(换 IP/节点不可控, 重试是最省事的兜底)。
+DOWNLOAD_ATTEMPTS = 8
+RETRY_BACKOFF = 0.4     # 秒, 第 n 次重试等待 min(RETRY_BACKOFF*n, 2)
+
+# 下载走 harvest.proxy(设置里为空则直连)。PikPak CDN 直连会随机 reset TLS
+# 连接(实测单次成功率约四成), 经代理稳定得多 —— 用户 2026-10 确认。
+PIKPAK_USE_PROXY = True
 
 
 def _now():
@@ -184,9 +195,15 @@ def _album_has_content(album_dir: Path) -> bool:
         if not p.name.startswith(".") and p.name not in ("Thumbs.db", ".DS_Store"))
 
 
-def _skip_if_imported(s, job: PikPakJob, album_dir: Path) -> str | None:
-    """已归档过 / 已导入过 → 返回跳过理由, 否则 None。"""
-    if _album_has_content(album_dir):
+def _skip_if_imported(s, job: PikPakJob, album_dir: Path,
+                      *, resumed: bool = False) -> str | None:
+    """已归档过 / 已导入过 → 返回跳过理由, 否则 None。
+
+    resumed=True 表示上次运行中断后重跑。此时目录里的文件是半成品,
+    不能据此判定「整包已存在」—— 否则剩余文件永远补不齐, 任务还会被
+    误标 done(容器重启/看门狗重置后实测)。
+    """
+    if not resumed and _album_has_content(album_dir):
         _settle_pending_files(s, job.id)
         return "→ 已存在,跳过"
     conf = settings_store.harvest_conf(s)
@@ -221,8 +238,13 @@ def _run_job(job_id: int) -> None:
         job = s.get(PikPakJob, job_id)
         if not job or job.status != "queued":
             return
+        # started_at 有值 = 不是首次运行(中断续跑/看门狗重置/手动重推)
+        resumed = job.started_at is not None
         job.status = "downloading"
         job.started_at = _now()
+        # 重跑会重新过一遍全部文件行(已落盘的直接跳过), 计数按本轮从 0 起,
+        # 否则多轮重试后 files_done 会累积到 files_total 的几倍。
+        job.files_done = 0
         job.updated_at = job.started_at
         s.commit()
 
@@ -232,7 +254,7 @@ def _run_job(job_id: int) -> None:
         unsorted = str(conf["harvest.unsorted_dir"])
 
         album_dir = _album_root(s, job, library_root)
-        reason = _skip_if_imported(s, job, album_dir)
+        reason = _skip_if_imported(s, job, album_dir, resumed=resumed)
         if reason:
             _finish(s, job, "done", reason)
             s.commit()
@@ -341,7 +363,7 @@ def _download_archive(s, job: PikPakJob, f: PikPakFile, library_root: Path,
                              max_bytes=MAX_FILE_BYTES,
                              on_progress=on_prog,
                              stream_key=job.id,
-                             use_proxy=False)
+                             use_proxy=PIKPAK_USE_PROXY)
     prog.finish()
     job = s.get(PikPakJob, job.id)
     if job:
@@ -501,29 +523,47 @@ def _download_files(s, job: PikPakJob, files: list[PikPakFile], album_dir: Path,
                 mark_file(f.id, "done", None)
                 complete_one()
                 continue
-            try:
-                # 每流维护「上次已报字节」; 绝对值涨量交给 _Progress 聚合
-                prev = {"n": 0}
+            last_err = ""
+            downloaded = False
+            for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+                if _run_tokens.get(job.id) != token:
+                    break
+                # 上次尝试留下的 .part 会走 Range 续传; 进度基准按已有字节起算,
+                # 否则重试会把已下部分重复计入 bytes_done。
+                part = dest.with_suffix(dest.suffix + ".part")
+                start = part.stat().st_size if part.exists() else 0
+                prev = {"n": start}
                 def on_prog(done, total, _prev=prev):
                     prog.report(_prev["n"], done, total)
                     _prev["n"] = done
-                pipeline.download_stream(
-                    f.url, dest,
-                    max_bytes=MAX_FILE_BYTES,
-                    on_progress=on_prog,
-                    stream_key=f"{job.id}:{f.file_id}",
-                    use_proxy=False)
+                try:
+                    pipeline.download_stream(
+                        f.url, dest,
+                        max_bytes=MAX_FILE_BYTES,
+                        on_progress=on_prog,
+                        stream_key=f"{job.id}:{f.file_id}",
+                        use_proxy=PIKPAK_USE_PROXY)
+                    downloaded = True
+                    break
+                except Exception as e:
+                    last_err = str(e)[:200]
+                    if attempt < DOWNLOAD_ATTEMPTS:
+                        time.sleep(min(RETRY_BACKOFF * attempt, 2.0))
+            # 看门狗已重置本任务: 不写状态, 让下一轮完整重跑
+            if _run_tokens.get(job.id) != token:
+                return
+            if downloaded:
                 f.status = "done"
                 f.error = None
                 mark_file(f.id, "done", None)
-            except Exception as e:
+            else:
                 f.status = "failed"
-                f.error = str(e)[:200]
-                mark_file(f.id, "failed", f.error)
+                f.error = last_err
+                mark_file(f.id, "failed", last_err)
                 # 一张图失败不判整包失败: 剩下的继续下, 最后由 _import_album
                 # 按实际到手的图片数决定写真集是否成立
-                log.warning("pikpak job #%s file %s failed: %s", job.id, rel,
-                            str(e)[:120])
+                log.warning("pikpak job #%s file %s failed after %d attempts: %s",
+                            job.id, rel, DOWNLOAD_ATTEMPTS, last_err[:120])
             complete_one()
 
     threads = [threading.Thread(target=worker, daemon=True,
@@ -663,11 +703,15 @@ def _prune_tmp(archive_tmp) -> None:
         log.exception("prune _tmp failed")
 
 
-def _recover_and_watchdog() -> None:
+def _recover_and_watchdog(*, at_startup: bool = False) -> None:
     """启动恢复 + 独立看门狗, 防「downloading 永久卡住」。
 
     看门狗跑在独立线程(_watchdog_loop): 下载线程卡死会把消费循环一起冻结,
     内嵌看门狗永远轮不到执行。
+
+    at_startup=True 时不看 updated_at: 上次进程的下载线程已随进程消失,
+    活动任务必然都是孤儿。若仍按 30 分钟阈值筛, 重启前刚更新过的任务会被
+    误判「健康」, 要一直卡到阈值到期才恢复(实测 P20 卡了 30 分钟)。
     """
     s = SessionLocal()
     try:
@@ -676,6 +720,9 @@ def _recover_and_watchdog() -> None:
             PikPakJob.status.in_(ACTIVE_JOB_STATES))).all()
         reset: list[int] = []
         for job in rows:
+            if at_startup:
+                reset.append(job.id)
+                continue
             ref = job.updated_at or job.started_at or job.created_at
             if ref is not None and ref.tzinfo is None:
                 ref = ref.replace(tzinfo=timezone.utc)
@@ -734,7 +781,7 @@ def start_worker() -> None:
         return
     _stop.clear()
     # 上次运行遗留的进行中任务(容器重启/被杀): 恢复回 queued, .part 续传
-    _recover_and_watchdog()
+    _recover_and_watchdog(at_startup=True)
     _thread = threading.Thread(target=_consume_loop, name="pikpak-worker",
                                daemon=True)
     _thread.start()

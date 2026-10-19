@@ -118,8 +118,7 @@ def test_download_files_partial_failure(clean, monkeypatch):
     def fake_download(url, dest, **kw):
         with lock:
             calls["n"] += 1
-            n = calls["n"]
-        if n == 3:   # 第 3 个下载的文件失败
+        if url.endswith("/2.jpg"):   # 该文件每次尝试都失败
             raise RuntimeError("boom")
         Path(dest).write_bytes(b"x" * 2048)
         if kw.get("on_progress"):
@@ -145,6 +144,48 @@ def test_download_files_partial_failure(clean, monkeypatch):
         assert len(failed) == 1 and "boom" in failed[0].error
         j = s.get(PikPakJob, job_id)
         assert j.files_done == 6
+    finally:
+        s.close()
+
+
+def test_download_files_retries_transient_failure(clean, monkeypatch):
+    """连接重置等瞬时失败重试后成功, 不留下 failed 行。"""
+    import shutil
+    shutil.rmtree(Path(settings.library_dir) / "_conc_test_album", ignore_errors=True)
+    job_id, album_dir = _job(4)
+    token = "tok-conc-retry"
+    pk_worker._run_tokens[job_id] = token
+
+    attempts: dict[str, int] = {}
+    lock = threading.Lock()
+
+    def fake_download(url, dest, **kw):
+        with lock:
+            attempts[url] = attempts.get(url, 0) + 1
+            n = attempts[url]
+        if n == 1:   # 首连被重置, 重试应成功
+            raise RuntimeError("curl: (35) Connection reset by peer")
+        Path(dest).write_bytes(b"x" * 2048)
+        if kw.get("on_progress"):
+            kw["on_progress"](2048, 2048)
+
+    from app.services.harvest import pipeline
+    monkeypatch.setattr(pipeline, "download_stream", fake_download)
+
+    s = SessionLocal()
+    try:
+        job = s.get(PikPakJob, job_id)
+        files = s.query(PikPakFile).where(PikPakFile.job_id == job_id).all()
+        pk_worker._download_files(s, job, files, album_dir, token)
+    finally:
+        pk_worker._run_tokens.pop(job_id, None)
+        s.close()
+
+    s = SessionLocal()
+    try:
+        rows = s.query(PikPakFile).where(PikPakFile.job_id == job_id).all()
+        assert all(r.status == "done" for r in rows)
+        assert sum(attempts.values()) == 8   # 4 文件各重试 1 次
     finally:
         s.close()
 
