@@ -754,13 +754,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "zh-CN": "没有可手动上传的存储,请到存储管理为至少一个启用的存储勾选「参与手动上传」",
         "zh-TW": "沒有可手動上傳的儲存,請到儲存管理為至少一個啟用的儲存勾選「參與手動上傳」"},
     "未命名存储": {"zh-CN": "未命名存储", "zh-TW": "未命名儲存"},
-    "imgbed = CloudFlare ImgBed 兼容图床;webdav = 通过 WebDAV 服务(如 OpenList)上传到网盘。": {
-        "zh-CN": "imgbed = CloudFlare ImgBed 兼容图床;webdav = 通过 WebDAV 服务(如 OpenList)上传到网盘。",
-        "zh-TW": "imgbed = CloudFlare ImgBed 相容圖床;webdav = 透過 WebDAV 服務(如 OpenList)上傳到網盤。"},
+    "imgbed = CloudFlare ImgBed 兼容图床;webdav = 只用 WebDAV 协议;openlist = 走 OpenList 的 /api/fs 接口。两者都支持目录级删除与并发上传。": {
+        "zh-CN": "imgbed = CloudFlare ImgBed 兼容图床;webdav = 只用 WebDAV 协议;openlist = 走 OpenList 的 /api/fs 接口。两者都支持目录级删除与并发上传。",
+        "zh-TW": "imgbed = CloudFlare ImgBed 相容圖床;webdav = 只用 WebDAV 協定;openlist = 走 OpenList 的 /api/fs 介面。兩者都支援目錄級刪除與並發上傳。"},
     "WebDAV 服务地址(站点根,不含 /dav,如 OpenList 地址)。": {
         "zh-CN": "WebDAV 服务地址(站点根,不含 /dav,如 OpenList 地址)。",
         "zh-TW": "WebDAV 服務位址(站點根,不含 /dav,如 OpenList 位址)。"},
     "WebDAV 用户名": {"zh-CN": "WebDAV 用户名", "zh-TW": "WebDAV 使用者名稱"},
+    "OpenList 用户名": {"zh-CN": "OpenList 用户名", "zh-TW": "OpenList 使用者名稱"},
+    "OpenList 密码": {"zh-CN": "OpenList 密码", "zh-TW": "OpenList 密碼"},
+    "OpenList 登录密码,用于换取访问令牌(与 WebDAV 密码相同)。": {
+        "zh-CN": "OpenList 登录密码,用于换取访问令牌(与 WebDAV 密码相同)。",
+        "zh-TW": "OpenList 登入密碼,用於換取存取權杖(與 WebDAV 密碼相同)。"},
+    "WebDAV 密码,与用户名一起用于 Basic 认证。": {
+        "zh-CN": "WebDAV 密码,与用户名一起用于 Basic 认证。",
+        "zh-TW": "WebDAV 密碼,與使用者名稱一起用於 Basic 認證。"},
+    "OpenList 服务地址(站点根,如 http://host:5244;不要带 /api 或 /dav)。": {
+        "zh-CN": "OpenList 服务地址(站点根,如 http://host:5244;不要带 /api 或 /dav)。",
+        "zh-TW": "OpenList 服務位址(站點根,如 http://host:5244;不要帶 /api 或 /dav)。"},
     "WebDAV 密码": {"zh-CN": "WebDAV 密码", "zh-TW": "WebDAV 密碼"},
     "图床站点地址。": {"zh-CN": "图床站点地址。", "zh-TW": "圖床站點位址。"},
     "直链优先级": {"zh-CN": "直链优先级", "zh-TW": "直鏈優先級"},

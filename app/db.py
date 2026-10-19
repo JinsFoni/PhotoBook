@@ -294,11 +294,11 @@ class Storage(Base):
     __tablename__ = "storages"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
-    type: Mapped[str] = mapped_column(String(20), default="imgbed")  # imgbed | webdav | (预留 s3/r2)
+    type: Mapped[str] = mapped_column(String(20), default="imgbed")  # imgbed | webdav | openlist
     root_dir: Mapped[str] = mapped_column(String(200), default="")   # 远端根目录,如 /PhotoBook
-    api_url: Mapped[str] = mapped_column(String(300), default="")    # imgbed: 站点地址; webdav: 服务地址(如 http://host:5244,不含 /dav)
-    token: Mapped[str] = mapped_column(String(300), default="")      # imgbed: API Key; webdav: 密码
-    username: Mapped[str] = mapped_column(String(120), default="")   # webdav 用户名(imgbed 不用)
+    api_url: Mapped[str] = mapped_column(String(300), default="")    # 站点地址(imgbed/openlist/webdav 都是站点根,不带 /dav /api 后缀)
+    token: Mapped[str] = mapped_column(String(300), default="")      # imgbed: API Key; webdav/openlist: 密码
+    username: Mapped[str] = mapped_column(String(120), default="")   # webdav/openlist 用户名(imgbed 不用)
     priority: Mapped[int] = mapped_column(Integer, default=0)        # 直链优先级,越大越优先(本地缺失时按此排序回源/302)
     manual_upload: Mapped[bool] = mapped_column(Boolean, default=False)  # 参与写真集列表的手动上传(需 enabled)
     direct_link: Mapped[bool] = mapped_column(Boolean, default=True)  # 参与 URL 直链(302/回源);关闭=纯备份

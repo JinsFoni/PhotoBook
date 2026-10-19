@@ -173,7 +173,8 @@ def test_purge_chunk_skips_paths_reuploaded_meanwhile(monkeypatch):
             deleted.extend(remote_paths)
 
     monkeypatch.setattr(storage_base, "get_backend", lambda st: FakeBackend())
-    storage_svc._purge_chunk(st_id, paths, cid, "zz-guard-collection")
+    storage_svc._purge_dir(st_id, "root/zz-guard-collection",
+                           ["0.jpg", "1.jpg"], cid, "zz-guard-collection")
 
     assert deleted == [paths[1]], "仍被 photo_uploads 引用的路径不能删"
 

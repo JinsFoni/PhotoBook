@@ -36,7 +36,7 @@
                 <option value="{{ tp }}" {% if st and st.type == tp %}selected{% endif %}>{{ tp }}</option>
                 {% endfor %}
               </select>
-              <span class="t-small" style="color:var(--ink-3)">{{ t('imgbed = CloudFlare ImgBed 兼容图床;webdav = 通过 WebDAV 服务(如 OpenList)上传到网盘。') }}</span></label>
+              <span class="t-small" style="color:var(--ink-3)">{{ t('imgbed = CloudFlare ImgBed 兼容图床;webdav = 只用 WebDAV 协议;openlist = 走 OpenList 的 /api/fs 接口。两者都支持目录级删除与并发上传。') }}</span></label>
 
             <label class="field"><span class="field__label">{{ t('API 地址') }}</span>
               <input class="input" name="api_url" value="{{ st.api_url if st else '' }}"
@@ -49,10 +49,10 @@
                      placeholder="/PhotoBook" spellcheck="false">
               <span class="t-small" style="color:var(--ink-3)">{{ t('上传时加在写真目录之前,如 /PhotoBook + 本地 一色雨/coser@xxx → 远端 /PhotoBook/一色雨/coser@xxx。留空表示站点根目录。') }}</span></label>
 
-            <div data-webdav-fields style="display:none">
-              <label class="field"><span class="field__label">{{ t('WebDAV 用户名') }}</span>
+            <div data-netdisk-fields style="display:none">
+              <label class="field"><span class="field__label" data-hint-user-label>{{ t('WebDAV 用户名') }}</span>
                 <input class="input" name="username" value="{{ st.username if st else '' }}"
-                       placeholder="mario" autocomplete="off" spellcheck="false"></label>
+                       placeholder="mario" autocomplete="off" spellcheck="false" data-hint-user></label>
             </div>
 
             <label class="field"><span class="field__label" data-hint-token-label>{{ t('Token(API Key)') }}</span>
@@ -95,7 +95,7 @@
           <script>
             (function () {
               const sel = document.querySelector('[data-storage-type]');
-              const webdavBox = document.querySelector('[data-webdav-fields]');
+              const netdiskBox = document.querySelector('[data-netdisk-fields]');
               const enabledCheck = document.querySelector('[data-enabled-check]');
               const manualCheck = document.querySelector('[data-manual-check]');
               const directCheck = document.querySelector('[data-direct-check]');
@@ -104,28 +104,53 @@
               const tokenLabel = document.querySelector('[data-hint-token-label]');
               const tokenInput = document.querySelector('[data-hint-token]');
               const tokenHint = document.querySelector('[data-hint-token-text]');
+              const userLabel = document.querySelector('[data-hint-user-label]');
+              const userInput = document.querySelector('[data-hint-user]');
               const HINTS = {
                 imgbed: {
                   apiPh: 'https://imgbed.example.com',
                   api: {{ t('图床站点地址。') | tojson }},
                   tokenLabel: {{ t('Token(API Key)') | tojson }},
+                  tokenHint: {{ t('需要 upload 权限;如需「测试连接」与远端删除,还需 list / delete 权限。') | tojson }},
                   tokenPh: 'imgbed_…',
+                  user: false,
                 },
                 webdav: {
                   apiPh: 'http://192.168.0.108:5244',
                   api: {{ t('WebDAV 服务地址(站点根,不含 /dav,如 OpenList 地址)。') | tojson }},
                   tokenLabel: {{ t('WebDAV 密码') | tojson }},
+                  tokenHint: {{ t('WebDAV 密码,与用户名一起用于 Basic 认证。') | tojson }},
                   tokenPh: '••••••',
+                  user: true,
+                  userLabel: {{ t('WebDAV 用户名') | tojson }},
+                  userPh: 'mario',
+                },
+                openlist: {
+                  apiPh: 'http://192.168.0.108:5244',
+                  api: {{ t('OpenList 服务地址(站点根,如 http://host:5244;不要带 /api 或 /dav)。') | tojson }},
+                  tokenLabel: {{ t('OpenList 密码') | tojson }},
+                  tokenHint: {{ t('OpenList 登录密码,用于换取访问令牌(与 WebDAV 密码相同)。') | tojson }},
+                  tokenPh: '••••••',
+                  user: true,
+                  userLabel: {{ t('OpenList 用户名') | tojson }},
+                  userPh: 'mario',
                 },
               };
               function apply() {
                 const h = HINTS[sel.value] || HINTS.imgbed;
-                webdavBox.style.display = sel.value === 'webdav' ? '' : 'none';
+                netdiskBox.style.display = h.user ? '' : 'none';
                 apiInput.placeholder = h.apiPh;
                 apiHint.textContent = h.api;
                 tokenLabel.textContent = h.tokenLabel;
                 tokenInput.placeholder = tokenInput.dataset.savedTail
                   ? '····' + tokenInput.dataset.savedTail : h.tokenPh;
+                if (h.user) {
+                  userLabel.textContent = h.userLabel;
+                  userInput.placeholder = h.userPh;
+                }
+                if (!tokenInput.dataset.savedTail && h.tokenHint) {
+                  tokenHint.textContent = h.tokenHint;
+                }
               }
               if ({{ '1' if st and token_tail else '0' }} === '1') {
                 tokenInput.dataset.savedTail = {{ token_tail | tojson }};

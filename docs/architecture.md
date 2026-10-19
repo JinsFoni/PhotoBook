@@ -361,3 +361,75 @@ purge` 与 `purged N remote files` 可对账。要彻底解决需把删除动作
 
 **测试**:`tests/test_collection_delete_async.py`(handler 必须同步、请求不等
 远端、模特删除逐本排队、重传竞态保护、按存储分组快照)。
+
+## 十三、存储后端: openlist 类型 + 目录级删除 / 去重 / 并发 / 校验(2026-10-20)
+
+新增 `type=openlist`(走 OpenList 的 `/api/fs/*`),与 `type=webdav`(只走
+WebDAV 的 PUT/DELETE/MKCOL/PROPFIND)**并列**而不是替换:同一台 OpenList 上
+两者能力对等,现场实测的耗时差异在 10% 以内,选型意义只在「服务端哪套接口
+更稳、是否需要 API 特有功能」。两条 backend 都实现了下面四项优化。
+
+### 1. 目录级删除
+
+上传目录与写真集一一对应(`root/media/model/album`),所以删写真集不再需要
+「一张一个 DELETE」:
+
+| | 单张删除 | 目录删除 |
+|---|---|---|
+| 123 盘(40 张) | ~4.0s | **0.10s** |
+| 115 盘(40 张) | ~19s | **0.25s** |
+
+- webdav: `DELETE /dav/<dir>`(RFC 4918 集合递归);
+- openlist: `POST /api/fs/remove {dir, names:[<dirname>]}`;
+- 删前先列一次目录(webdav PROPFIND Depth:1 / `fs/list`),发现**快照之外**
+  的文件就拒删(那说明写真集刚被重新导入并上传),退回逐文件删除 —— 竞态
+  保护从「逐文件回查 photo_uploads」升级成「整目录守卫 + 逐文件回查」;
+- 目录里混进新文件时仍按目录分组批量提交(openlist 一次 `fs/remove` 删多个
+  name),不是一张一个请求。
+
+### 2. MKCOL / mkdir 去重
+
+WebDAV 的 MKCOL 与 OpenList 的 `fs/mkdir` 在网盘驱动上都不便宜:115 盘
+一次 2.6s、123 盘 1.2s,而每张照片上传前都要确认目录存在。进程内
+`CreatedDirs` 缓存 `(storage_id, api_url, root_dir) → 已建目录`,命中即 0
+请求;目录被删后 `forget()` 连子孙一起失效。同一目录的第二批上传实测从
+「每张 0.6s 的额外建目录」降到 0.03s。
+
+### 3. 并发上传
+
+两家协议都**没有批量上传**:WebDAV 一次一个 PUT;OpenList 的
+`/api/fs/form` 是 multipart 但只认第一个 `file` 字段(塞两个会静默丢弃)。
+唯一的提速维度是并发,worker 改为每个存储最多 4 个 PUT 在飞(主线程按序
+读原图、有界队列背压,DB 仍只由主线程写,断点续传语义不变)。
+
+实测 8 张 ~2MB:123 盘串行 10.1s → 4 路 4.6s(2.2x);115 盘 5.3s → 4.0s(1.3x)。
+
+### 4. 上传校验
+
+一组传完对**每个目录**做一次列表(不是每张一次),核对远端大小:不符的重传
+一次,仍不符则任务 `failed` 并保留本地原图(可重传),不再出现「任务显示
+完成、远端其实是截断文件」。列表失败(服务端抖动)只记日志跳过,不误判。
+
+### 协议细节(实测)
+
+| | WebDAV | OpenList API |
+|---|---|---|
+| 认证 | Basic(用户名+密码) | `POST /api/auth/login` 换 JWT,头 `Authorization: <token>`(无 Bearer) |
+| 上传 | `PUT /dav/<path>` | `PUT /api/fs/put`,路径在 **`File-Path` 头**(必须 percent-encode,HTTP 头放不下中文) |
+| 建目录 | `MKCOL`(逐级) | `POST /api/fs/mkdir`(一次递归建整条,幂等) |
+| 删除 | `DELETE`(404 视为已删) | `POST /api/fs/remove {dir,names[]}` |
+| 列目录 | `PROPFIND Depth:1`(XML) | `POST /api/fs/list`(JSON,分页) |
+| 错误语义 | HTTP 状态码 | **永远 HTTP 200**,成败看 body 的 `code`;路径不存在 = `code 500` + `object not found` |
+| 直链 | `/d/<path>` | `/d/<path>`(同一个 OpenList 直链,302 到网盘 CDN) |
+
+`webdav` backend 不调用任何 `/api/*`,换成别的 WebDAV 服务端行为一致;
+`openlist` backend 不碰 `/dav`。
+
+### 测试
+
+- `tests/test_storage_backends.py`:进程内 stub 同时实现两套协议,断言
+  「N 张上传只 MKCOL/mkdir 一次」「删目录 = 1 次请求」「有陌生文件时拒删并
+  逐文件兜底」「校验能发现截断、重传后恢复」;
+- `tests/test_upload_concurrency.py`:打桩 backend 记录峰值并发(2..4),
+  校验不一致时任务必须 failed 且保留原图;
+- `tests/test_collection_delete_async.py`:后台清理 + 重传竞态守卫。

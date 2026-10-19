@@ -188,23 +188,24 @@ def remote_urls(rel: str) -> list[str]:
         return urls
     finally:
         s.close()
-
-
 # ---- 删除写真集时的远端清理 ---------------------------------------------------
 #
-# 为什么必须放后台: WebDAV 没有批量删除, 只能一张一张 DELETE, 而网盘驱动
-# 一次删除要 0.1s(123 盘)~0.5s(115 盘)。一本 137 张的写真集 = 274 次删除
-# ≈ 70s+, 773 张的那本要 6 分钟以上。这段以前同步跑在请求里, 管理后台点删除
-# 转圈几十秒到几分钟, 而且 handler 是 async def 里做同步网络 IO, 整站(含
-# /healthz 与所有页面)一起卡死 —— 实测删 40 张期间 /healthz 要等 22s。
+# 为什么必须放后台: 远端删除受网盘驱动延迟支配(实测 123 盘 0.1s/次、115 盘
+# 0.5s/次), 一本 137 张的写真集逐个删 = 274 次删除 ≈ 70s+, 773 张那本要 6 分钟
+# 以上。这段以前同步跑在请求里, 管理后台点删除转圈几十秒到几分钟, 而且 handler
+# 是 async def 里做同步网络 IO, 整站(含 /healthz 与所有页面)一起卡死 ——
+# 实测删 40 张期间 /healthz 要等 22s。
 #
 # 现在的分工: 请求线程只做「快照远端路径 + 删 DB + 删本地文件」, 远端清理
 # 丢给后台线程池(尽力而为, 失败只记日志, 不影响已完成的本地删除)。
+#
+# 清理策略是「先目录、后文件」: 上传目录与写真集一一对应, 所以
+#   1. 目录里只有本次快照的文件 → 一次请求删掉整本(123 ~0.1s / 115 ~0.5s);
+#   2. 目录里混进了快照之外的文件(删完又立刻重新导入并上传)→ 退回逐文件,
+#      只删快照里、且此刻不再被引用的那些。
+# 目录删除由 backend.delete_dir 实现(webdav 用集合 DELETE, openlist 用
+# fs/remove), 带 allowed 守卫 —— 列表显示有陌生文件就拒删。
 
-# 每批 DELETE 的路径数: 一个批次是一个后台任务, 批次小 → 多存储/多批次能
-# 并行起来(实测 123 盘 8 路并发 0.098s/张 → 0.034s/张)
-PURGE_CHUNK = 200
-# 全局并发上限(跨写真集共享): 网盘驱动对高频删除敏感, 4 路足够且不打扰
 _purge_pool: ThreadPoolExecutor | None = None
 _purge_pool_lock = threading.Lock()
 
@@ -247,9 +248,9 @@ def collect_remote_paths(collection_id: int, s: Session | None = None) -> dict[i
 def _still_referenced(s: Session, storage_id: int, paths: list[str]) -> set[str]:
     """这批路径里仍被 photo_uploads 引用的(删除→重新采集上传的竞态保护)。
 
-    远端清理在后台跑几十秒到几分钟, 期间同一本写真集完全可能被重新导入并
-    重新上传 —— 那时远端路径相同, 若照单全删就会把新文件一起删掉。删之前
-    回查一次: 还有记录指向它 = 是这次新传的, 跳过。
+    远端清理在后台跑, 期间同一本写真集完全可能被重新导入并重新上传 —— 那时
+    远端路径相同, 若照单全删就会把新文件一起删掉。删之前回查一次: 还有记录
+    指向它 = 是这次新传的, 跳过。
     """
     live: set[str] = set()
     for i in range(0, len(paths), 400):
@@ -261,30 +262,43 @@ def _still_referenced(s: Session, storage_id: int, paths: list[str]) -> set[str]
     return live
 
 
-def _purge_chunk(storage_id: int, paths: list[str], collection_id: int, label: str) -> None:
-    """一个后台清理任务: 一个存储的一段路径(串行删除, 失败只记日志)。"""
+def _purge_dir(storage_id: int, remote_dir: str, names: list[str],
+               collection_id: int, label: str) -> None:
+    """一个后台清理任务: 一个远端目录。先试整目录删除, 不行再逐文件。"""
     from ...database import SessionLocal
+    from .base import TreeBackend, get_backend
+
+    def rp(n: str) -> str:
+        return f"{remote_dir}/{n}" if remote_dir else n
 
     s = SessionLocal()
     try:
         st = s.get(Storage, storage_id)
         if st is None:
             return
-        live = _still_referenced(s, storage_id, paths)
-        # 断开 ORM 连接: 下面是最长几分钟的网络 IO, 不能一直占着 DB 会话
+        live = _still_referenced(s, storage_id, [rp(n) for n in names])
+        # 断开 ORM 连接: 下面是最长几十秒的网络 IO, 不能一直占着 DB 会话
         s.expunge(st)
         name = st.name
     finally:
         s.close()
 
-    targets = [p for p in paths if p not in live]
+    targets = [n for n in names if rp(n) not in live]
     if not targets:
         log.info("remote purge skip %s: %d/%d files re-uploaded meanwhile",
-                 name, len(paths), len(paths))
+                 name, len(names), len(names))
         return
     try:
-        from .base import get_backend
-        get_backend(st).delete_batch(st, targets)
+        backend = get_backend(st)
+        # 整目录删除的前提: 本次要删的覆盖了快照里的全部文件(没有幸存的),
+        # 且目录里没有快照之外的文件(delete_dir 自己会再查一次)。
+        if isinstance(backend, TreeBackend) and len(targets) == len(names):
+            if backend.delete_dir(st, remote_dir, set(names)):
+                log.info("purged %d remote files of collection %s (%s) from %s"
+                         " (dir delete: %s)", len(targets), collection_id,
+                         label, name, remote_dir or "/")
+                return
+        backend.delete_batch(st, [rp(n) for n in targets])
         log.info("purged %d remote files of collection %s (%s) from %s",
                  len(targets), collection_id, label, name)
     except Exception:
@@ -297,16 +311,19 @@ def purge_remote_async(by_storage: dict[int, list[str]], collection_id: int,
                        label: str = "") -> int:
     """把远端清理排进后台线程池, 立即返回排入的文件数(0 = 无需清理)。
 
-    label 只用于日志(写真集 slug), 便于事后对账。
+    按远端目录拆任务: 一本写真集通常就是 1 个目录 = 1 个后台任务,
+    每个存储各一个。label 只用于日志(写真集 slug), 便于事后对账。
     """
+    from .base import split_by_dir
+
     if not by_storage:
         return 0
     pool = _get_purge_pool()
     total = 0
     for sid, paths in by_storage.items():
-        for i in range(0, len(paths), PURGE_CHUNK):
-            pool.submit(_purge_chunk, sid, paths[i:i + PURGE_CHUNK], collection_id, label)
-            total += len(paths[i:i + PURGE_CHUNK])
+        for d, names in split_by_dir(paths).items():
+            pool.submit(_purge_dir, sid, d, names, collection_id, label)
+            total += len(names)
     log.info("queued %d remote files of collection %s (%s) for background purge",
              total, collection_id, label)
     return total
@@ -317,6 +334,8 @@ def purge_remote_of_collection(collection_id: int) -> None:
 
     注意: 调用前 photo_uploads 必须还在, 否则什么也查不到。
     """
-    by_storage = collect_remote_paths(collection_id)
-    for sid, paths in by_storage.items():
-        _purge_chunk(sid, paths, collection_id, "")
+    from .base import split_by_dir
+
+    for sid, paths in collect_remote_paths(collection_id).items():
+        for d, names in split_by_dir(paths).items():
+            _purge_dir(sid, d, names, collection_id, "")

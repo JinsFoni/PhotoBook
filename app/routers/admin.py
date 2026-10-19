@@ -1044,7 +1044,7 @@ async def admin_settings_save(request: Request, s: Session = Depends(get_db)):
 
 # ---- 存储管理 -------------------------------------------------------------------
 
-STORAGE_TYPES = ("imgbed", "webdav")
+STORAGE_TYPES = ("imgbed", "webdav", "openlist")
 
 
 def _storages_ctx(s: Session) -> dict:
@@ -1126,10 +1126,12 @@ async def admin_storage_update(request: Request, st_id: int, s: Session = Depend
     st = s.get(Storage, st_id)
     if not st:
         raise HTTPException(404)
+    if type in STORAGE_TYPES:  # 允许在 webdav / openlist 之间切换
+        st.type = type
     st.name = name.strip() or st.name
     st.root_dir = root_dir.strip()
     st.api_url = api_url.strip()
-    if st.type == "webdav":  # webdav 用户名可改; imgbed 的 username 无意义保持原值
+    if st.type in ("webdav", "openlist"):  # 用户名只对这两类有意义
         st.username = username.strip()
     if token.strip():  # 留空 = 不修改
         st.token = token.strip()
