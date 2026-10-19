@@ -19,6 +19,7 @@ HARVEST_KEYS: dict[str, tuple[str, str, type]] = {
                              "模特名排除词(逗号分隔,按词匹配,用于从标签里挑模特名)", str),
     "harvest.unsorted_dir": (defaults.harvest_unsorted_dir, "未分类目录名", str),
     "harvest.proxy": ("", "网络代理(采集链路: 页面解析/短链/API/harvest 下载;PikPak 下载不走此代理,空=直连)", str),
+    "harvest.terabox_cookie_file": ("", "TeraBox Cookie 文件路径(Netscape cookies.txt,需含 ndus;4kup 等只挂 terabox 的站下载用,空=禁用 TeraBox 下载)", str),
     "library.dir": (str(defaults.library_dir), "归档根目录", str),
 }
 

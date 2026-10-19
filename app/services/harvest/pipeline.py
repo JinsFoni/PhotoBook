@@ -56,17 +56,20 @@ def download_stream(url: str, dest: Path, *,
                     max_bytes: int = 4 * 1024**3,
                     on_progress=None,
                     stream_key=None,
-                    use_proxy: bool = True) -> Path:
+                    use_proxy: bool = True,
+                    headers: dict | None = None) -> Path:
     """流式下载,支持 Range 断点续传。完成后校验 SHA256。
 
     on_progress(done_bytes, total_bytes) — total 可能为 0(未知)。
     stream_key — 注册键(worker 传 job_id), 看门狗可从其它线程 close 解堵。
     use_proxy — False 时无视 harvest.proxy 强制直连(pikpak CDN 实测直连可达)。
+    headers — 额外请求头(terabox CDN 校验 ndus Cookie,必须随请求带上;
+      Range 头由本函数按续传状态自行填,传入同名键会被覆盖)。
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
 
-    headers = {}
+    headers = dict(headers or {})
     done = 0
     if tmp.exists():
         done = tmp.stat().st_size
@@ -145,6 +148,8 @@ def extract_archive(archive: Path, dest_dir: Path, password: str, *,
             cands.append(password)
     if "mrcong.com" not in cands:
         cands.append("mrcong.com")  # 历史默认
+    if "4kup" not in cands:
+        cands.append("4kup")  # 4kup.net 公开解压密码(仅多余尝试,无副作用)
 
     def _clean() -> None:
         # 换密码/换工具前清掉半截解压产物,避免残留混入下一轮

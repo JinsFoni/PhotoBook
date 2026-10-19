@@ -450,6 +450,32 @@ def test_push_accepts_misskon(ext_key, client):
         _cleanup_serial(994020)
 
 
+def test_push_accepts_4kup(ext_key, client):
+    """4kup URL 走同一推送入口;slug 无序号时由服务端回源取 post id。"""
+    # /post-<id>/ 形态本地即可解析
+    url = "https://4kup.net/post-994030/"
+    r = client.post("/api/ext/harvest", json={"url": url}, headers=H(ext_key))
+    item = r.json()["items"][0]
+    assert item["ok"] is True and item["serial"] == 994030
+    _cleanup_serial(994030)
+
+
+def test_push_4kup_slug_falls_back_to_page_postid(ext_key, client, monkeypatch):
+    """4kup slug 详情页(/le-gms-006a-gms/)无序号,服务端回源抓页面
+    从 article 的 post-N 取序号(与 misskon 老帖同思路)。"""
+    from app.services.harvest import net
+
+    monkeypatch.setattr(
+        net, "fetch_html",
+        lambda url: '<html><body><article id="post-994031" '
+                    'class="post-994031 post type-post"></article></body></html>')
+    url = "https://4kup.net/le-gms-006a-gms/"
+    r = client.post("/api/ext/harvest", json={"url": url}, headers=H(ext_key))
+    item = r.json()["items"][0]
+    assert item["ok"] is True and item["serial"] == 994031
+    _cleanup_serial(994031)
+
+
 def test_push_force_requeues_failed(ext_key, client):
     _hist(9990011, "failed")
     url = URL.format(serial=9990011)

@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         BuonDua/misskon/nicesss → PhotoBook 助手
+// @name         BuonDua/misskon/nicesss/4kup → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.7.3
-// @description  在 buondua.com / misskon.com / nicesss.com 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列(同一本写真跨站转载也判已入库)
+// @version      1.8.0
+// @description  在 buondua.com / misskon.com / nicesss.com / 4kup.net 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列(同一本写真跨站转载也判已入库)
 // @author       PhotoBook
 // @match        https://buondua.com/*
 // @match        https://www.buondua.com/*
@@ -10,6 +10,8 @@
 // @match        https://www.misskon.com/*
 // @match        https://www.nicesss.com/*
 // @match        https://nicesss.com/*
+// @match        https://4kup.net/*
+// @match        https://www.4kup.net/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -152,9 +154,12 @@
   //                     封面容器 .post-thumbnail
   // nicesss 列表页卡片: article.post[id="post-<id>"],封面容器 .entry-media
   //                     (卡片序号 = 详情 URL 的 <id>.html,与 post id 一致)
+  // 4kup 列表页卡片:    article.generate-columns[id="post-<id>"](GP 主题),
+  //                     封面容器 .post-thumbnail;序号 = post id,与详情页一致
   // 详情页: URL 尾段 serial,封面容器 .post-image / 标题行(.entry-title, nicesss)
   const IS_NICESSS = /(^|\.)nicesss\.com$/.test(location.hostname);
   const IS_MISSKON = /(^|\.)misskon\.com$/.test(location.hostname);
+  const IS_4KUP = /(^|\.)4kup\.net$/.test(location.hostname);
 
   function cardNodes() {
     if (IS_NICESSS) {
@@ -162,6 +167,9 @@
     }
     if (IS_MISSKON) {
       return Array.from(document.querySelectorAll("article.item-list"));
+    }
+    if (IS_4KUP) {
+      return Array.from(document.querySelectorAll("article[id^='post-']"));
     }
     return Array.from(document.querySelectorAll("div.items-row[data-id]"));
   }
@@ -182,6 +190,11 @@
       return misskonSerialFromPath(location.pathname)
         || (document.body.className.match(/postid-(\d+)/) || [])[1] || null;
     }
+    // 4kup slug 同样无序号(/le-gms-006a-gms/),与 misskon 老帖同思路
+    // 回退 body class 的 postid-N(GP 主题详情页都有)
+    if (IS_4KUP) {
+      return (document.body.className.match(/postid-(\d+)/) || [])[1] || null;
+    }
     const m = location.pathname.match(/-(\d+)\/?$/);
     return m ? m[1] : null;
   }
@@ -197,12 +210,16 @@
       // 详情页有 h1.post-title + p.post-tag;列表页两者皆无
       return Boolean(document.querySelector("h1.post-title, p.post-tag"));
     }
+    if (IS_4KUP) {
+      // 详情页有 h1.entry-title(GP 主题列表页卡片是 h2,页头无 entry-title)
+      return Boolean(document.querySelector("h1.entry-title"));
+    }
     return Boolean(document.querySelector(".article-tags, .post-image"));
   }
 
   function ensureHost(card) {
     const sel = IS_NICESSS ? ".entry-media"
-      : IS_MISSKON ? ".post-thumbnail" : ".item-thumb";
+      : IS_MISSKON ? ".post-thumbnail" : IS_4KUP ? ".post-thumbnail" : ".item-thumb";
     const host = card.querySelector(sel);
     if (!host) return null;
     if (getComputedStyle(host).position === "static") {
@@ -225,13 +242,20 @@
       // 不成立,这里只能取链接;取不到就空,由服务端按 URL 解析)
       return a ? (misskonSerialFromPath(a.pathname) || "") : "";
     }
+    if (IS_4KUP) {
+      // 卡片 id 就是 post id(与详情页一致),链接 slug 无序号
+      const m = card.id.match(/^post-(\d+)$/);
+      if (m) return m[1];
+      const a = card.querySelector("a[href*='://4kup.net/']");
+      return a ? "" : "";
+    }
     return card.dataset.id;
   }
 
   // 卡片标题文本(随状态查询上报服务端做跨站标题比对,判「已入库」)
   function cardTitle(card) {
     const sel = IS_NICESSS ? "h2.entry-title a"
-      : IS_MISSKON ? "h2.post-box-title a" : ".page-header h2 a.item-link";
+      : IS_MISSKON ? "h2.post-box-title a" : IS_4KUP ? "h2.entry-title a" : ".page-header h2 a.item-link";
     const a = card.querySelector(sel);
     return a ? (a.textContent || "").trim() : "";
   }
@@ -243,6 +267,8 @@
     if (t) {
       // 去掉 buondua 分页尾巴 " ( Page 1 / 2 )"
       t = t.replace(/\s*\(\s*Page\s+\d+\s*\/\s*\d+\s*\)\s*$/i, "");
+      // 去掉 4kup og:title 的站点后缀(h1 无;服务端入库标题也不带)
+      t = t.replace(/\s*[–—-]\s*Beautiful Girls Collection\s*$/i, "");
       return t;
     }
     const h = document.querySelector("h1");
@@ -274,6 +300,19 @@
       }
       return null;
     }
+    if (IS_4KUP) {
+      // 标题 h1.entry-title 行,徽标内联挂标题右侧(站内没有 tag 行,
+      // 分类在 footer 的 .cat-links 里且只有地区/出品方分类,不适合挂)
+      const title = document.querySelector("h1.entry-title");
+      if (title) {
+        title.style.display = "flex";
+        title.style.flexWrap = "wrap";
+        title.style.alignItems = "center";
+        title.style.gap = "8px";
+        return title;
+      }
+      return null;
+    }
     // 首选: 标签行(.article-tags > .tags), 徽标挂行最右侧;
     // 找不到再退回封面容器(.post-image / .item-thumb)
     const tagsRow = document.querySelector(".article-tags .tags");
@@ -294,8 +333,8 @@
   function setBadge(host, serial, state, pending) {
     const st = pending || state;
     const text = pending === "pending" ? "…" : (LABEL[st] || st);
-    // 标签行内联布局(标记类含 tags / post-tag), 非封面绝对定位
-    const inline = /(^|\s)(tags|post-tag)(\s|$)/.test(host.className);
+    // 标签行内联布局(标记类含 tags / post-tag / entry-title), 非封面绝对定位
+    const inline = /(^|\s)(tags|post-tag|entry-title)(\s|$)/.test(host.className);
     let el = host.querySelector(".pb-badge");
     if (!el) {
       el = document.createElement("button");
@@ -481,10 +520,11 @@
     if (!pingOk) { alert("PhotoBook 未连接,请在脚本菜单重新设置"); return; }
     const state = el.dataset.state;
     if (state === "done" || state === "queued" || el.dataset.busy) return;
-    // 列表页卡片自带详情链接(a.item-link / misskon 的详情链接 / nicesss 的
-    // a[href*='.html']); 详情页本身就是详情 URL, 直接用
+    // 列表页卡片自带详情链接(a.item-link / misskon、4kup 的详情链接 /
+    // nicesss 的 a[href*='.html']); 详情页本身就是详情 URL, 直接用
     const linkSel = IS_NICESSS ? "a[href*='.html']"
-      : IS_MISSKON ? "a[href*='://misskon.com/']" : "a.item-link";
+      : IS_MISSKON ? "a[href*='://misskon.com/']"
+      : IS_4KUP ? "a[href*='://4kup.net/']" : "a.item-link";
     const link = host.querySelector(linkSel);
     const realUrl = link ? link.href : location.href;
     el.dataset.busy = "1";

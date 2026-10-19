@@ -16,3 +16,9 @@ __pycache__/
 
 # 工具本地数据
 .zcode/
+
+# 本地工具痕迹(不入库)
+.playwright-cli/
+.playwright/
+photoshoot/
+docs/**/__pycache__/

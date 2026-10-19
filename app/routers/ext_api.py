@@ -139,7 +139,8 @@ class PushBody(BaseModel):
     force: bool = False
 
 
-SUPPORTED_HOSTS = ("buondua.com", net.NICESSS_HOST, net.MISSKON_HOST)
+SUPPORTED_HOSTS = ("buondua.com", net.NICESSS_HOST, net.MISSKON_HOST,
+                   net.FOURKUP_HOST)
 
 
 def _serial_from_url(url: str) -> int:

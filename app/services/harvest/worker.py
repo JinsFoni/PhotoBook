@@ -20,7 +20,7 @@ from .. import media, settings_store
 from ...db import Collection, HarvestHistory, HarvestJob, Photo
 from ...database import SessionLocal
 from ...i18n import t
-from . import net, pipeline
+from . import net, pipeline, terabox
 from .filters import check_title
 from .titlematch import photo_count, title_matches_collection, titles_match
 
@@ -72,7 +72,7 @@ def enqueue_manual(url: str) -> tuple[bool, str]:
     from ...i18n import t
 
     host = urlparse(url).netloc.lower()
-    supported = ("buondua.com", net.NICESSS_HOST, net.MISSKON_HOST)
+    supported = ("buondua.com", net.NICESSS_HOST, net.MISSKON_HOST, net.FOURKUP_HOST)
     if not any(h in host for h in supported):
         return False, t("仅支持 {sites} 详情页链接",
                         sites=" / ".join(supported))
@@ -166,6 +166,10 @@ def scan_once(pages: int | None = None) -> dict:
                 ("buondua", net.scan_list_page, _buondua_page_url),
                 ("https://misskon.com", net.scan_misskon_list_page,
                  lambda base, n: base if n == 0 else f"{base}/page/{n + 1}/"),
+                # 4kup.net(WordPress /page/N/ 分页): 只有 terabox 链,
+                # 走 TeraBox 下载分支;模特名从标题抽取
+                ("https://4kup.net", net.scan_4kup_list_page,
+                 lambda base, n: base + "/" if n == 0 else f"{base}/page/{n + 1}/"),
             )
             for base, scan, page_url in scanners:
                 for n in range(max_pages):
@@ -212,6 +216,128 @@ def _finish(s, job: HarvestJob, status: str, error: str | None = None) -> None:
     # 历史表 serial 为主键: 同一任务二次 _finish(如 done 后 import 失败改判 failed)
     # 用合并写入, 保留最新状态
     s.merge(HarvestHistory(serial=job.serial, status=status, title=job.title))
+
+
+def _resolve_infos(s, job: HarvestJob, target) -> list[dict] | None:
+    """详情页短链 → 下载信息列表([{direct_url,size,sha256,filename}, …])。
+
+    下载源分流:详情页可能同时挂 MediaFire 与 TeraBox 备份链(同一包两条
+    备份),**优先 MediaFire**——稳定、无需 Cookie、API 带 SHA256 校验;
+    只在没有任何 mediafire 链接时整包走 TeraBox(4kup.net 这类站只挂
+    terabox)。两类绝不混下:同一包的备份链,混下是双倍流量。
+
+    返回 None 表示任务已在此落终态(失败)。
+    """
+    shortlinks = target.shortlinks
+    mf_links = [x for x in shortlinks if "mediafire.com/" in x
+                or "ouo.io/" in x or "ouo.press/" in x]
+    tb_links = [x for x in shortlinks if terabox.is_terabox_url(x)]
+    if not mf_links and not tb_links:
+        # 其他网盘(pixeldrain/mega/…): ouo 落地后按 OTHER_HOSTS 报平台名
+        try:
+            net.resolve_ouo(shortlinks[0])
+        except net.UnsupportedHostError as e:
+            _finish(s, job, "failed", str(e))
+            s.commit()
+            return None
+        _finish(s, job, "failed", f"短链解析失败: {shortlinks[0]}")
+        s.commit()
+        return None
+    if tb_links and not mf_links:
+        return _resolve_terabox(s, job, tb_links)
+    infos: list[dict] = []
+    for link in mf_links:
+        # 直挂 MediaFire 链接(老帖无 ouo 短链)直接取直链;ouo 短链先解析
+        direct_page = link
+        if "ouo.io/" in link or "ouo.press/" in link:
+            try:
+                direct_page = net.resolve_ouo(link)
+            except net.UnsupportedHostError as e:
+                _finish(s, job, "failed", str(e))
+                s.commit()
+                return None
+            if not direct_page:
+                _finish(s, job, "failed", f"短链解析失败: {link}")
+                s.commit()
+                return None
+        if net.MF_FOLDER_RE.search(direct_page):
+            # 落地是 MediaFire 文件夹(分卷包发布方把所有卷放一夹): API 展开逐卷
+            folder_files = net.mediafire_folder_files(direct_page)
+            if not folder_files:
+                _finish(s, job, "failed", f"文件夹为空: {direct_page}")
+                s.commit()
+                return None
+            infos.extend(folder_files)
+            continue
+        info = net.mediafire_info_from_url(direct_page)
+        if not info["direct_url"]:
+            _finish(s, job, "failed", f"未获取到直链: {info['filename']}")
+            s.commit()
+            return None
+        infos.append(info)
+    return infos
+
+
+def _resolve_terabox(s, job: HarvestJob, tb_links: list[str]) -> list[dict] | None:
+    """TeraBox 分享链接 → 下载信息(与 mediafire info 同构)。
+
+    每条分享链接展开成全部文件(分卷包发布方一个分享放所有卷,与
+    mediafire_folder_files 同语义)。dlink 短时效:这里只解析元数据
+    (文件名/大小),直链在下载每卷前现取 —— 与 mediafire 不同,MF 直链
+    可以提前拿好,terabox 的 sign 会过期,存下来必踩坑。
+    返回 None 表示任务已在此落终态。
+    """
+    conf = settings_store.harvest_conf(s)
+    try:
+        cookie_header = terabox.load_cookie_header(
+            str(conf.get("harvest.terabox_cookie_file") or ""))
+    except terabox.TeraboxError as e:
+        _finish(s, job, "failed", str(e))
+        s.commit()
+        return None
+    infos: list[dict] = []
+    try:
+        for link in tb_links:
+            # 逐链接展开;单条解析失败整任务失败(与 mediafire 分卷同语义)
+            surl = terabox.parse_surl(link)
+            js_token = terabox._share_page_token(cookie_header, surl)
+            referer = terabox.SHARE_URL.format(surl=surl)
+            info = terabox._shorturlinfo(cookie_header, surl, js_token, referer)
+            if info.get("errno") != 0:
+                raise terabox.TeraboxError(
+                    f"TeraBox shorturlinfo errno={info.get('errno')}({link})")
+            files = terabox._flatten(cookie_header, surl, js_token, referer,
+                                     info.get("list") or [])
+            if not files:
+                raise terabox.TeraboxError(f"TeraBox 分享为空({link})")
+            for f in files:
+                infos.append({
+                    # direct_url 留空: terabox 直链短时效, 下载前由
+                    # _download_terabox_volume 现取并落 dlink 键
+                    "quick_key": str(f["fs_id"]),
+                    "direct_url": "",
+                    "size": int(f.get("size") or 0),
+                    "sha256": (f.get("md5") or "").lower(),
+                    "filename": f.get("server_filename") or f"terabox-{f['fs_id']}",
+                    "terabox": {"cookie_header": cookie_header,
+                                "surl": surl, "fs_id": str(f["fs_id"]),
+                                "referer": referer},
+                })
+    except terabox.TeraboxError as e:
+        _finish(s, job, "failed", str(e))
+        s.commit()
+        return None
+    return infos
+
+
+def _download_terabox_volume(job_id: int, info: dict, archive_file,
+                             on_progress=None) -> None:
+    """单卷 TeraBox 下载:现取 dlink(短时效)→ 流式落盘(带 Cookie)。"""
+    tb = info["terabox"]
+    f = terabox.resolve_dlink_by_ids(tb["cookie_header"], tb["surl"],
+                                     tb["fs_id"], referer=tb["referer"])
+    terabox.download_file(tb["cookie_header"], f, archive_file,
+                          on_progress=on_progress, stream_key=job_id)
 
 
 def _run_job(job_id: int) -> None:
@@ -315,41 +441,16 @@ def _run_job(job_id: int) -> None:
         # 4. 解析短链 → 直链。分卷压缩会挂多条短链(标题带 "1 / 2"),
         #    必须全下,只下第一卷解压必缺卷;任一卷解析失败整任务失败
         #    (缺卷的包解出来也是废的,不值得半成品)
+        #    下载源分流(_resolve_infos):详情页可能同时挂 MediaFire 与
+        #    TeraBox 备份链,**优先 MediaFire**(稳定、无需 Cookie、带
+        #    SHA256);只挂 terabox 的站(4kup)整包走 TeraBox。
         if not target.shortlinks:
             _finish(s, job, "failed", "详情页未找到下载短链")
             s.commit()
             return
-        infos = []
-        for link in target.shortlinks:
-            # 直挂 MediaFire 链接(老帖无 ouo 短链):跳过 ouo 解析直接取直链
-            if "mediafire.com/" in link:
-                direct_page = link
-            else:
-                try:
-                    direct_page = net.resolve_ouo(link)
-                except net.UnsupportedHostError as e:
-                    _finish(s, job, "failed", str(e))
-                    s.commit()
-                    return
-                if not direct_page:
-                    _finish(s, job, "failed", f"短链解析失败: {link}")
-                    s.commit()
-                    return
-            if net.MF_FOLDER_RE.search(direct_page):
-                # 落地是 MediaFire 文件夹(分卷包发布方把所有卷放一夹): API 展开逐卷
-                folder_files = net.mediafire_folder_files(direct_page)
-                if not folder_files:
-                    _finish(s, job, "failed", f"文件夹为空: {direct_page}")
-                    s.commit()
-                    return
-                infos.extend(folder_files)
-                continue
-            info = net.mediafire_info_from_url(direct_page)
-            if not info["direct_url"]:
-                _finish(s, job, "failed", f"未获取到直链: {info['filename']}")
-                s.commit()
-                return
-            infos.append(info)
+        infos = _resolve_infos(s, job, target)
+        if infos is None:
+            return  # 已落终态
 
         # 5. 逐卷下载(流式 + 进度 + 断点续传)。进度跨卷累加:
         #    bytes_done = 前面各卷已下字节数 + 当前卷进度
@@ -383,11 +484,16 @@ def _run_job(job_id: int) -> None:
                     and archive_file.stat().st_size == info["size"]:
                 done_offset += info["size"]
                 continue
-            pipeline.download_stream(info["direct_url"], archive_file,
-                                     expected_sha256=info["sha256"],
-                                     max_bytes=4 * 1024**3,
-                                     on_progress=progress,
-                                     stream_key=job_id)
+            if info.get("terabox"):
+                # TeraBox 卷: dlink 短时效, 下载前现取(不提前解析落库)
+                _download_terabox_volume(job_id, info, archive_file,
+                                         on_progress=progress)
+            else:
+                pipeline.download_stream(info["direct_url"], archive_file,
+                                         expected_sha256=info["sha256"],
+                                         max_bytes=4 * 1024**3,
+                                         on_progress=progress,
+                                         stream_key=job_id)
             done_offset += archive_file.stat().st_size
         archive_done = True  # 全部卷 SHA256 已过, 此后失败可删包(失败重试会重新下载)
 

@@ -168,14 +168,18 @@ def _serial_from_url(url: str) -> int:
     return int(m.group(1))
 
 
-# WordPress(misskon/nicesss)在 ld+json 里给 datePublished;JSON 字符串里
+# WordPress(misskon/nicesss/4kup)在 ld+json 里给 datePublished;JSON 字符串里
 # 斜杠可能被转义(\/),先归一再取。发布时间带时区,取日期段不做时区换算 ——
 # 与源站页面上展示的日期一致即可。
 DATE_PUBLISHED_RE = re.compile(r'"datePublished":"(\d{4}-\d{2}-\d{2})')
+# WordPress(GP 主题,4kup)ld+json 缺失时 <time datetime> 兜底
+TIME_DATETIME_RE = re.compile(
+    r'<time[^>]*\bdatetime="(\d{4}-\d{2}-\d{2})', re.I)
 
 
 def _date_published_iso(html: str) -> str:
-    m = DATE_PUBLISHED_RE.search(html.replace("\\/", "/"))
+    m = (DATE_PUBLISHED_RE.search(html.replace("\\/", "/"))
+         or TIME_DATETIME_RE.search(html.replace("\\/", "/")))
     return m.group(1) if m else ""
 
 
@@ -201,7 +205,12 @@ def _collect_mediafire_links(html: str) -> list[str]:
 
 def serial_from_url(url: str) -> int:
     """按站点分派的序号提取:buondua 尾段数字 / misskon slug 前缀或 postid /
-    nicesss <id>.html。"""
+    nicesss <id>.html / 4kup post id(slug 多无数字,回退页面 post-N)。"""
+    if is_4kup_url(url):
+        try:
+            return _serial_from_4kup_url(url)
+        except ValueError:
+            return _4kup_serial_from_page(fetch_html(url))
     if is_nicesss_url(url):
         return _serial_from_nicesss_url(url)
     if is_misskon_url(url):
@@ -215,6 +224,9 @@ def serial_from_url(url: str) -> int:
 def parse_detail_page(url: str, existing_html: str | None = None,
                       model_exclude: str | None = None) -> HarvestTarget:
     """按站点分派的详情页解析(nicesss 不需要 model_exclude)。"""
+    if is_4kup_url(url):
+        return parse_4kup_detail_page(url, existing_html=existing_html,
+                                      model_exclude=model_exclude)
     if is_nicesss_url(url):
         return parse_nicesss_detail_page(url, existing_html=existing_html)
     if is_misskon_url(url):
@@ -505,6 +517,155 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
             shortlinks.append(link)
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
                          password=password, shortlinks=shortlinks, tags=tags,
+                         published=_to_dotted(_date_published_iso(html)))
+
+
+# ---- 4kup.net 详情页 ----------------------------------------------------------
+# WordPress(GP 主题)。该站只有 TeraBox 链接(download-box),没有 MediaFire/
+# ouo;tag 只有分类(地区/出品方),模特名只能从标题按规则抽取(见
+# titlemodel.py,规则移植自 docs/model-name 原型,实测 95%+ 命中)。
+
+FOURKUP_HOST = "4kup.net"
+
+# 正文下载区: <p id='download'><a href='https://1024terabox.com/s/xxx'>
+# (单引号/双引号都有);整页兜底正则只认 terabox 系域名,不会误收广告链。
+FOURKUP_DOWNLOAD_BOX_RE = re.compile(
+    r"<p[^>]*id=['\"]download['\"][^>]*>(.*?)</p>", re.S)
+TERABOX_LINK_RE = re.compile(
+    r'href=["\'](https?://[^"\']*?(?:terabox|1024tera|terasharelink|'
+    r"freeterabox|mirrobox|nephobox|4funbox)[^\"']*)['\"]", re.I)
+FOURKUP_POSTID_RE = re.compile(r'<article[^>]*\bpost-(\d+)\b')
+# 标题 <h1 class="entry-title">…</h1>(og:title 与其一致,带站点后缀)
+FOURKUP_H1_RE = re.compile(
+    r'<h1[^>]*class="[^"]*entry-title[^"]*"[^>]*>(.*?)</h1>', re.S)
+
+
+# 列表页卡片: <article id="post-53150" class="post-53150 …">…</article>。
+# 捕获组含完整开标签(post id 在开标签的 class/id 里),h2 内标题链接;
+# 侧栏「热门文章」等 widget 也是同形态链接,必须只在 article 卡片里找,
+# 与 misskon MISSKON_CARD_RE 同思路。
+FOURKUP_CARD_RE = re.compile(
+    r'(<article[^>]*class="[^"]*post-\d+[^"]*"[^>]*>)(.*?)</article>', re.S)
+FOURKUP_LIST_LINK_RE = re.compile(
+    r'<h\d[^>]*>\s*<a href="(https://4kup\.net/[^"]+)"', re.S)
+
+
+def scan_4kup_list_page(base_url: str) -> tuple[list[tuple[int, str]], bool]:
+    """解析 4kup.net 列表页,返回 ([(post_id, 详情绝对 URL)...], 有无下一页)。
+
+    序号 = WordPress post id(article 开标签 class 里的 post-N,卡片自带,
+    无需回源详情页)。分页 /page/N/。
+    """
+    html = fetch_html(base_url)
+    found: dict[int, str] = {}
+    for open_tag, card in FOURKUP_CARD_RE.findall(html):
+        for url in FOURKUP_LIST_LINK_RE.findall(card):
+            m = re.search(r"/post-(\d+)/", url) or FOURKUP_POSTID_RE.search(open_tag)
+            if not m:
+                continue
+            found.setdefault(int(m.group(1)), url)
+    links = sorted(found.items())
+    has_next = bool(re.search(r'href="https://4kup\.net/page/\d+/"', html))
+    return links, has_next
+
+
+def is_4kup_url(url: str) -> bool:
+    host = urlparse(url).netloc.lower() if url else ""
+    return host == FOURKUP_HOST or host.endswith("." + FOURKUP_HOST)
+
+
+def _serial_from_4kup_url(url: str) -> int:
+    """…/post-53150 类页面的序号: WordPress post id。
+
+    slug 大多无数字尾段(/le-gms-006a-gms/),与 misskon 老帖同思路
+    回退到详情页 article 的 post-N 取;有数字尾段的 slug(coser-2630)
+    与 post id 同源吗?——不同源(它只是去重 slug),所以一律回退页面。
+    这里仅识别 /post-<id>/ 形态,其余抛 ValueError 由调用方抓页面。
+    """
+    m = re.search(r"/post-(\d+)(?:[/?#]|$)", url)
+    if m:
+        return int(m.group(1))
+    raise ValueError(f"URL 无序号(4kup 需详情页 post id): {url}")
+
+
+def _4kup_serial_from_page(html: str) -> int:
+    m = FOURKUP_POSTID_RE.search(html)
+    if not m:
+        raise ValueError("页面无 post id(4kup)")
+    return int(m.group(1))
+
+
+def _collect_terabox_links(html: str) -> list[str]:
+    """页面里全部 terabox 系链接(去重保序)。
+
+    优先 download-box(正文下载按钮),整页扫描兜底 —— 部分帖子下载区
+    结构略异,但 terabox 域名特征稳定,广告 iframe 不含这些域。
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    boxes = FOURKUP_DOWNLOAD_BOX_RE.findall(html)
+    for scope in boxes + [html]:
+        for link in TERABOX_LINK_RE.findall(scope):
+            link = link.replace("&amp;", "&")
+            if link not in seen:
+                seen.add(link)
+                out.append(link)
+        if out:
+            break  # download-box 命中就不再整页扫
+    return out
+
+
+def parse_4kup_detail_page(url: str, existing_html: str | None = None,
+                           model_exclude: str | None = None) -> HarvestTarget:
+    """解析 4kup.net 详情页。
+
+    与其他站点最大的不同:模特名不来自 tag(该站 tag 只有分类),而是
+    从标题规则抽取(titlemodel);抽取不到 → 空串归「未分类」。tags 返回
+    标题抽取出的模特名(供黑白名单 tag 过滤与 import_album 关联),
+    另加页面分类名。密码固定 4kup(站点公开约定)。
+    """
+    from .titlemodel import model_name_from_title
+
+    html = existing_html if existing_html is not None else fetch_html(url)
+    import html as _html
+    html = _html.unescape(html)   # og:title/正文带 &#8211; 等实体,先统一解码
+    try:
+        serial = _serial_from_4kup_url(url)
+    except ValueError:
+        serial = _4kup_serial_from_page(html)
+    m = OG_TITLE_RE.search(html)
+    title = m.group(1).strip() if m else ""
+    # og:title 带 " – Beautiful Girls Collection" 站点后缀(h1 无)
+    title = re.sub(r"\s*[–-]\s*Beautiful Girls Collection\s*$", "", title)
+    title = re.sub(r"\s*\(\s*Page \d+ / \d+\s*\)\s*$", "", title)
+    if not title:
+        hm = FOURKUP_H1_RE.search(html)
+        if hm:
+            title = re.sub(r"<[^>]+>", "", hm.group(1)).strip()
+
+    name, _native = model_name_from_title(title)
+
+    # 分类名只取正文 <article> 内的 category 链接文本(页面导航/侧栏菜单
+    # 也是 /category/ 链接,整页正则会把全站分类误收进来)
+    tags: list[str] = []
+    seen: set[str] = set()
+    if name:
+        tags.append(name)
+        seen.add(name.lower())
+    art = re.search(r"<article\b.*?</article>", html, re.S)
+    if art:
+        for label in re.findall(
+                r'href="https://4kup\.net/category/[^"]*"[^>]*>([^<]+)<',
+                art.group(0)):
+            label = label.strip()
+            if label and label.lower() not in seen:
+                seen.add(label.lower())
+                tags.append(label)
+
+    # 该站下载区只挂 terabox,无 password 字样;归档密码是站点公开约定 4kup
+    shortlinks = _collect_terabox_links(html)
+    return HarvestTarget(serial=serial, title=title, model_name=name,
+                         password="4kup", shortlinks=shortlinks, tags=tags,
                          published=_to_dotted(_date_published_iso(html)))
 
 
