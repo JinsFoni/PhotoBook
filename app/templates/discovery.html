@@ -126,7 +126,7 @@
 
   /* 高清短边档(/t/s2400/:竖图钳宽横图钳高,等比不裁)而非原图:
      完整显示且首屏快;前景 contain 完整呈现,背景同图模糊压暗填两侧 */
-  function heroUrl(photo) { return "/t/s2400/" + photo.file + ".webp"; }
+  function heroUrl(photo) { return "/t/s2400/" + photo.file; }
 
   function showHero(photo) {
     var token = ++pending;
@@ -156,7 +156,7 @@
       return '<button class="sheet__frame" type="button" data-frame="' + i + '"' +
         ' style="--d:' + (i * 24) + 'ms" aria-current="' + (i === 0) + '"' +
         ' aria-label="' + PC.t('Preview frame {i} of {title}', {i: i + 1, title: c.title}) + '">' +
-        '<img src="/t/s900/' + p.file + '.webp" alt="" loading="lazy"></button>';
+        '<img src="/t/s900/' + p.file + '" alt="" loading="lazy"></button>';
     }).join("");
     strip.querySelectorAll("[data-frame]").forEach(function (b) {
       b.addEventListener("click", function () {

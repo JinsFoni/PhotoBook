@@ -176,7 +176,7 @@ def _blur_src(request: Request) -> str | None:
         if rel:
             # 垫底图层重度模糊(46px), s900 短边档足够(全站统一低清档);
             # 2400px 预载太慢, 点击切虚化后要黑好几秒
-            rel = "/t/s900/" + rel.lstrip("/") + ".webp"
+            rel = "/t/s900/" + rel.lstrip("/")
     except Exception:
         rel = None
     request.state._blur_src = rel

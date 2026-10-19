@@ -18,15 +18,20 @@ from app.services.media import (
 
 
 def test_thumb_url_width_only():
-    assert thumb_url("demo/x/abc.jpg", 900) == "/t/900/demo/x/abc.jpg.webp"
+    assert thumb_url("demo/x/abc.jpg", 900) == "/t/900/demo/x/abc.jpg"
 
 
 def test_thumb_url_width_height():
-    assert thumb_url("demo/x/abc.jpg", 300, 400) == "/t/300x400/demo/x/abc.jpg.webp"
+    assert thumb_url("demo/x/abc.jpg", 300, 400) == "/t/300x400/demo/x/abc.jpg"
 
 
 def test_thumb_url_short_side():
-    assert thumb_url("demo/x/abc.jpg", 2400, short=True) == "/t/s2400/demo/x/abc.jpg.webp"
+    assert thumb_url("demo/x/abc.jpg", 2400, short=True) == "/t/s2400/demo/x/abc.jpg"
+
+
+def test_thumb_url_webp_source_no_double_suffix():
+    """源文件本身是 .webp 时 URL 不得出现双 .webp(曾致 webp 原图缩略图全 404)。"""
+    assert thumb_url("demo/x/abc.webp", 900) == "/t/900/demo/x/abc.webp"
 
 
 def test_thumb_url_none_placeholder():
@@ -135,11 +140,11 @@ def test_short_side_no_upscale(admin_client):
 
 def test_short_side_with_crop_404(admin_client):
     """短边与 x{h} 裁剪语法互斥,组合请求 404。"""
-    assert admin_client.get("/t/s2400x1600/demo/x/abc.jpg.webp").status_code == 404
+    assert admin_client.get("/t/s2400x1600/demo/x/abc.jpg").status_code == 404
 
 
 def test_thumbnail_missing_source_404(admin_client):
-    assert admin_client.get("/t/300/demo/nope/none.jpg.webp").status_code == 404
+    assert admin_client.get("/t/300/demo/nope/none.jpg").status_code == 404
 
 
 # ---- 预热巡检：热启动零停顿，冷启动照常节流 ----

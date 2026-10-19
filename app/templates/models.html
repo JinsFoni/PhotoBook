@@ -102,7 +102,7 @@
     var img = root.querySelector("img");
     img.alt = PC.escapeHtml(m.name);
     if (m.avatar) {
-      if (img.getAttribute("src") !== "/t/s900/" + m.avatar + ".webp") img.src = "/t/s900/" + m.avatar + ".webp";
+      if (img.getAttribute("src") !== "/t/s900/" + m.avatar) img.src = "/t/s900/" + m.avatar;
     } else if (img.getAttribute("src")) {
       img.removeAttribute("src");
     }

@@ -253,4 +253,4 @@ def test_imported_album_visible_on_pages(tmp_path, admin_client):
     assert d["slug"] == "yeha-visible-album"
     assert d["title"] == "Visible Album" and len(d["photos"]) == 2
     assert admin_client.get("/media/yeha/visible-album/001.jpg").status_code == 200
-    assert admin_client.get("/t/400/yeha/visible-album/001.jpg.webp").status_code == 200
+    assert admin_client.get("/t/400/yeha/visible-album/001.jpg").status_code == 200

@@ -234,7 +234,7 @@
 
   /* 槽填充: 空槽建骨架, 复用槽只更新内容。img 节点永不重建,
      src 变化时旧图保持绘制直至新图就绪 — 无空白帧。 */
-  function coverUrl(c) { return "/t/s900/" + c.cover + ".webp"; }
+  function coverUrl(c) { return "/t/s900/" + c.cover; }
   function fillCell(el, item) {
     if (!el.firstChild) el.innerHTML = cardShell();
     fillCard(el, item);

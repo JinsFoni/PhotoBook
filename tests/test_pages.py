@@ -117,16 +117,16 @@ def test_search_api(admin_client):
 
 
 def test_thumbnail_endpoint(admin_client):
-    r = admin_client.get("/t/300/demo/summer-editorial/1524253482453-3fed8d2fe12b.jpg.webp")
+    r = admin_client.get("/t/300/demo/summer-editorial/1524253482453-3fed8d2fe12b.jpg")
     assert r.status_code == 200
     assert r.headers["content-type"] == "image/webp"
 
 
 def test_thumbnail_bad_width(admin_client):
     # 宽度上限 2400,超出被钳制而非 404
-    r = admin_client.get("/t/99999/demo/summer-editorial/1524253482453-3fed8d2fe12b.jpg.webp")
+    r = admin_client.get("/t/99999/demo/summer-editorial/1524253482453-3fed8d2fe12b.jpg")
     assert r.status_code == 200
-    assert admin_client.get("/t/0/demo/summer-editorial/1524253482453-3fed8d2fe12b.jpg.webp").status_code == 404
+    assert admin_client.get("/t/0/demo/summer-editorial/1524253482453-3fed8d2fe12b.jpg").status_code == 404
 
 
 def test_media_traversal_blocked(admin_client):

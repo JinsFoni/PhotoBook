@@ -4,7 +4,7 @@
 后续请求走 `Authorization: Bearer <token>`;auth_wall 中间件对 /api/mobile 早退,
 鉴权完全由本模块的依赖完成。所有错误统一为 {"error": {"code", "message"}}。
 
-媒体 URL 约定(客户端拿 rel 自拼):原图 /media/{rel},缩略图 /t/{w}x{h}/{rel}.webp。
+媒体 URL 约定(客户端拿 rel 自拼):原图 /media/{rel},缩略图 /t/{w}x{h}/{rel}(rel 带真实后缀,输出一律 WebP)。
 """
 
 from __future__ import annotations
@@ -194,7 +194,7 @@ def _collection_payload(s: Session, c: Collection,
         "model_slug": c.model.slug if c.model else "",
         "model_name": c.model.name if c.model else "未分类",
         "cover": cover,
-        "coverThumb": f"t/s{THUMB_SHORT_CARD}/{cover}.webp" if cover else None,
+        "coverThumb": f"t/s{THUMB_SHORT_CARD}/{cover}" if cover else None,
         "photos": [{"idx": i, "file": p.filename, "w": p.width, "h": p.height}
                    for i, p in enumerate(c.photos)],
         "tags": [t.name for t in c.tags],
@@ -212,7 +212,7 @@ def _collection_card(s: Session, c: Collection,
         "model_slug": c.model.slug if c.model else "",
         "model_name": c.model.name if c.model else "未分类",
         "cover": cover,
-        "coverThumb": f"t/s{THUMB_SHORT_CARD}/{cover}.webp" if cover else None,
+        "coverThumb": f"t/s{THUMB_SHORT_CARD}/{cover}" if cover else None,
         "count": (counts or {}).get(c.id, 0),
         "tags": [t.name for t in c.tags],
     }
@@ -322,7 +322,7 @@ async def mobile_collection_detail(slug: str, s: Session = Depends(get_db)):
         raise ApiError("not_found", "Collection not found", 404)
     load_photos(s, [c])
     payload = _collection_payload(s, c, _photo_counts(s, [c]))
-    payload["coverThumb"] = (f"t/s{THUMB_SHORT_HERO}/{payload['cover']}.webp"
+    payload["coverThumb"] = (f"t/s{THUMB_SHORT_HERO}/{payload['cover']}"
                              if payload["cover"] else None)
     payload["model"] = ({"slug": c.model.slug, "name": c.model.name}
                         if c.model else None)
@@ -400,7 +400,7 @@ async def mobile_search(q: str = Query(""), s: Session = Depends(get_db)):
                         avatar = ph.filename
                         break
         return {"slug": m.slug, "name": m.name, "stage": m.stage_name or "",
-                "avatar": avatar, "thumb": (f"t/s{THUMB_SHORT_CARD}/{avatar}.webp" if avatar else None),
+                "avatar": avatar, "thumb": (f"t/s{THUMB_SHORT_CARD}/{avatar}" if avatar else None),
                 "count": len(m.collections), "tags": [t.name for t in m.tags]}
 
     return {
@@ -451,7 +451,7 @@ async def mobile_favorites_resolve(s: Session = Depends(get_db),
                     photos.append({
                         "key": f"{c.slug}:{i}", "slug": c.slug, "idx": i,
                         "file": p.filename, "title": c.title,
-                        "thumb": f"t/s{THUMB_SHORT_CARD}/{p.filename}.webp",
+                        "thumb": f"t/s{THUMB_SHORT_CARD}/{p.filename}",
                         "w": p.width, "h": p.height,
                     })
         out["photos"] = photos

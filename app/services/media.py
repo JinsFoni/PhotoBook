@@ -1,7 +1,9 @@
 """媒体服务 — /media 原图 + 按需缩略图(WebP, 版位尺寸, 磁盘缓存)。
 
 URL 形如 /media/<path>              原图
-        /t/<w>x<h>/<path>.webp     裁剪缩略图(h 可省略 → 等比)
+        /t/<w>x<h>/<path>          裁剪缩略图(h 可省略 → 等比)。
+                                   <path> 以源文件真实后缀结尾(jpg/png/webp),
+                                   输出一律是 WebP(响应 Content-Type 标明)。
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ log = logging.getLogger("photobook.media")
 CACHE_DIR = "_cache"
 # s 前缀 = 短边钳制(/t/s2400/ → 竖图钳宽、横图钳高,等比不裁);无前缀 = 钳宽。
 # s 与 x{h} 裁剪语法互斥(灯箱显示档必须完整构图)。
+# 尾段后缀是源文件真实后缀(不再附加格式后缀 —— webp 源图曾因双 .webp 全 404)。
 THUMB_RE = re.compile(r"^(s?)(\d+)(?:x(\d+))?/(.+)\.(jpg|jpeg|png|webp)$", re.I)
 
 Image.MAX_IMAGE_PIXELS = 400 * 1024 * 1024  # 原图可达 40MP+
@@ -338,9 +341,9 @@ def serve_thumb(spec: str, request: Request) -> Response:
     if h is not None and h < 16:
         raise HTTPException(404)
     rel = m.group(4)
-    # URL 里 .webp 是缩略图格式后缀,真实源文件不带它
-    if rel.lower().endswith(".webp"):
-        rel = rel[:-5]
+    # group4 不含扩展名(在 group5),重组出带真实后缀的完整 rel:
+    # 缓存与原图路径都以完整 rel 为键(webp 源图与 jpg 同构,无双后缀歧义)
+    rel = f"{rel}.{m.group(5)}"
 
     # 缓存命中直接回(原图已上传外部存储并删本地时,缓存是唯一来源,
     # 必须先查缓存再做原图存在性检查)
@@ -384,9 +387,13 @@ def thumb_url(rel: str | None, w: int, h: int | None = None, short: bool = False
     if not rel:
         return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
     spec = f"s{w}" if short else str(w)
+    # URL 尾部直接用 rel(自带真实后缀),不再附加 .webp 后缀 —— 原图本身
+    # 是 .webp 时旧约定会出现双 .webp(原图后缀+缩略图后缀),serve_thumb
+    # 无法区分哪层是"格式后缀",曾把 webp 原图的缩略图全部打成 404。
+    # THUMB_RE 只认 jpg/jpeg/png/webp 结尾,语义不变:最后一段即源文件后缀。
     if h:
-        return f"/t/{spec}x{h}/{rel}.webp"
-    return f"/t/{spec}/{rel}.webp"
+        return f"/t/{spec}x{h}/{rel}"
+    return f"/t/{spec}/{rel}"
 
 
 # ---- 入库健康检查 ---------------------------------------------------------------
