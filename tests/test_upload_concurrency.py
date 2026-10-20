@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import threading
 import time
+from contextlib import contextmanager
+
+from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.db import Collection, Photo, PhotoUpload, Storage, UploadJob
@@ -162,6 +165,9 @@ def test_group_fails_when_remote_verify_mismatch(monkeypatch):
             job = s.get(UploadJob, jid)
             assert job.status == "failed"
             assert "校验失败" in (job.error or "")
+            assert job.photos_done == 0, "判失败的照片数不该还算已完成"
+            # 校验没过的行必须撤掉, 否则重试会把它当已上传跳过
+            assert s.query(PhotoUpload).filter_by(storage_id=sid).count() == 0
         finally:
             s.close()
         # 重传发生在校验之后: 4 张首传 + 4 张重传
@@ -171,3 +177,172 @@ def test_group_fails_when_remote_verify_mismatch(monkeypatch):
     finally:
         storage_base.BACKENDS.pop("zzvfail", None)
         _cleanup(cid, sid)
+
+
+class _StoreBackend:
+    """内存里真的存文件: upload 收下, list_sizes 如实回大小。"""
+
+    files: dict[str, int] = {}
+
+    def upload(self, st, data, filename, remote_folder):
+        rp = f"{remote_folder}/{filename}"
+        type(self).files[rp] = len(data)
+        return rp
+
+    def list_sizes(self, st, remote_dir):
+        pre = remote_dir.strip("/") + "/"
+        return {k[len(pre):]: v for k, v in type(self).files.items()
+                if k.startswith(pre)}
+
+    def delete_dir(self, st, remote_dir, allowed=None):
+        return True
+
+    def delete_batch(self, st, remote_paths):
+        pass
+
+    def public_url(self, st, remote_path):
+        return remote_path
+
+    def test_connection(self, st):
+        return "ok"
+
+    @classmethod
+    def reset(cls):
+        cls.files = {}
+
+
+class _DropBackend(_StoreBackend):
+    """fs/put 回 200 但字节没落地 —— 123 盘真实出现过的形态(不是杜撰)。"""
+
+    files: dict[str, int] = {}  # 自己的空账本, 不能跟另一个存储共用
+
+    def upload(self, st, data, filename, remote_folder):
+        return f"{remote_folder}/{filename}"
+
+
+@contextmanager
+def _only_enabled(sids: list[int]):
+    """临时停用别的存储。
+
+    「能否删本地原图」按「所有启用的存储都已上传」判定, 全量跑测试时库里的
+    其它存储会让这批照片永远算没传完 —— 这个用例只关心自己建的两个。
+    """
+    s = SessionLocal()
+    others: list[Storage] = []
+    try:
+        for st in s.scalars(select(Storage).where(Storage.enabled == True)).all():  # noqa: E712
+            if st.id not in sids:
+                st.enabled = False
+                others.append(st)
+        s.commit()
+    finally:
+        s.close()
+    try:
+        yield
+    finally:
+        s = SessionLocal()
+        try:
+            for st in others:
+                row = s.get(Storage, st.id)
+                if row is not None:
+                    row.enabled = True
+            s.commit()
+        finally:
+            s.close()
+
+
+def _mk_two_storage_case(kinds: tuple[str, str], n: int = 3):
+    """一个写真集 + 两个启用的存储, 两个任务同时 running。"""
+    s = SessionLocal()
+    try:
+        col = Collection(slug=SLUG, title=SLUG, status="draft")
+        s.add(col)
+        s.flush()
+        for i in range(n):
+            rel = f"{SLUG}/{i:03d}.jpg"
+            s.add(Photo(collection_id=col.id, filename=rel, width=10, height=10,
+                        sort_order=i))
+            local = media.abs_path(rel)
+            local.parent.mkdir(parents=True, exist_ok=True)
+            local.write_bytes(b"\xff\xd8\xff" + b"x" * 64)
+        s.flush()
+        sids, jids = [], []
+        for kind in kinds:
+            st = Storage(name=f"zz-{kind}-sib", type=kind, api_url="http://127.0.0.1:1",
+                         root_dir="/root", enabled=True)
+            s.add(st)
+            s.flush()
+            job = UploadJob(collection_id=col.id, storage_id=st.id, status="running",
+                            photos_total=n)
+            s.add(job)
+            s.flush()
+            sids.append(st.id)
+            jids.append(job.id)
+        s.commit()
+        return col.id, sids, jids
+    finally:
+        s.close()
+
+
+def test_originals_kept_when_sibling_storage_drops_files(monkeypatch):
+    """一个存储掉了文件(校验失败)时, 另一个存储收尾不得删本地原图。
+
+    本地原图是所有存储共用的唯一字节来源; 删了就没法补传, 只能从备份存储
+    回补(线上 ID13/ID28 就是这么丢的两张)。
+    """
+    _StoreBackend.reset()
+    storage_base.BACKENDS["zzok"] = _StoreBackend
+    storage_base.BACKENDS["zzdrop"] = _DropBackend
+    # 缩略图缓存门槛在本用例里不关心, 直接放行
+    monkeypatch.setattr(upload_worker.media, "thumb_cache_ready", lambda rel: True)
+    monkeypatch.setattr(upload_worker.media, "cleanup_empty_dirs", lambda rel: None)
+    cid = None
+    try:
+        cid, sids, jids = _mk_two_storage_case(("zzok", "zzdrop"))
+        with _only_enabled(sids):
+            upload_worker._run_group(jids)
+
+        s = SessionLocal()
+        try:
+            ok = s.get(UploadJob, jids[0])
+            drop = s.get(UploadJob, jids[1])
+            assert ok.status == "done", ok.error
+            assert drop.status == "failed", drop.error
+            assert "校验失败" in (drop.error or "")
+            assert "保留本地原图" in (ok.error or ""), ok.error
+        finally:
+            s.close()
+        for i in range(3):
+            assert media.abs_path(f"{SLUG}/{i:03d}.jpg").is_file(), \
+                f"{i:03d}.jpg 被误删, 掉文件的存储就再也补不上了"
+    finally:
+        storage_base.BACKENDS.pop("zzok", None)
+        storage_base.BACKENDS.pop("zzdrop", None)
+        if cid:
+            _cleanup(cid, sids[0])
+            _cleanup(cid, sids[1])
+
+
+def test_originals_deleted_when_all_storages_pass(monkeypatch):
+    """两个存储都校验通过时, 原图照常删(别把删除逻辑改成永不删)。"""
+    _StoreBackend.reset()
+    storage_base.BACKENDS["zzok"] = _StoreBackend
+    monkeypatch.setattr(upload_worker.media, "thumb_cache_ready", lambda rel: True)
+    monkeypatch.setattr(upload_worker.media, "cleanup_empty_dirs", lambda rel: None)
+    cid = None
+    try:
+        cid, sids, jids = _mk_two_storage_case(("zzok", "zzok"))
+        with _only_enabled(sids):
+            upload_worker._run_group(jids)
+        s = SessionLocal()
+        try:
+            jobs = [s.get(UploadJob, j) for j in jids]
+            assert [j.status for j in jobs] == ["done", "done"], [j.error for j in jobs]
+        finally:
+            s.close()
+        assert not media.abs_path(f"{SLUG}/000.jpg").is_file()
+    finally:
+        storage_base.BACKENDS.pop("zzok", None)
+        if cid:
+            _cleanup(cid, sids[0])
+            _cleanup(cid, sids[1])

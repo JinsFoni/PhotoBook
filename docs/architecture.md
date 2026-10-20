@@ -429,11 +429,38 @@ WebDAV 的 MKCOL 与 OpenList 的 `fs/mkdir` 在网盘驱动上都不便宜:115 
 115 盘的删除是上游异步的: `fs/remove` 偶发回 `errno 990009 删除操作尚未执行完成`,
 重试(1.5s/4s 退避)后即可;后台清理的日志里看到它重试属于正常现象。
 
+### 5. 静默丢失与回补(2026-10-20 线上事故)
+
+123 盘的 `fs/put` **会回 200 但文件不落地**。1.9.0 之后靠校验能当场发现,
+但当时本地原图可能已被另一个存储的收尾删掉 —— 照片的本地原图在上传成功后
+即删, 它是所有存储共用的唯一字节来源。ID13/ID28 就是这么丢的两张(PNG,
+19.7MB / 23.1MB), 表现为站点直链 302 解析失败 → 404。
+
+全库体检(`scripts/repair_remote.py --dry-run`, 328 个目录):
+
+| 存储 | 目录 | 缺失文件 | 说明 |
+|---|---|---|---|
+| OpenList-123(direct_link=1) | 328 | **57**(8 个写真集) | 全部来自 10-12 / 10-17 / 10-18 三次批量上传,那时还没有校验 |
+| OpenList-115(纯备份) | 328 | 0 | 备份盘完整, 是唯一的回补来源 |
+
+由此改了三处(`app/services/storage/worker.py`):
+
+1. **原图删除推迟到本组全部落定之后**:`_delete_local_originals` 先查同写真集
+   其它存储任务(只算启用的存储), 有 `failed` / `queued` / `running` 就整体
+   不删, 在 `job.error` 里写「完成,保留本地原图(其他存储上传失败)」;
+2. **校验没过的文件撤掉 `photo_uploads` 行**:上传时按 200 就记行, 不撤的话
+   重试会把它们当已上传直接跳过, 任务变绿而文件仍然缺;
+3. 新增 `scripts/repair_remote.py`:按目录 list 一次做体检(不是逐文件),
+   缺失项依次从「本地原图 → 其它存储」取字节(校验字节数), 重传后再 list 复核;
+   支持 `--dry-run` / `--storage` / `--collection`, 修不回来的列出来交人工。
+   非 dry-run 时退出码 1 表示有文件既不在本地也不在任何备份存储。
+
 ### 测试
 
 - `tests/test_storage_backends.py`:进程内 stub 同时实现两套协议,断言
   「N 张上传只 MKCOL/mkdir 一次」「删目录 = 1 次请求」「有陌生文件时拒删并
   逐文件兜底」「校验能发现截断、重传后恢复」;
-- `tests/test_upload_concurrency.py`:打桩 backend 记录峰值并发(2..4),
-  校验不一致时任务必须 failed 且保留原图;
+- `tests/test_upload_concurrency.py`:打桩 backend 记录峰值并发(2..4);
+  校验不一致时任务必须 failed、**撤掉 photo_uploads 行**、保留原图;一个存储
+  掉文件时另一个存储收尾**不得**删原图(两个存储都通过时才删);
 - `tests/test_collection_delete_async.py`:后台清理 + 重传竞态守卫。

@@ -303,15 +303,24 @@ def _run_group(job_ids: list[int]) -> None:
             _verify_job(s, st, backend, j, uploaded[jid], remote_root)
         s.commit()  # 校验判失败的状态也要落库
 
-        # 收尾: 仍存活的任务尝试删本地原图并标记完成
+        # 收尾 1: 校验通过的标记完成
+        finished: list[tuple[UploadJob, Storage]] = []
         for jid, (j, st, _backend) in list(active.items()):
             if j.status != "running":
                 continue
-            _delete_local_originals(s, st, photos, j)
             j.status = "done"
             s.commit()
+            finished.append((j, st))
             log.info("upload done: %s -> %s (%d photos)",
                      c.slug, st.name, j.photos_total)
+
+        # 收尾 2: 本组全部落定之后才删本地原图。原图是所有存储共用的唯一
+        # 字节来源 —— 只要同写真集还有存储任务排队/在跑/失败, 删掉就补不回
+        # 来。实测 123 盘 fs/put 会「回 200 但文件不落地」, 校验判该存储失败,
+        # 而另一个存储的收尾已经把原图删了, 只能从备份存储回补。
+        for j, st in finished:
+            _delete_local_originals(s, st, photos, j)
+            s.commit()
     finally:
         if executor:
             executor.shutdown(wait=False)
@@ -350,6 +359,13 @@ def _verify_job(s, st: Storage, backend, job: UploadJob,
             files[got] = files.pop(rp)
     bad = verify_uploads(backend, st, {rp: size for rp, (_rel, size) in files.items()})
     if bad:
+        # 校验没过的文件把 photo_uploads 行撤掉: 上传时按 200 就记了行, 但远端
+        # 没落地。留着行会让「重试」把它当成已上传直接跳过, 任务变绿而文件仍
+        # 然缺 —— 撤行后重试才会真的重传。
+        s.query(PhotoUpload).filter(
+            PhotoUpload.storage_id == st.id,
+            PhotoUpload.remote_path.in_(bad)).delete(synchronize_session=False)
+        job.photos_done = max(0, job.photos_done - len(bad))
         job.status = "failed"
         job.error = (f"{len(bad)} 张远端校验失败(大小不一致): "
                      f"{bad[0].rsplit('/', 1)[-1]}")
@@ -357,14 +373,41 @@ def _verify_job(s, st: Storage, backend, job: UploadJob,
                     job.collection_id, st.name, len(bad))
 
 
+def _originals_needed(s, job: UploadJob) -> str | None:
+    """同写真集还有别的存储任务没成功时, 返回原因(本地原图不能删)。
+
+    原图删了就没了: 上传 123 盘时实测过「fs/put 回 200 但文件没落地」,
+    校验判该存储失败, 此时若另一个存储的收尾已经把原图删掉, 这批照片就
+    再也没法补传 —— 只能从备份存储把字节捞回来。
+    """
+    enabled = select(Storage.id).where(Storage.enabled == True)  # noqa: E712
+    others = s.scalars(select(UploadJob).where(
+        UploadJob.collection_id == job.collection_id,
+        UploadJob.id != job.id,
+        UploadJob.storage_id.in_(enabled))).all()
+    for o in others:
+        if o.status == "failed":
+            return "其他存储上传失败"
+        if o.status in ("queued", "running"):
+            return "其他存储任务未完成"
+    return None
+
+
 def _delete_local_originals(s, st, photos: list[Photo], job: UploadJob) -> None:
     """全部上传成功后尝试删本地原图。
 
-    只删满足两个条件的:
+    只删满足三个条件的:
+    0. 同写真集的其他存储任务都已成功(见 _originals_needed);
     1. 该照片已上传到所有启用的存储(否则排队中的其他存储 job 会拿不到本地文件);
     2. 缩略图缓存(900/2400)已在盘(否则缩略图永远无法再生)。
     不满足的保留本地并在 job.error 里提示。
     """
+    reason = _originals_needed(s, job)
+    if reason:
+        job.error = f"完成,保留本地原图({reason})"
+        log.info("keep originals: %s -> %s (%s)", job.collection_id, st.name, reason)
+        return
+
     enabled_ids = s.scalars(select(Storage.id).where(Storage.enabled == True)).all()  # noqa: E712
     photo_ids = [p.id for p in photos]
     # photo_id -> 已上传的存储数
