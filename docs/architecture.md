@@ -238,6 +238,26 @@ M1/M2 与 M3 几乎无耦合(采集只依赖 settings + 两张表 + 管理员登
   哪个取决于发布站点(MissKON 包用 misskon.com)。→ parse 保留多候选原文,
   extract_archive 按 " or " 拆开逐个尝试,每次失败后清理半截产物再试下一个。
 
+### 故障:"无法从 URL 提取 quick_key"(2026-10-20)
+
+misskon.com 两条任务(93694 / 92684)在解析阶段就失败,报错里带着落地 URL:
+
+```
+无法从 URL 提取 quick_key: https://www.mediafire.com/file/lff2y9wctjycelj?action=check
+```
+
+MediaFire 改了落地行为:`/file/<key>/` 现在 302 到 `/file/<key>/?action=check`
+(拦截/检查页),ouo 短链的最终 URL 因此带上了查询串,而 `MF_KEY_RE` 只认 key 后跟
+`/` 或行尾 → 提取不到 quick_key,任务在"还没开始下载"时就判死。
+
+- 正则放宽为 `mediafire\.com/file/([a-z0-9]+)(?:[/?#]|$)`;
+- `?action=check` 页本身仍含 `download####.mediafire.com` 直链,`mediafire_direct_url`
+  无需改动(`get_info.php` 返回的 `normal_download` 页同样可用);
+- 回归用例:`test_mf_key_re_accepts_query_string`、`test_mediafire_info_from_action_check_url`。
+
+同类问题第二次出现(2026-09 是 key 后无 `/`),可见 MediaFire 的 URL 形态还会变;
+下次再报这个错,先打印落地 URL 再动正则。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,

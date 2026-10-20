@@ -345,6 +345,38 @@ def test_misskon_direct_mediafire_link():
         "http://www.mediafire.com/file/abc123/XIUREN_No.1577.rar/file"]
 
 
+@pytest.mark.parametrize("url,key", [
+    ("https://www.mediafire.com/file/abc123?action=check", "abc123"),
+    ("https://www.mediafire.com/file/abc123/?action=check", "abc123"),
+    ("https://www.mediafire.com/file/abc123/XIUREN_No.1577.rar/file", "abc123"),
+    ("https://www.mediafire.com/file/abc123", "abc123"),
+])
+def test_mf_key_re_accepts_query_string(url, key):
+    """MediaFire 把 /file/<key>/ 302 到 /file/<key>/?action=check —— 带查询串的
+    落地 URL 也必须能取到 quick_key(2026-10-20 两条采集任务卡在这一步)。"""
+    m = net.MF_KEY_RE.search(url)
+    assert m and m.group(1) == key
+
+
+def test_mediafire_info_from_action_check_url(monkeypatch):
+    """落地 URL 是 ?action=check 形态时,get_info 仍要能走通并带出大小/哈希。"""
+
+    class _Resp:
+        def json(self):
+            return {"response": {"file_info": {
+                "size": "1056953678", "hash": "AB12EF", "filename": "x.rar"}}}
+
+    monkeypatch.setattr(net.cr, "get", lambda *a, **k: _Resp())
+    monkeypatch.setattr(net, "mediafire_direct_url",
+                        lambda url: "https://download1475.mediafire.com/x")
+    info = net.mediafire_info_from_url(
+        "https://www.mediafire.com/file/lff2y9wctjycelj?action=check")
+    assert info["quick_key"] == "lff2y9wctjycelj"
+    assert info["size"] == 1056953678
+    assert info["sha256"] == "ab12ef"
+    assert info["direct_url"].startswith("https://download1475.mediafire.com/")
+
+
 def test_misskon_legacy_no_postid_raises(monkeypatch):
     """既无 slug 序号又无 postid → 仍报 ValueError(回中文消息)。"""
     _clear_misskon_serial_cache()  # 同 URL 可能被上一个用例缓存过成功结果

@@ -758,7 +758,9 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
 # 直链 host 形如 download1510.mediafire.com;页面给 http 还是 https 不定
 # (2025-10 起观察到回落 http),方案必须两者都认
 MF_DIRECT_RE = re.compile(r'href="(https?://download[^"]+)"')
-MF_KEY_RE = re.compile(r"mediafire\.com/file/([a-z0-9]+)(?:/|$)", re.I)
+# key 后面可能是 "/"(带文件名)、"?"(2026-10 起 MediaFire 把 /file/<key>/ 302 到
+# /file/<key>/?action=check,短链落地 URL 因此带查询串)、"#" 或行尾
+MF_KEY_RE = re.compile(r"mediafire\.com/file/([a-z0-9]+)(?:[/?#]|$)", re.I)
 MF_FOLDER_RE = re.compile(r"mediafire\.com/folder/([a-z0-9]+)", re.I)
 
 
