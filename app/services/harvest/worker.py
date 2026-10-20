@@ -647,13 +647,17 @@ def _prune_tmp(archive_tmp) -> None:
         log.exception("prune _tmp failed")
 
 
-def _recover_and_watchdog() -> None:
+def _recover_and_watchdog(*, at_startup: bool = False) -> None:
     """启动恢复 + 空闲看门狗, 防「downloading 永久卡住」两类场景:
 
     ① 启动时上次运行未完成(容器重启/进程被杀) → 进行中任务重置回 queued。
        在 start_worker 里启动时同步执行一次。
     ② 运行中 worker 线程意外死亡(如 iter_content 阻塞超时未生效) →
        消费循环里周期执行: updated_at 超时未更新的进行中任务重置回 queued。
+
+    at_startup=True 时不看 updated_at: 上次进程的下载线程已随进程消失,
+    活动任务必然都是孤儿。若仍按 30 分钟阈值筛, 重启前刚更新过的任务会被
+    误判「健康」, 一直卡到阈值到期才恢复(2026-10-20 #585 重启后卡了 30 分钟)。
     """
     s = SessionLocal()
     try:
@@ -663,6 +667,9 @@ def _recover_and_watchdog() -> None:
             HarvestJob.status.in_(ACTIVE_JOB_STATES))).all()
         reset: list[int] = []
         for job in rows:
+            if at_startup:
+                reset.append(job.id)
+                continue
             ref = job.updated_at or job.started_at or job.created_at
             if ref is not None and ref.tzinfo is None:
                 ref = ref.replace(tzinfo=timezone.utc)  # SQLite 存的是 naive UTC
@@ -732,8 +739,9 @@ def start_worker() -> None:
         return
     _stop.clear()
     # 上次运行遗留的进行中任务(容器重启/被杀): 立即恢复回 queued,
-    # .part 断点续传, 已下载部分不白费
-    _recover_and_watchdog()
+    # .part 断点续传, 已下载部分不白费。启动这一刻不可能有任务在跑,
+    # 无条件重置, 不套 30 分钟停滞阈值
+    _recover_and_watchdog(at_startup=True)
     _thread = threading.Thread(target=_consume_loop, name="harvest-worker", daemon=True)
     _thread.start()
     _watchdog = threading.Thread(target=_watchdog_loop, name="harvest-watchdog", daemon=True)

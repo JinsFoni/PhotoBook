@@ -258,6 +258,22 @@ MediaFire 改了落地行为:`/file/<key>/` 现在 302 到 `/file/<key>/?action=
 同类问题第二次出现(2026-09 是 key 后无 `/`),可见 MediaFire 的 URL 形态还会变;
 下次再报这个错,先打印落地 URL 再动正则。
 
+### 重启后任务卡在 downloading(2026-10-20)
+
+热补丁重启容器后,#585 停在 `downloading` 5.7% 不动,看门狗也"认为健康"。
+
+`_recover_and_watchdog` 把两种场景合在一个阈值里:
+
+| 场景 | 该用的判据 |
+|---|---|
+| 启动时恢复上次残留 | 无条件重置——新进程里不可能有任务在跑 |
+| 运行中看门狗 | `updated_at` 超过 `STALE_SECONDS`(30 分钟)才重置 |
+
+用错判据的后果:重启前 2 秒刚写过进度的任务被判"健康",要等满 30 分钟才恢复。
+→ 加 `at_startup` 参数,`start_worker` 传 True 跳过时间判断;运行中看门狗不变。
+PikPak 侧此前已按同样方式修过(`_recover_and_watchdog(at_startup=True)`),
+这次把采集侧对齐,回归用例见 `tests/test_harvest_recovery.py`。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,

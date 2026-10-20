@@ -12,7 +12,11 @@ from app.db import HarvestHistory, HarvestJob
 from app.database import SessionLocal
 from app.services.harvest import worker
 
-SERIALS = [995001]
+# 990002: test_prune_tmp_only_touches_orphans 造的「活跃任务」, 必须一并清 ——
+# 启动恢复改成无条件重排后, 任何后续 TestClient 进入都会把它重置回 queued,
+# 后台消费线程随即真的去跑它(url 是假地址), 往 harvest_history 写 990002,
+# 撞掉 test_worker 的 history 去重用例
+SERIALS = [995001, 990002]
 
 
 @pytest.fixture()
