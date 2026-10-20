@@ -15,6 +15,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 应用代码
 COPY app ./app
+# 运维脚本(repair_remote.py 体检回补) —— 镜像内可直接 docker exec 运行
+COPY scripts ./scripts
 
 # 非root运行;数据目录由卷挂载
 RUN useradd -m -u 1000 photobook \
