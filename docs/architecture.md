@@ -274,6 +274,24 @@ MediaFire 改了落地行为:`/file/<key>/` 现在 302 到 `/file/<key>/?action=
 PikPak 侧此前已按同样方式修过(`_recover_and_watchdog(at_startup=True)`),
 这次把采集侧对齐,回归用例见 `tests/test_harvest_recovery.py`。
 
+### PikPak 预检把 `.part` 当成「已存在」(2026-10-22)
+
+P41 / P42 / P43(斗圣美杜莎 201p、云韵 160p+1V、南宫仙儿 110p)提交后 0.1 秒就
+`done`,error 是「→ 已存在,跳过」,一张图都没下。目标目录确实存在,但里面只有
+10-18 那轮中断留下的 `*.part` 碎片 —— 恰恰是「没下完」的证据。
+
+`_skip_if_imported` 的目录预检 `_album_has_content` 只排除 `.` 开头的文件和
+`Thumbs.db`,把 `download_stream` 的 `.part` 也算成了内容:
+
+- 三元组 `(job.started_at is None)` 决定 `resumed`;这三个任务是 10-21 重新推送的
+  新行,`started_at` 为空 → 走「首次运行」分支 → 撞上旧 `.part` → 直接跳过
+- 跳过还顺手把文件行全标 `done`(`_settle_pending_files`),所以就算手动重试,
+  文件行也会被当成已完成,必须连 `PikPakFile.status` 一起重置才会真下
+
+→ `_album_has_content` 现在排除 `*.part`;重试时除任务状态外还要把文件行改回
+`queued`、`files_done` 归零。回归用例
+`tests/test_pikpak_recovery.py::test_part_only_album_is_not_existing`。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,

@@ -92,3 +92,32 @@ def test_resume_does_not_skip_partial_album(clean, tmp_path, monkeypatch):
         assert pk_worker._skip_if_imported(s, job, album, resumed=True) is None
     finally:
         s.close()
+
+
+def test_part_only_album_is_not_existing(clean, tmp_path, monkeypatch):
+    """目录里只剩 *.part(上次下到一半的碎片) → 不算「已存在」, 必须重下。
+
+    2026-10-22 实录: 斗圣美杜莎 201p / 云韵 160p / 南宫仙儿 110p 三个任务的
+    目标目录里只剩 10-18 遗留的 .part, 预检判「已存在」直接标 done, 一张图
+    都没下 —— .part 恰恰是没下完的证据。
+    """
+    monkeypatch.setattr(pk_worker.library_import, "collection_exists",
+                        lambda *a, **k: False)
+    album = tmp_path / "album"
+    album.mkdir()
+    (album / "001.png.part").write_bytes(b"half")
+    (album / "sub").mkdir()
+    (album / "sub" / "002.png.part").write_bytes(b"half")
+    assert pk_worker._album_has_content(album) is False
+
+    s = SessionLocal()
+    try:
+        job = s.get(PikPakJob, _job())
+        assert pk_worker._skip_if_imported(s, job, album) is None
+
+        # 只要落了一张完整图, 语义立刻回到「已存在」
+        (album / "003.png").write_bytes(b"done")
+        assert pk_worker._album_has_content(album) is True
+        assert pk_worker._skip_if_imported(s, job, album) == "→ 已存在,跳过"
+    finally:
+        s.close()

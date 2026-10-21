@@ -189,9 +189,17 @@ def _album_has_content(album_dir: Path) -> bool:
 
     不能用 any(iterdir()): 下载失败时已经把 rel 里的子目录 mkdir 出来了,
     空目录会让预检误判「已存在」, 一张图都没下到的任务反而被标 done。
+
+    同样不算数的还有 `*.part`: 那是 `pipeline.download_stream` 下到一半的
+    碎片, 恰恰是「没下完」的证据。2026-10-22 三个任务(斗圣美杜莎 201p /
+    云韵 160p / 南宫仙儿 110p)就是因为目录里只剩 10-18 遗留的 .part, 预检
+    判「已存在」直接标 done, 一张图都没下。
     """
-    return album_dir.exists() and any(
-        p.is_file() for p in album_dir.rglob("*")
+    if not album_dir.exists():
+        return False
+    return any(
+        p.is_file() and p.suffix != ".part"
+        for p in album_dir.rglob("*")
         if not p.name.startswith(".") and p.name not in ("Thumbs.db", ".DS_Store"))
 
 
