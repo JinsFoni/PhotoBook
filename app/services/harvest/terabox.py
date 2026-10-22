@@ -346,5 +346,7 @@ def download_file(cookie_header: str, f: TeraBoxFile, dest: Path, *,
     return pipeline.download_stream(
         f.dlink, dest, max_bytes=max_bytes, on_progress=on_progress,
         stream_key=stream_key, use_proxy=True,
+        # dlink 签名绑定解析出口 IP → 绝不能改直连(proxy_fallback=False)
+        proxy_fallback=False,
         headers={"Cookie": cookie_header, "User-Agent": UA,
                  "Referer": API_HOST + "/"})

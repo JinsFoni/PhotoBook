@@ -64,9 +64,11 @@ def test_download_file_uses_same_egress_as_resolve(monkeypatch, tmp_path):
 
     def fake_download_stream(url, dest, *, expected_sha256="", max_bytes=0,
                              on_progress=None, stream_key=None,
-                             use_proxy=True, headers=None):
+                             use_proxy=True, headers=None,
+                             retries=3, proxy_fallback=True):
         captured["use_proxy"] = use_proxy
         captured["headers"] = headers
+        captured["proxy_fallback"] = proxy_fallback
         return dest
 
     import unittest.mock as mock
@@ -77,6 +79,8 @@ def test_download_file_uses_same_egress_as_resolve(monkeypatch, tmp_path):
                                 dlink="https://dm-d.terabox.com/x")
         terabox.download_file("ndus=x", f, tmp_path / "a.rar")
     assert captured["use_proxy"] is True
+    # 换出口(代理→直连)会让 dlink 签名失效 → 必须显式关掉这条兜底
+    assert captured["proxy_fallback"] is False
     assert captured["headers"]["Cookie"] == "ndus=x"
     assert captured["headers"]["Referer"] == terabox.API_HOST + "/"
 
@@ -179,7 +183,7 @@ def test_resolve_infos_prefers_mediafire(monkeypatch):
     def fake_resolve_ouo(link):
         return "https://www.mediafire.com/file/abc123/x.rar/file"
 
-    def fake_mf_info(page_url):
+    def fake_mf_info(page_url, **kw):
         calls.append(page_url)
         return {"quick_key": "k", "direct_url": "http://d", "size": 1,
                 "sha256": "", "filename": "x.rar"}

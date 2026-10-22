@@ -292,6 +292,111 @@ P41 / P42 / P43(斗圣美杜莎 201p、云韵 160p+1V、南宫仙儿 110p)提交
 `queued`、`files_done` 归零。回归用例
 `tests/test_pikpak_recovery.py::test_part_only_album_is_not_existing`。
 
+### MediaFire 前置 Cloudflare 抽检 —— 下载/解析阶段随机 403(2026-10-22)
+
+任务 596 两次重排都在同一处死掉,bytes 始终 0:
+
+```
+HTTP 403 for https://www.mediafire.com/file/y22i4h46mcvyae7?action=check
+```
+
+不是 URL 坏了,是 **Cloudflare 对无 cookie 的客户端按频率抽检**。容器内实测:
+
+| 请求形态 | 结果 |
+|---|---|
+| `?action=check` 冷请求(每次新建连接) | 8 次里 3 次 403 + `cf-mitigated: challenge` |
+| 裸 `/file/<key>/` 冷请求 | 6 次里 1 次 403 |
+| 同一 Session:先裸页(拿 `__cf_bm`/`ukey`)再取目标页 | 4/4 通过 |
+
+采集链路每个 mediafire 调用都是独立 `cr.get`,天然拿不到 cookie,一次 403 就被
+判成终态失败(下载阶段原本没有任何重试)。修法两层:
+
+1. **取页面/API**:`net.mediafire_page()` 每轮新建 Session,先打裸页
+   `/file/<key>/` 预热再打目标页;被盾则换 Session 退避重试(2s/5s,共 3 轮),
+   仍不行抛 `MediaFire 页面取不到(HTTP 403 (cf challenge))`。
+   `mediafire_folder_files` / `mediafire_info_from_url` 的 API 调用统一走
+   `_mf_api_get()`(同样退避重试)。盾页识别 `is_cf_challenge()`:看
+   `cf-mitigated: challenge` 响应头,或正文前 4KB 的 `Just a moment` 等特征
+   (盾页有时用 200 返回,状态码不能作前提)。
+2. **下载阶段**:`pipeline.download_stream(retries=3)` 对 403/408/425/429/5xx
+   和连接中断退避重试,`.part` 走 Range 续传,不白下;404/410、超过
+   `max_bytes`、SHA 不符仍是终态失败,不重试。
+
+TeraBox 卷同样受益(直链抖动能续上),代价是 dlink 真过期时多试两次、多等 7 秒。
+
+3. **代理出口对大文件流不友好**(同一次实测挖出来的第二层):过了 CF 之后,
+   `http://192.168.0.102:7890` 读 MediaFire CDN 到 **12MB 就被对端断流**
+   (`curl: (56) Connection closed abruptly`,18s),同一 dlink **直连 17MB/s**
+   正常(200MB/12s 无中断)。任务 596 因此连挂 3 次、停在 75MB。
+
+   结论:`harvest.proxy` 只该用于「页面 / 短链 / API」过 Cloudflare,**大文件流
+   必须直连**。`download_stream` 因此按 host 决定出口(`pipeline._EGRESS`):
+
+   | host | 默认 | 连接层失败后 |
+   |---|---|---|
+   | `*.mediafire.com`(CDN) | 直连 | 翻面走代理并记住 |
+   | 其他(含 terabox) | 跟随 `harvest.proxy` | 翻面直连并记住 |
+
+   记住是进程内的(worker 常驻,重启即清空);403/5xx 这类不翻面,只退避重试。
+   **TeraBox 例外**:dlink 签名绑定解析出口 IP,`terabox.download_file` 传
+   `proxy_fallback=False`,只认 `use_proxy` 指定的那一边,绝不换出口
+   (`test_download_file_uses_same_egress_as_resolve` 守着这条)。
+
+回归用例:`test_is_cf_challenge_by_header_and_body`、`test_mediafire_page_primes_session_then_gets_page`、
+`test_mediafire_page_retries_challenge_then_succeeds`、`test_mediafire_page_gives_up_with_clear_error`、
+`test_mf_api_get_retries_challenge`、`test_download_stream_retries_403_then_succeeds`、
+`test_download_stream_resumes_on_retry`、`test_download_stream_does_not_retry_404`、
+`test_download_stream_gives_up_after_retries`。
+
+### MediaFire 「软拒绝」:200 + 一页 HTML 冒充文件(2026-10-22)
+
+热补丁上线后 598/600/601/602/603 五个任务全挂在 SHA256 不匹配,且同一份
+期望值两次跑出两个不同的实得值(50dea61… / 32c24e9…) —— 说明下下来的内容
+每次都不一样,根本不是文件。
+
+现场取证:直链 302 到 `www.mediafire.com/download_repair.php?flag=2&dkey=…`,
+返回 **HTTP 200 + `text/html` + 无 `content-length`**,正文是那个"下载修复"
+页面(36KB)。状态码是 200、`Range` 也能续,下载函数一路顺利"写完"才在 SHA
+校验处炸掉 —— 而那时 `.part` 已被当垃圾删掉,整卷白下(1.4GB 也白下)。
+十几分钟后再试同一个文件,四种组合(直连/代理 × 有无 cookie+Referer)全部
+拿回真正的 `application/x-rar`,说明这是 MediaFire 侧**临时**的限速/风控,
+不是链接坏了、也不是出口 IP 绑定。
+
+修法(`pipeline._download_once`,写盘之前):
+
+1. 响应 `content-type` 含 `text/html`,或重定向落到 `download_repair.php` →
+   抛 `_Retryable(soft=True)`,一个字节都不写进 `.part`;
+2. 传了 `expected_size`(采集侧用 API 给的 `file_info.size`)而
+   `content-length + 已续传字节 ≠ size`,或干脆没有 `content-length` → 同样判软拒绝;
+3. 软拒绝的退避比连接类失败长(`SOFT_BLOCK_BACKOFF = 5s/20s`),用尽后报
+   「MediaFire 拒绝下载(返回验证页而非文件)…已重试 3 次;这类拦是临时的,
+   过一会儿重排即可」,而不是含糊的 SHA 不符。
+
+回归用例:`test_download_stream_detects_mediafire_repair_page`、
+`test_download_stream_size_mismatch_is_soft_block`、
+`test_download_stream_reports_soft_block_after_retries`。
+
+**验证页的另一半原因(同一天挖到的)**:直链 dkey 绑「取页面的那个客户端」。
+页面走代理、下载换一条无 cookie 的连接直连 → 4/4 全部被塞 `download_repair`
+页;只要下载复用取页面的那个 `curl_cffi.Session`(cookie 一致,出口仍可换) →
+4/4 正常;页面与下载都直连(同出口无 cookie)也 4/4 正常。所以:
+
+- `net.mediafire_page_session()` 把「这次取页面的 Session」一起返回,
+  `mediafire_info_from_url(keep_session=True)` / `mediafire_folder_files`
+  随 info 带出 `_session` + `_referer`(采集 worker 负责关闭);
+- `pipeline.download_stream(session=…, referer=…)` 用这个 Session 发下载请求,
+  出口仍按前面的 `_EGRESS` 策略逐请求决定(实测 Session 的 cookie 与出口可以
+  不一致)。A/B 见 `tests/test_pipeline.py::test_download_stream_uses_given_session_and_referer`。
+
+### 大文件被「一刀刀掐断」→ 有进展就一直续(2026-10-22)
+
+同一波里 598 那卷 1.4GB:每条连接都被对端在 20-25MB 处 `curl (56)` 掐断,
+直连、代理都一样,3 次重试只推进到 67MB。但有进展就意味着 `.part` 是合法的、
+Range 续传能接着下 —— 所以「连接失败且 `.part` 有增长」不再消耗重试预算,
+按 `PROGRESS_RETRIES=120`(≈3GB)一路滚,退避 2→10s。没进展的失败仍按
+`retries=3` 判死;软拒绝(验证页)按 `SOFT_BLOCK_BACKOFF` 加长退避。
+回归用例:`test_download_stream_keeps_resuming_when_attempts_advance`。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,

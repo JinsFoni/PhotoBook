@@ -269,7 +269,8 @@ def _resolve_infos(s, job: HarvestJob, target) -> list[dict] | None:
                 return None
             infos.extend(folder_files)
             continue
-        info = net.mediafire_info_from_url(direct_page)
+        # keep_session: 直链 dkey 绑「取页面的客户端」,下载要复用同一个 Session
+        info = net.mediafire_info_from_url(direct_page, keep_session=True)
         if not info["direct_url"]:
             _finish(s, job, "failed", f"未获取到直链: {info['filename']}")
             s.commit()
@@ -328,6 +329,17 @@ def _resolve_terabox(s, job: HarvestJob, tb_links: list[str]) -> list[dict] | No
         s.commit()
         return None
     return infos
+
+
+def _close_info_session(info: dict) -> None:
+    """关掉随 info 带出的 HTTP 会话(mediafire 页面会话;terabox 没有)。"""
+    sess = info.pop("_session", None)
+    if sess is None:
+        return
+    try:
+        sess.close()
+    except Exception:
+        pass
 
 
 def _download_terabox_volume(job_id: int, info: dict, archive_file,
@@ -489,11 +501,19 @@ def _run_job(job_id: int) -> None:
                 _download_terabox_volume(job_id, info, archive_file,
                                          on_progress=progress)
             else:
-                pipeline.download_stream(info["direct_url"], archive_file,
-                                         expected_sha256=info["sha256"],
-                                         max_bytes=4 * 1024**3,
-                                         on_progress=progress,
-                                         stream_key=job_id)
+                try:
+                    pipeline.download_stream(
+                        info["direct_url"], archive_file,
+                        expected_sha256=info["sha256"],
+                        expected_size=info["size"] or 0,
+                        max_bytes=4 * 1024**3,
+                        on_progress=progress,
+                        stream_key=job_id,
+                        # MediaFire 直链绑定取页面那份会话/出口:带上 cookie
+                        session=info.get("_session"),
+                        referer=info.get("_referer") or "")
+                finally:
+                    _close_info_session(info)
             done_offset += archive_file.stat().st_size
         archive_done = True  # 全部卷 SHA256 已过, 此后失败可删包(失败重试会重新下载)
 

@@ -141,3 +141,373 @@ def test_extract_partial_failure_still_returns_files(tmp_path, monkeypatch):
 
     # 反例: 密码错必须仍判失败
     assert "Missing or wrong password" in "Archive parsing failed! (Missing or wrong password.)"
+
+
+# ---- 下载阶段瞬时失败重试(2026-10-22) ---------------------------------------
+
+class _Stream:
+    """假 Response:能当 stream=True 的下载流用。"""
+
+    def __init__(self, status, chunks=(), headers=None, url=""):
+        self.status_code = status
+        self.headers = headers or {}
+        self._chunks = list(chunks)
+        self.url = url
+        self.closed = False
+
+    def iter_content(self, chunk_size=0):
+        yield from self._chunks
+
+    def close(self):
+        self.closed = True
+
+
+def test_download_stream_retries_403_then_succeeds(tmp_path, monkeypatch):
+    """Cloudflare 抽检回 403 → 退避重试,第二次下完(以前一次 403 就整任务失败)。"""
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    replies = [_Stream(403), _Stream(200, [b"hello ", b"world"],
+                                     {"content-length": "11"})]
+    seen = []
+
+    def fake_get(url, **kw):
+        seen.append(kw.get("headers") or {})
+        return replies.pop(0)
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    dest = tmp_path / "a.rar"
+    pl.download_stream("https://download1.mediafire.com/x", dest, retries=3)
+    assert dest.read_bytes() == b"hello world"
+    assert len(seen) == 2
+    assert not dest.with_suffix(".rar.part").exists()
+
+
+def test_download_stream_resumes_on_retry(tmp_path, monkeypatch):
+    """中断留下的 .part 在重试时走 Range 续传,不从头再下。"""
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    dest = tmp_path / "b.rar"
+    part = dest.with_suffix(".rar.part")
+    part.write_bytes(b"head-")
+    seen = []
+
+    def fake_get(url, **kw):
+        seen.append(dict(kw.get("headers") or {}))
+        return _Stream(206, [b"tail"], {"content-length": "4"})
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    pl.download_stream("https://download1.mediafire.com/y", dest, retries=3)
+    assert dest.read_bytes() == b"head-tail"
+    assert seen[0]["Range"] == "bytes=5-"
+
+
+def test_download_stream_does_not_retry_404(tmp_path, monkeypatch):
+    """404 是终态失败(直链失效),重试无意义 —— 一次就抛。"""
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    calls = {"n": 0}
+
+    def fake_get(url, **kw):
+        calls["n"] += 1
+        return _Stream(404)
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    with pytest.raises(RuntimeError) as ei:
+        pl.download_stream("https://download1.mediafire.com/gone",
+                           tmp_path / "c.rar", retries=3)
+    assert "HTTP 404" in str(ei.value) and calls["n"] == 1
+
+
+def test_download_stream_gives_up_after_retries(tmp_path, monkeypatch):
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    calls = {"n": 0}
+
+    def fake_get(url, **kw):
+        calls["n"] += 1
+        return _Stream(403)
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    with pytest.raises(RuntimeError) as ei:
+        pl.download_stream("https://download1.mediafire.com/z",
+                           tmp_path / "d.rar", retries=3)
+    assert "HTTP 403" in str(ei.value) and calls["n"] == 3
+
+
+def test_egress_default_by_host():
+    """harvest.proxy 是给页面/短链过盾的;MediaFire CDN 默认直连(经代理会断流)。"""
+    from app.services.harvest import pipeline as pl
+
+    pl._EGRESS.clear()
+    assert pl._prefer_proxy("download2330.mediafire.com") is False
+    assert pl._prefer_proxy("dl.dm.terabox.com") is True
+
+
+def test_download_stream_prefers_direct_for_mediafire_and_learns(tmp_path, monkeypatch):
+    """MediaFire CDN 默认直连;直连也不通时翻面走代理,并把结论记在 host 上。"""
+    from curl_cffi.requests.exceptions import ConnectionError as CrConnError
+
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: "http://192.168.0.102:7890")
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    pl._EGRESS.clear()
+    seen = []
+    aborted = {"done": False}
+
+    def fake_get(url, **kw):
+        seen.append(kw.get("proxy"))
+        if not aborted["done"]:
+            aborted["done"] = True
+            raise CrConnError("curl: (56) Connection closed abruptly")
+        return _Stream(200, [b"ok"], {"content-length": "2"})
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    dest = tmp_path / "e.rar"
+    pl.download_stream("https://download2330.mediafire.com/abc/x.rar", dest)
+    assert dest.read_bytes() == b"ok"
+    assert seen == [None, "http://192.168.0.102:7890"]  # 直连 → 翻面代理
+    assert pl._EGRESS["download2330.mediafire.com"] is True
+
+    # 同 host 第二次:直接用学到的出口(代理),不再先撞一次
+    seen.clear()
+    pl.download_stream("https://download2330.mediafire.com/def/y.rar",
+                       tmp_path / "f.rar")
+    assert seen == ["http://192.168.0.102:7890"]
+    pl._EGRESS.clear()
+
+
+def test_download_stream_flips_to_direct_for_non_mediafire_host(tmp_path, monkeypatch):
+    """非 MediaFire host 默认跟随 harvest.proxy;代理断流则翻面直连。"""
+    from curl_cffi.requests.exceptions import ConnectionError as CrConnError
+
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: "http://192.168.0.102:7890")
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    pl._EGRESS.clear()
+    seen = []
+    aborted = {"done": False}
+
+    def fake_get(url, **kw):
+        seen.append(kw.get("proxy"))
+        if not aborted["done"]:
+            aborted["done"] = True
+            raise CrConnError("curl: (56) Connection closed abruptly")
+        return _Stream(200, [b"ok"], {"content-length": "2"})
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    pl.download_stream("https://cdn.example.com/a.rar", tmp_path / "h.rar")
+    assert seen == ["http://192.168.0.102:7890", None]
+    assert pl._EGRESS["cdn.example.com"] is False
+    pl._EGRESS.clear()
+
+
+def test_download_stream_no_direct_fallback_when_disabled(tmp_path, monkeypatch):
+    """TeraBox 的 dlink 绑定出口 IP —— proxy_fallback=False 时不换直连。"""
+    from curl_cffi.requests.exceptions import ConnectionError as CrConnError
+
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: "http://192.168.0.102:7890")
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    seen = []
+
+    def fake_get(url, **kw):
+        seen.append(kw.get("proxy"))
+        if len(seen) < 2:
+            raise CrConnError("curl: (56) Connection closed abruptly")
+        return _Stream(200, [b"ok"], {"content-length": "2"})
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    pl.download_stream("https://dl.dm.terabox.com/abc", tmp_path / "g.rar",
+                       proxy_fallback=False, retries=2)
+    assert seen == ["http://192.168.0.102:7890"] * 2
+
+
+def test_download_stream_detects_mediafire_repair_page(tmp_path, monkeypatch):
+    """MediaFire 拒下时回 200 + text/html 的 download_repair 验证页(几十 KB、
+    无 content-length)—— 必须在写盘前识破并重试,否则只能等 SHA 校验发现,
+    那时 .part 已被删、整卷白下(2026-10-22 五个任务就是这么连挂的)。"""
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    pl._EGRESS.clear()
+    replies = [
+        _Stream(200, [b"<html>repair</html>"],
+                {"content-type": "text/html; charset=UTF-8"},
+                url="https://www.mediafire.com/download_repair.php?flag=2&dkey=x"),
+        _Stream(200, [b"real-bytes"],
+                {"content-type": "application/x-rar", "content-length": "10"}),
+    ]
+
+    def fake_get(url, **kw):
+        return replies.pop(0)
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    dest = tmp_path / "i.rar"
+    pl.download_stream("https://download2286.mediafire.com/abc/x.rar", dest)
+    assert dest.read_bytes() == b"real-bytes"
+    assert not dest.with_suffix(".rar.part").exists()
+
+
+def test_download_stream_size_mismatch_is_soft_block(tmp_path, monkeypatch):
+    """content-length 与 API 给的 size 不符(验证页/截断)→ 判软拒绝并重试。"""
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    pl._EGRESS.clear()
+    replies = [
+        _Stream(200, [b"x" * 10],
+                {"content-type": "application/octet-stream",
+                 "content-length": "10"}),
+        _Stream(200, [b"y" * 100],
+                {"content-type": "application/octet-stream",
+                 "content-length": "100"}),
+    ]
+
+    def fake_get(url, **kw):
+        return replies.pop(0)
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    dest = tmp_path / "j.rar"
+    pl.download_stream("https://download2286.mediafire.com/def/x.rar", dest,
+                       expected_size=100)
+    assert dest.read_bytes() == b"y" * 100
+
+
+def test_download_stream_reports_soft_block_after_retries(tmp_path, monkeypatch):
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    pl._EGRESS.clear()
+    calls = {"n": 0}
+
+    def fake_get(url, **kw):
+        calls["n"] += 1
+        return _Stream(200, [b"<html>repair</html>"],
+                       {"content-type": "text/html"},
+                       url="https://www.mediafire.com/download_repair.php")
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    with pytest.raises(RuntimeError) as ei:
+        pl.download_stream("https://download2286.mediafire.com/ghi/x.rar",
+                           tmp_path / "k.rar", retries=3)
+    msg = str(ei.value)
+    assert "验证页" in msg and "重排" in msg
+    assert calls["n"] == 3
+    assert not (tmp_path / "k.rar.part").exists()
+
+
+def test_download_stream_uses_given_session_and_referer(tmp_path, monkeypatch):
+    """MediaFire 场景:下载复用取页面那份 Session(带 cookie)+ Referer,
+    出口仍按策略逐请求决定 —— 这三者共同决定能不能过 download_repair。"""
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: "http://192.168.0.102:7890")
+    pl._EGRESS.clear()
+    seen = []
+
+    class _Sess:
+        def get(self, url, **kw):
+            seen.append(("session", kw.get("proxy"), kw.get("headers")))
+            return _Stream(200, [b"ok"], {"content-length": "2",
+                                          "content-type": "application/x-rar"})
+
+    class _Bare:
+        @staticmethod
+        def get(url, **kw):
+            seen.append(("bare", kw.get("proxy"), kw.get("headers")))
+            return _Stream(500)
+
+    monkeypatch.setattr(pl, "cr", _Bare)
+    sess = _Sess()
+    pl.download_stream("https://download2286.mediafire.com/abc/x.rar",
+                       tmp_path / "m.rar", session=sess,
+                       referer="https://www.mediafire.com/file/abc/x.rar")
+    assert len(seen) == 1
+    kind, proxy, hdrs = seen[0]
+    assert kind == "session"                       # 走的是页面会话
+    assert proxy is None                           # mediafire CDN 直连
+    assert hdrs["Referer"].endswith("/file/abc/x.rar")
+
+
+def test_download_stream_keeps_resuming_when_attempts_advance(tmp_path, monkeypatch):
+    """大文件被对端一刀刀掐断(每连接只给几 MB):只要有进展就继续续传,
+    不消耗重试预算 —— 1.4GB 那卷就是这么滚完的(2026-10-22)。"""
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    pl._EGRESS.clear()
+    total = 16
+    calls = {"n": 0}
+
+    class _Cut:
+        def __init__(self, status, payload, remaining):
+            self.status_code = status
+            self._payload = payload
+            self.headers = {"content-length": str(remaining),
+                            "content-type": "application/octet-stream"}
+            self.url = ""
+
+        def iter_content(self, chunk_size=0):
+            yield self._payload
+            raise ConnectionError("curl: (56) Connection closed abruptly")
+
+        def close(self):
+            pass
+
+    class _Ok:
+        status_code = 206
+        url = ""
+
+        def __init__(self, payload, remaining):
+            self._payload = payload
+            self.headers = {"content-length": str(remaining),
+                            "content-type": "application/octet-stream"}
+
+        def iter_content(self, chunk_size=0):
+            yield self._payload
+
+        def close(self):
+            pass
+
+    def fake_get(url, **kw):
+        calls["n"] += 1
+        rng = (kw.get("headers") or {}).get("Range") or ""
+        offset = int(rng.split("=")[1].rstrip("-")) if rng else 0
+        remaining = total - offset
+        if remaining <= 4:
+            return _Ok(b"z" * remaining, remaining)
+        return _Cut(206, b"z" * 4, remaining)
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    dest = tmp_path / "big.rar"
+    pl.download_stream("https://download2342.mediafire.com/abc/big.rar", dest,
+                       retries=3)
+    assert dest.read_bytes() == b"z" * total
+    assert calls["n"] > 3  # 超过普通重试预算,靠「有进展」一路续完

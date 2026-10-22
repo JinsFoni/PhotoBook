@@ -57,8 +57,9 @@ def _stub_pipeline(monkeypatch, tmp_dir: Path, *, fail_download: bool):
     monkeypatch.setattr(hnet, "fetch_html", lambda url, **kw: detail)
     monkeypatch.setattr(hnet, "resolve_ouo", lambda link, **kw: "https://x/y.rar")
     monkeypatch.setattr(hnet, "mediafire_info_from_url",
-                        lambda u: {"direct_url": "https://x/y.rar", "filename": "y.rar",
-                                   "size": 3, "sha256": None})
+                        lambda u, **kw: {"direct_url": "https://x/y.rar",
+                                         "filename": "y.rar",
+                                         "size": 3, "sha256": None})
 
     def fake_download(url, dest, **kw):
         p = Path(dest)

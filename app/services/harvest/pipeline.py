@@ -6,7 +6,9 @@ import hashlib
 import logging
 import shutil
 import subprocess
+import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from curl_cffi import requests as cr
 
@@ -51,13 +53,79 @@ def close_job_streams(job_id) -> int:
     return closed
 
 
+# 瞬时故障重试(2026-10-22): MediaFire 前置 Cloudflare 抽检会回 403
+# (`cf-mitigated: challenge`),CDN 也会偶尔 5xx / 断流。这些失败都留下
+# 合法前缀(.part),Range 续传接着下即可 —— 以前一次 403 就整任务判死
+# (任务 596 两次重排都死在这),现在退避重试。
+RETRY_STATUS = (403, 408, 425, 429, 500, 502, 503, 504)
+RETRY_BACKOFF = (2.0, 5.0)
+# MediaFire 拒下时回的是「软拒绝」:HTTP 200 + text/html 的
+# download_repair.php 验证页(几十 KB,每次内容都不同) —— 状态码正常、长度
+# 正常不了,只有 SHA 校验能发现。这类要等得久一点(实测 5 个任务在 13:46-13:57
+# 连续撞上,过一会儿自愈),退避给足。
+SOFT_BLOCK_BACKOFF = (5.0, 20.0)
+# 大文件被反复断流(2026-10-22 实测 1.4GB 那卷):MediaFire CDN 每条连接只给
+# 20-25MB 就掐断,不管直连还是代理。但每次重试都留下合法前缀、Range 续传能
+# 接着下 —— 所以「有进展」的连接失败不消耗重试预算,一直滚到下完为止。
+PROGRESS_BACKOFF_MAX = 10.0
+PROGRESS_RETRIES = 120   # 有进展时的额外重试轮数上限(120×25MB ≈ 3GB)
+
+
+class _Retryable(RuntimeError):
+    """内部标记:瞬时失败可重试。区别于 404/大小超限/SHA 不符这类终态失败。
+
+    conn=True 表示连接层失败(建连就不通 / 流读到一半被对端断开)——
+    这类失败除了重试,还值得换出口(见 proxy_fallback)。
+    """
+
+    def __init__(self, msg: str, *, conn: bool = False, soft: bool = False):
+        super().__init__(msg)
+        self.conn = conn    # 连接层失败(可换出口再试)
+        self.soft = soft    # 软拒绝(返回网页而非文件):退避加长
+
+
+# 出口选择(2026-10-22 实测):harvest.proxy 是给「页面/短链/API」过 Cloudflare
+# 用的,对大文件流反而有害 —— 经 http 代理读 MediaFire CDN 到 12MB 就被对端
+# 断流(curl 56)、限速到几十 KB/s;同一 dlink 直连 17MB/s 跑满 2GB 无中断。
+# 所以按 host 记一份「优先走哪边」:MediaFire CDN 默认直连,其余(用户配了代理
+# 就)默认代理;哪边连接层失败过就翻面,本进程内记住(worker 常驻,重启即清空)。
+_EGRESS: dict[str, bool] = {}  # host -> 是否优先走代理(学到后覆盖默认)
+
+
+def _part_size(tmp: Path) -> int:
+    try:
+        return tmp.stat().st_size
+    except OSError:
+        return 0
+
+
+def _host_of(url: str) -> str:
+    try:
+        return (urlparse(url).hostname or "").lower()
+    except Exception:
+        return ""
+
+
+def _prefer_proxy(host: str) -> bool:
+    """该 host 优先走代理吗?MediaFire 的 download####.mediafire.com 默认直连。"""
+    if host in _EGRESS:
+        return _EGRESS[host]
+    return not host.endswith(".mediafire.com")
+
+
 def download_stream(url: str, dest: Path, *,
                     expected_sha256: str = "",
+                    expected_size: int = 0,
                     max_bytes: int = 4 * 1024**3,
                     on_progress=None,
                     stream_key=None,
                     use_proxy: bool = True,
-                    headers: dict | None = None) -> Path:
+                    headers: dict | None = None,
+                    retries: int = 3,
+                    progress_retries: int = PROGRESS_RETRIES,
+                    proxy_fallback: bool = True,
+                    session=None,
+                    referer: str = "") -> Path:
     """流式下载,支持 Range 断点续传。完成后校验 SHA256。
 
     on_progress(done_bytes, total_bytes) — total 可能为 0(未知)。
@@ -65,53 +133,159 @@ def download_stream(url: str, dest: Path, *,
     use_proxy — False 时无视 harvest.proxy 强制直连(pikpak CDN 实测直连可达)。
     headers — 额外请求头(terabox CDN 校验 ndus Cookie,必须随请求带上;
       Range 头由本函数按续传状态自行填,传入同名键会被覆盖)。
+    expected_size — 已知文件大小时传进来。content-length 与它不符(典型:
+      MediaFire 拿一页 HTML 冒充文件)当场判软拒绝,不写盘、不等到 SHA 校验。
+    retries — 瞬时失败(403/429/5xx/连接中断)**且没有进展**时的尝试次数,默认 3。
+      若某次连接失败前 .part 长大了(说明是对端掐断而非不通),不消耗这个预算,
+      改按 progress_retries 继续续传(大文件被切成一段段下)。
+      终态失败(404/410、超过 max_bytes、SHA 不符)不重试。
+    proxy_fallback — 允许按 host 自动选出口(MediaFire CDN 直连优先,连接层
+      失败自动翻面并记住)。TeraBox 这类 dlink 与该出口 IP 绑定的场景传 False,
+      永远只用 use_proxy 指定的那一边。
+    session — 复用的 curl_cffi Session(MediaFire 直链绑定取页面的那个客户端;
+      不带 cookie 换个连接下 4/4 被塞验证页)。传了就由调用方负责关闭。
+    referer — 随下载请求带的 Referer(与页面一致,浏览器行为)。
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
+    attempts = max(1, int(retries))
+    host = _host_of(url)
+    auto_egress = bool(use_proxy and proxy_fallback and host)
+    last = "未尝试"
+    attempt = 0
+    stalls = 0        # 没有进展的失败次数
+    progress_rounds = 0
+    while True:
+        attempt += 1
+        eff_proxy = _prefer_proxy(host) if auto_egress else use_proxy
+        before = _part_size(tmp)
+        try:
+            _download_once(url, dest, expected_sha256=expected_sha256,
+                           expected_size=expected_size,
+                           max_bytes=max_bytes, on_progress=on_progress,
+                           stream_key=stream_key, use_proxy=eff_proxy,
+                           headers=headers, session=session,
+                           referer=referer)
+        except _Retryable as exc:
+            last = str(exc)
+            gained = _part_size(tmp) - before
+            log.warning("下载第 %d 次失败(出口%s,%s): %s — %s",
+                        attempt, "代理" if eff_proxy else "直连",
+                        f"已续 {gained/1048576:.1f}MB" if gained > 0 else "无进展",
+                        last, url[:160])
+            if auto_egress and getattr(exc, "conn", False):
+                _EGRESS[host] = not eff_proxy
+                log.warning("下载 host %s 经%s连接失败,后续该 host 改走%s",
+                            host, "代理" if eff_proxy else "直连",
+                            "代理" if not eff_proxy else "直连")
+            # 有进展(部分数据已落盘):不消耗重试预算,接着 Range 续传
+            if gained > 0 and getattr(exc, "conn", False) \
+                    and progress_rounds < progress_retries:
+                progress_rounds += 1
+                time.sleep(min(2.0 * min(progress_rounds, 5), PROGRESS_BACKOFF_MAX))
+                continue
+            stalls += 1
+            if stalls >= attempts:
+                if getattr(exc, "soft", False):
+                    raise RuntimeError(
+                        f"{last}(已重试 {attempts} 次;MediaFire 这类拦是临时的,"
+                        f"过一会儿重排即可)") from exc
+                raise RuntimeError(last) from exc
+            backoff = (SOFT_BLOCK_BACKOFF if getattr(exc, "soft", False)
+                       else RETRY_BACKOFF)
+            time.sleep(backoff[min(stalls - 1, len(backoff) - 1)])
+            continue
+        return dest
 
-    headers = dict(headers or {})
+
+def _download_once(url: str, dest: Path, *,
+                   expected_sha256: str,
+                   expected_size: int,
+                   max_bytes: int,
+                   on_progress,
+                   stream_key,
+                   use_proxy: bool,
+                   headers: dict | None,
+                   session=None,
+                   referer: str = "") -> None:
+    """跑一次下载尝试。瞬时失败抛 _Retryable(已写部分保留,下次续传)。"""
+    tmp = dest.with_suffix(dest.suffix + ".part")
+
+    hdrs = dict(headers or {})
+    if referer:
+        hdrs.setdefault("Referer", referer)
     done = 0
     if tmp.exists():
         done = tmp.stat().st_size
-        headers["Range"] = f"bytes={done}-"
+        hdrs["Range"] = f"bytes={done}-"
 
     total = 0
     # curl_cffi 0.16.x 的 Response 不支持 with 语句(部分版本才支持),
     # 统一用手动 close + try/finally,流式读完后释放连接。
     # 代理与 net 同源(settings 表 harvest.proxy,harvest 采集链路共用)。
     from .net import _proxy
-    r = cr.get(url, impersonate="chrome", headers=headers, stream=True,
-               timeout=(20, 120),
-               proxy=_proxy() if use_proxy else None)
+    # 带了 Session 就用它(MediaFire 认 cookie 续接),但仍按本函数的出口策略
+    # 逐请求决定走不走代理 —— Session 内的 cookie 与出口可以不一致。
+    client = session if session is not None else cr
+    try:
+        r = client.get(url, impersonate="chrome", headers=hdrs, stream=True,
+                       timeout=(20, 120),
+                       proxy=_proxy() if use_proxy else None)
+    except Exception as exc:
+        raise _Retryable(f"下载连接失败 {type(exc).__name__}: {exc}",
+                         conn=True) from exc
     if stream_key is not None:
         _STREAMS[stream_key] = r
     try:
         if r.status_code not in (200, 206):
+            if r.status_code in RETRY_STATUS:
+                raise _Retryable(f"下载失败 HTTP {r.status_code}")
             raise RuntimeError(f"下载失败 HTTP {r.status_code}")
         if r.status_code == 200:
             done = 0  # 服务端不支持续传,重下
+        # 软拒绝拦截:MediaFire 拒绝下载时不改状态码,而是 302 到
+        # download_repair.php 并回一页 HTML(几十 KB、无 content-length)。
+        # 必须在写盘前识破 —— 否则这段 HTML 会被当成文件写进 .part,
+        # 只能在 SHA 校验时才暴露,而那时 .part 已被删、整卷白下。
+        ctype = (r.headers.get("content-type") or "").lower()
+        if "text/html" in ctype or "download_repair" in str(r.url):
+            raise _Retryable(
+                f"MediaFire 拒绝下载(返回验证页而非文件,{ctype or 'text/html'})",
+                soft=True)
         cl = r.headers.get("content-length")
         if cl:
             total = int(cl) + (done if r.status_code == 206 else 0)
+            if expected_size and total != expected_size:
+                raise _Retryable(
+                    f"下载大小不符: 期望 {expected_size} 实得 {total}(多为验证页/截断)",
+                    soft=True)
+        elif expected_size:
+            raise _Retryable("下载没有 content-length,无法确认是文件本体", soft=True)
 
         sha = hashlib.sha256()
         if done:
             # 已下载部分计入校验 —— 分块流式读: read_bytes() 会把整个 .part
-            # (可达数 GB)一次性载入内存, 是容器内存峰值暴冲的元凶
+            # (可达数 GB)一次性载入内存,是容器内存峰值暴冲的元凶
             with open(tmp, "rb") as pf:
                 for chunk in iter(lambda: pf.read(4 * 1024 * 1024), b""):
                     sha.update(chunk)
 
         mode = "ab" if (r.status_code == 206 and done) else "wb"
         with open(tmp, mode) as f:
-            for chunk in r.iter_content(chunk_size=1024 * 512):
-                f.write(chunk)
-                sha.update(chunk)
-                done += len(chunk)
-                if done > max_bytes:
-                    raise RuntimeError(f"超过单文件大小上限 {human(max_bytes)}")
-                if on_progress:
-                    on_progress(done, total)
+            try:
+                for chunk in r.iter_content(chunk_size=1024 * 512):
+                    f.write(chunk)
+                    sha.update(chunk)
+                    done += len(chunk)
+                    if done > max_bytes:
+                        raise RuntimeError(f"超过单文件大小上限 {human(max_bytes)}")
+                    if on_progress:
+                        on_progress(done, total)
+            except RuntimeError:
+                raise
+            except Exception as exc:  # 连接中断/超时: 已写字节合法,可续传
+                raise _Retryable(f"下载中断 {type(exc).__name__}: {exc}",
+                                 conn=True) from exc
     finally:
         if stream_key is not None:
             _STREAMS.pop(stream_key, None)
@@ -123,7 +297,6 @@ def download_stream(url: str, dest: Path, *,
         raise RuntimeError(f"SHA256 不匹配: 期望 {expected_sha256[:12]}… 实得 {digest[:12]}…")
 
     tmp.replace(dest)
-    return dest
 
 
 def extract_archive(archive: Path, dest_dir: Path, password: str, *,

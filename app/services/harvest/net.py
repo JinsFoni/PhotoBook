@@ -764,10 +764,131 @@ MF_KEY_RE = re.compile(r"mediafire\.com/file/([a-z0-9]+)(?:[/?#]|$)", re.I)
 MF_FOLDER_RE = re.compile(r"mediafire\.com/folder/([a-z0-9]+)", re.I)
 
 
-def mediafire_direct_url(page_url: str) -> str | None:
-    html = fetch_html(page_url)
+# 2026-10-22 起 MediaFire 前置的 Cloudflare 对**无 cookie** 的客户端按频率
+# 抽检:实测同一 URL 冷请求 8 次有 3 次回 403 + `cf-mitigated: challenge`
+# (裸 /file/<key>/ 约 1/6)。采集链路每次都是新的 cr.get,拿不到 __cf_bm,
+# 撞上一次就整任务失败(任务 596 两次重排都死在这一步,bytes 0)。
+# 规避方式实测有效:同一 Session 先打裸页 /file/<key>/(无查询串)拿到
+# __cf_bm/ukey,再打目标页 —— 4/4 通过。仍被拦则换新 Session 退避重试。
+CF_RETRY_TRIES = 3
+CF_RETRY_BACKOFF = (2.0, 5.0)
+CF_CHALLENGE_MARKERS = ("Just a moment", "cf-challenge", "__cf_chl_", "cf_chl_opt")
+
+
+def is_cf_challenge(r) -> bool:
+    """响应是否 Cloudflare 人机盾拦截页(200 也可能是盾页,故正文也要查)。"""
+    try:
+        if str(r.headers.get("cf-mitigated") or "").lower() == "challenge":
+            return True
+    except Exception:
+        return False
+    try:
+        body = (r.text or "")[:4096]
+    except Exception:
+        return False
+    # 正文只看前 4KB 的盾页特征 —— 盾页有时用 200 返回,所以状态码不作前提
+    return any(m in body for m in CF_CHALLENGE_MARKERS)
+
+
+def _cf_backoff(attempt: int) -> float:
+    return CF_RETRY_BACKOFF[min(attempt, len(CF_RETRY_BACKOFF) - 1)]
+
+
+def _mf_prime_url(url: str) -> str:
+    """去掉查询串/文件名的裸文件页 —— 预热 Session 用。"""
+    m = MF_KEY_RE.search(url)
+    return f"https://www.mediafire.com/file/{m.group(1)}/" if m else ""
+
+
+def mediafire_page_session(page_url: str, *, timeout: float = 30.0):
+    """取文件页并**把这次的 Session 一起返回**:`(html, session)`。
+
+    为什么要把 Session 交出去(2026-10-22 实测,决定性的那一条):
+    MediaFire 会把直链 dkey 绑在「取页面的那个客户端」上 —— 页面走代理、
+    下载换个无 cookie 的连接直连,4/4 都被塞 download_repair 验证页;
+    只要下载复用取页面时的 Session(cookie 一致,出口可以换),4/4 正常;
+    页面和下载都直连(同一出口)也 4/4 正常。所以下载必须带上这个 Session。
+
+    每轮:新 Session → 裸页预热(拿 __cf_bm/ukey,失败也继续)→ 目标页;
+    被盾则换 Session 退避重试。失败抛 RuntimeError。
+    """
+    proxy = _proxy()
+    prime = _mf_prime_url(page_url)
+    last = "未尝试"
+    for attempt in range(CF_RETRY_TRIES):
+        s = cr.Session(impersonate=UA_IMPERSONATE, proxy=proxy)
+        try:
+            if prime and prime != page_url:
+                try:
+                    s.get(prime, timeout=timeout, allow_redirects=True)
+                except Exception as exc:  # 预热失败不影响主请求(可能已拿到 cookie)
+                    log.debug("mediafire 预热失败(忽略): %s", exc)
+            r = s.get(page_url, timeout=timeout, allow_redirects=True)
+            if r.status_code == 200 and not is_cf_challenge(r):
+                return r.text, s
+            last = f"HTTP {r.status_code}"
+            if is_cf_challenge(r):
+                last += " (cf challenge)"
+            log.warning("mediafire 页面第 %d/%d 次失败: %s %s",
+                        attempt + 1, CF_RETRY_TRIES, last, page_url)
+        except Exception as exc:
+            last = f"{type(exc).__name__}: {exc}"
+            log.warning("mediafire 页面第 %d/%d 次异常: %s %s",
+                        attempt + 1, CF_RETRY_TRIES, last, page_url)
+        try:
+            s.close()
+        except Exception:
+            pass
+        if attempt < CF_RETRY_TRIES - 1:
+            time.sleep(_cf_backoff(attempt))
+    raise RuntimeError(f"MediaFire 页面取不到({last}): {page_url}")
+
+
+def mediafire_page(page_url: str, *, timeout: float = 30.0) -> str:
+    """只要 HTML(内部会关掉 Session)。下载路径请用 mediafire_page_session。"""
+    html, s = mediafire_page_session(page_url, timeout=timeout)
+    try:
+        s.close()
+    except Exception:
+        pass
+    return html
+
+
+def _mf_api_get(url: str, params: dict, *, timeout: float = 30.0):
+    """MediaFire 公开 API(JSON)—— 同样会被 CF 抽检,退避重试。返回 Response。"""
+    last = "未尝试"
+    for attempt in range(CF_RETRY_TRIES):
+        try:
+            r = cr.get(url, params=params, impersonate=UA_IMPERSONATE,
+                       timeout=timeout, proxy=_proxy())
+            if r.status_code == 200 and not is_cf_challenge(r):
+                return r
+            last = f"HTTP {r.status_code}"
+            if is_cf_challenge(r):
+                last += " (cf challenge)"
+        except Exception as exc:
+            last = f"{type(exc).__name__}: {exc}"
+        log.warning("mediafire API 第 %d/%d 次失败: %s %s",
+                    attempt + 1, CF_RETRY_TRIES, last, url)
+        if attempt < CF_RETRY_TRIES - 1:
+            time.sleep(_cf_backoff(attempt))
+    raise RuntimeError(f"MediaFire API 请求失败({last}): {url}")
+
+
+def _mf_direct_from_html(html: str) -> str:
     m = MF_DIRECT_RE.search(html)
-    return m.group(1).replace("&amp;", "&") if m else None
+    return m.group(1).replace("&amp;", "&") if m else ""
+
+
+def mediafire_direct_url(page_url: str, *, session=None) -> str | None:
+    """文件页 → 直链。给了 session 就复用它(下载端要沿用同一个)。"""
+    if session is not None:
+        r = session.get(page_url, timeout=30, allow_redirects=True)
+        html = r.text if r.status_code == 200 and not is_cf_challenge(r) \
+            else mediafire_page(page_url)
+    else:
+        html = mediafire_page(page_url)
+    return _mf_direct_from_html(html) or None
 
 
 def mediafire_folder_files(folder_url: str) -> list[dict]:
@@ -785,23 +906,27 @@ def mediafire_folder_files(folder_url: str) -> list[dict]:
     files: list[dict] = []
     chunk = 1
     while True:
-        api = cr.get("https://www.mediafire.com/api/folder/get_content.php",
-                     params={"folder_key": folder_key, "content_type": "files",
-                             "response_format": "json", "chunk": chunk},
-                     impersonate=UA_IMPERSONATE, timeout=30, proxy=_proxy())
+        api = _mf_api_get("https://www.mediafire.com/api/folder/get_content.php",
+                          params={"folder_key": folder_key,
+                                  "content_type": "files",
+                                  "response_format": "json", "chunk": chunk})
         fc = api.json()["response"].get("folder_content", {})
         batch = fc.get("files") or []
         for f in batch:
             page = f.get("links", {}).get("normal_download") or ""
             if not page:
                 continue
+            html, sess = mediafire_page_session(page)
             files.append({
                 "quick_key": f["quickkey"],
                 # normal_download 是文件页(非直链), 复用文件页直链提取
-                "direct_url": mediafire_direct_url(page) or "",
+                "direct_url": _mf_direct_from_html(html),
                 "size": int(f.get("size", 0)),
                 "sha256": (f.get("hash") or "").lower(),
                 "filename": f.get("filename", ""),
+                # 下载必须沿用取页面的 Session(dkey 绑客户端),由调用方负责关闭
+                "_session": sess,
+                "_referer": page,
             })
         total_chunks = int(fc.get("chunks") or 1)
         if chunk >= total_chunks or not batch:
@@ -810,22 +935,34 @@ def mediafire_folder_files(folder_url: str) -> list[dict]:
     return files
 
 
-def mediafire_info_from_url(page_url: str) -> dict:
-    """文件页 URL → {quick_key, direct_url, size, sha256, filename}。"""
+def mediafire_info_from_url(page_url: str, *, keep_session: bool = False) -> dict:
+    """文件页 URL → {quick_key, direct_url, size, sha256, filename}。
+
+    keep_session=True 时额外返回 `_session`/`_referer`:下载必须复用这个
+    Session(dkey 绑客户端),调用方负责 close。
+    """
     key_m = MF_KEY_RE.search(page_url)
     if not key_m:
         raise RuntimeError(f"无法从 URL 提取 quick_key: {page_url}")
     key = key_m.group(1)
 
-    api = cr.get("https://www.mediafire.com/api/1.5/file/get_info.php",
-                 params={"quick_key": key, "response_format": "json"},
-                 impersonate=UA_IMPERSONATE, timeout=30, proxy=_proxy())
+    api = _mf_api_get("https://www.mediafire.com/api/1.5/file/get_info.php",
+                      params={"quick_key": key, "response_format": "json"})
     fi = api.json()["response"]["file_info"]
-    direct = mediafire_direct_url(page_url) or ""
-    return {
+    html, sess = mediafire_page_session(page_url)
+    info = {
         "quick_key": key,
-        "direct_url": direct,
+        "direct_url": _mf_direct_from_html(html),
         "size": int(fi.get("size", 0)),
         "sha256": (fi.get("hash") or "").lower(),
         "filename": fi.get("filename", ""),
     }
+    if keep_session:
+        info["_session"] = sess
+        info["_referer"] = page_url
+    else:
+        try:
+            sess.close()
+        except Exception:
+            pass
+    return info

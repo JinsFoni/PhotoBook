@@ -150,8 +150,9 @@ def _stub_and_break_import(monkeypatch) -> None:
     monkeypatch.setattr(hnet, "resolve_ouo",
                         lambda link, **kw: "https://www.mediafire.com/file/abc/x.rar")
     monkeypatch.setattr(hnet, "mediafire_info_from_url",
-                        lambda u: {"direct_url": "https://x/y.rar", "filename": "y.rar",
-                                   "size": 3, "sha256": None})
+                        lambda u, **kw: {"direct_url": "https://x/y.rar",
+                                         "filename": "y.rar",
+                                         "size": 3, "sha256": None})
     monkeypatch.setattr(hpipe, "download_stream",
                         lambda url, dest, **kw: Path(dest).write_bytes(b"rar"))
     def fake_extract(archive, out, password=None):

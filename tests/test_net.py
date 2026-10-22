@@ -362,19 +362,63 @@ def test_mediafire_info_from_action_check_url(monkeypatch):
     """落地 URL 是 ?action=check 形态时,get_info 仍要能走通并带出大小/哈希。"""
 
     class _Resp:
+        status_code = 200
+        headers: dict = {}
+        text = ""
+
         def json(self):
             return {"response": {"file_info": {
                 "size": "1056953678", "hash": "AB12EF", "filename": "x.rar"}}}
 
+    class _Sess:
+        def close(self):
+            pass
+
     monkeypatch.setattr(net.cr, "get", lambda *a, **k: _Resp())
-    monkeypatch.setattr(net, "mediafire_direct_url",
-                        lambda url: "https://download1475.mediafire.com/x")
+    monkeypatch.setattr(
+        net, "mediafire_page_session",
+        lambda url, **kw: ('<a href="https://download1475.mediafire.com/x">',
+                           _Sess()))
     info = net.mediafire_info_from_url(
         "https://www.mediafire.com/file/lff2y9wctjycelj?action=check")
     assert info["quick_key"] == "lff2y9wctjycelj"
     assert info["size"] == 1056953678
     assert info["sha256"] == "ab12ef"
     assert info["direct_url"].startswith("https://download1475.mediafire.com/")
+    assert "_session" not in info  # 默认不交出会话
+
+
+def test_mediafire_info_hands_back_session_for_download(monkeypatch):
+    """keep_session=True:把取页面那份 Session 交出来 —— 直链 dkey 绑客户端,
+    下载换个无 cookie 的连接会被塞 download_repair 验证页(2026-10-22 实测)。"""
+
+    class _Resp:
+        status_code = 200
+        headers: dict = {}
+        text = ""
+
+        def json(self):
+            return {"response": {"file_info": {
+                "size": "1", "hash": "AA", "filename": "x.rar"}}}
+
+    sess = object()
+
+    class _S:
+        closed = False
+
+        def close(self):
+            _S.closed = True
+
+    monkeypatch.setattr(net.cr, "get", lambda *a, **k: _Resp())
+    monkeypatch.setattr(net, "mediafire_page_session",
+                        lambda url, **kw: ('href="https://download9.mediafire.com/y"',
+                                           _S()))
+    info = net.mediafire_info_from_url(
+        "https://www.mediafire.com/file/abc123/x.rar", keep_session=True)
+    assert isinstance(info["_session"], _S)
+    assert info["_referer"].endswith("/file/abc123/x.rar")
+    assert _S.closed is False
+    assert sess is not None
 
 
 def test_misskon_legacy_no_postid_raises(monkeypatch):
@@ -407,3 +451,126 @@ def test_misskon_scan_list_page(monkeypatch):
         (119386, "https://misskon.com/119386-otherxxx-nancyyzp-64-photos/"),
     ]
     assert has_next is True
+
+
+# ---- MediaFire 的 Cloudflare 抽检(2026-10-22) --------------------------------
+
+class _CfResp:
+    def __init__(self, status=200, body="", headers=None):
+        self.status_code = status
+        self.text = body
+        self.headers = headers or {}
+
+
+def test_is_cf_challenge_by_header_and_body():
+    assert net.is_cf_challenge(_CfResp(403, "x", {"cf-mitigated": "challenge"}))
+    assert net.is_cf_challenge(_CfResp(403, "<title>Just a moment...</title>"))
+    # 200 的盾页也算(CF 有时用 200 返回挑战页)
+    assert net.is_cf_challenge(_CfResp(200, "<title>Just a moment...</title>"))
+    # 正常页面 / 纯 403 无标记 → 不算
+    assert not net.is_cf_challenge(_CfResp(200, "<html>ok</html>"))
+    assert not net.is_cf_challenge(_CfResp(403, "forbidden"))
+
+
+def test_mediafire_page_primes_session_then_gets_page(monkeypatch):
+    """同一 Session 先打裸页(拿 __cf_bm)再打目标页 —— 一次就过。"""
+    seen = []
+
+    class _Sess:
+        def __init__(self, **kw):
+            self.kw = kw
+            seen.append(("new", kw.get("proxy")))
+
+        def get(self, url, **kw):
+            seen.append(("get", url))
+            if "?" in url:  # 目标页(action=check)
+                return _CfResp(200, '<a href="https://download1.mediafire.com/x">')
+            return _CfResp(200, "<html>prime</html>")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(net.cr, "Session", _Sess)
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    url = "https://www.mediafire.com/file/abc123?action=check"
+    html = net.mediafire_page(url)
+    assert "download1.mediafire.com" in html
+    # 预热用的是去掉查询串的裸文件页,顺序在目标页之前
+    assert [x for x in seen if x[0] == "get"] == [
+        ("get", "https://www.mediafire.com/file/abc123/"), ("get", url)]
+
+
+def test_mediafire_page_retries_challenge_then_succeeds(monkeypatch):
+    """首轮被盾 → 换新 Session 重试 → 通过(不再一次失败整任务判死)。"""
+    state = {"target": 0, "sessions": 0}
+
+    class _Sess:
+        def __init__(self, **kw):
+            state["sessions"] += 1
+
+        def get(self, url, **kw):
+            if "?" not in url:  # 预热裸页:正常
+                return _CfResp(200, "<html>prime</html>")
+            state["target"] += 1
+            if state["target"] == 1:  # 首轮目标页被盾
+                return _CfResp(403, "<title>Just a moment...</title>",
+                               {"cf-mitigated": "challenge"})
+            return _CfResp(200, '<a href="https://download2.mediafire.com/y">')
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(net.cr, "Session", _Sess)
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    html = net.mediafire_page("https://www.mediafire.com/file/abc123?action=check")
+    assert "download2.mediafire.com" in html
+    assert state["target"] == 2
+    assert state["sessions"] == 2  # 第 1 轮被盾后用新 Session 重来
+
+
+def test_mediafire_page_gives_up_with_clear_error(monkeypatch):
+    class _Sess:
+        def __init__(self, **kw):
+            pass
+
+        def get(self, url, **kw):
+            return _CfResp(403, "<title>Just a moment...</title>",
+                           {"cf-mitigated": "challenge"})
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(net.cr, "Session", _Sess)
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    with pytest.raises(RuntimeError) as ei:
+        net.mediafire_page("https://www.mediafire.com/file/abc123?action=check")
+    assert "cf challenge" in str(ei.value)
+
+
+def test_mf_api_get_retries_challenge(monkeypatch):
+    """get_info.php 本身也可能被盾 —— 同样退避重试。"""
+    calls = {"n": 0}
+
+    class _J:
+        def __init__(self, ok):
+            self.ok = ok
+            self.status_code = 200 if ok else 403
+            self.text = "" if ok else "<title>Just a moment...</title>"
+            self.headers = {}
+
+        def json(self):
+            return {"response": {"file_info": {
+                "size": "1", "hash": "AA", "filename": "x.rar"}}}
+
+    def fake_get(url, **kw):
+        calls["n"] += 1
+        return _J(calls["n"] > 1)
+
+    monkeypatch.setattr(net.cr, "get", fake_get)
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    r = net._mf_api_get("https://www.mediafire.com/api/1.5/file/get_info.php",
+                        params={"quick_key": "abc"})
+    assert r.status_code == 200 and calls["n"] == 2
