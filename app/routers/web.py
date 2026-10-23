@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -169,6 +170,19 @@ def _published_collections(s: Session) -> list[Collection]:
         .order_by(desc(Collection.published_at), desc(Collection.id))).all())
 
 
+def _works_newest_first(works: list[Collection]) -> list[Collection]:
+    """模特页作品序 = 最新入库(created_at 新→旧, 同刻按 id 兜底)。
+
+    与写真列表「最新入库」、首页轮播、移动端写真 tab 同一语义, **不是**源站
+    发布日期: 老站转载的旧作今天刚入库, 按 published_at 会被排到很后面。
+    虚化垫底图(templating._blur_src)按同一把尺子挑合集, 所以模特页背景恒等于
+    本网格第一张 —— 两处排序基准必须一致, 改一处就得改另一处。
+    """
+    # created_at 理论上不会为空(default=utcnow), 老数据兜底排到最后
+    return sorted(works, key=lambda c: (c.created_at or datetime.min, c.id),
+                  reverse=True)
+
+
 # ---- Discovery --------------------------------------------------------------
 
 @router.get("/")
@@ -312,9 +326,8 @@ async def model_detail(request: Request, slug: str, s: Session = Depends(get_db)
         return templates.TemplateResponse(request, "notfound.html",
                                           {"user": user, "page": "models", "text": text},
                                           status_code=404)
-    # 写真集按最新在前(与全站列表一致); 无发布日期的排最后
-    works = [c for c in m.collections if c.status == "published"]
-    works.sort(key=lambda c: (c.published_at or "", c.id), reverse=True)
+    # 写真集按最新入库在前(与列表页「最新入库」、虚化背景同序)
+    works = _works_newest_first([c for c in m.collections if c.status == "published"])
     work_counts = _photo_counts(s, works)
     covers = load_covers(s, works)
     # 显式传 works + counts: 缺省时 photoCount 只能逐个兜底 0

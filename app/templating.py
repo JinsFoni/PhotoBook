@@ -121,8 +121,19 @@ def _first_photo_filename(s, collection_id: int) -> str | None:
 
 
 def _blur_src(request: Request) -> str | None:
-    """虚化主题的垫底图源:模特主页用头像, 写真详情用第一张图,
-    其他页面用首页精选轮播的封面(整条查询链都挑不到则返回 None)。
+    """虚化主题的垫底图源(整条链都挑不到则返回 None):
+
+    - `/models/<slug>`: 模特头像; 没头像 → 该模特最新入库合集的第一张
+    - `/collections/<slug>`: 本合集 sort_order 最小的那张
+    - `/` 首页: **跟轮播图一致** —— 精选(featured)合集优先, 一本精选都没有
+      才退化成最新入库; 轮播顺序就是这把尺子, 背景才不会和首屏头图各说各话
+    - 其余页面(写真列表/模特列表/收藏/搜索…): 一律最新入库,
+      **不受 featured 影响** —— 精选是首页的编辑推荐位, 不该改列表页的观感
+
+    合集一律按**最新入库**(created_at 新→旧, 同刻按 id)挑, 与列表页
+    「最新入库」排序、首页轮播、移动端写真 tab 同一个语义 —— 不是源站
+    发布日期(published_at):老站转载的旧作今天刚入库, 按发布日期永远排
+    在后面, 背景就永远不跟着新内容走(实测全库两个榜单前 10 名重合 0 条)。
 
     只取文件名字符串(标量查询), 绝不触碰 c.photos 关系 —— 那会把
     整个合集的照片拖成 ORM 对象。请求内缓存: base.html 同时渲染
@@ -134,11 +145,12 @@ def _blur_src(request: Request) -> str | None:
     path = request.url.path
     rel: str | None = None
     try:
-        from sqlalchemy import select
+        from sqlalchemy import desc, select
 
         from .database import SessionLocal
         from .db import Collection, Model
 
+        newest = (desc(Collection.created_at), desc(Collection.id))
         s = SessionLocal()
         try:
             if path.startswith("/models/"):
@@ -147,12 +159,12 @@ def _blur_src(request: Request) -> str | None:
                 if m:
                     rel = m.avatar_path
                     if not rel:
-                        # 头像缺省 → 该模特最新发布合集的第一张(标量查询)
+                        # 头像缺省 → 该模特最新入库合集的第一张(标量查询)
                         cid = s.scalar(
                             select(Collection.id).where(
                                 Collection.model_id == m.id,
                                 Collection.status == "published")
-                            .order_by(Collection.published_at.desc()).limit(1))
+                            .order_by(*newest).limit(1))
                         if cid:
                             rel = _first_photo_filename(s, cid)
             elif path.startswith("/collections/"):
@@ -161,14 +173,18 @@ def _blur_src(request: Request) -> str | None:
                 if c:
                     rel = _first_photo_filename(s, c.id)
             if not rel:
-                c = s.scalar(
-                    select(Collection).where(Collection.status == "published",
-                                             Collection.featured == True)  # noqa: E712
-                    .order_by(Collection.published_at.desc()))
-                if not c:
+                c = None
+                if path == "/":
+                    # 轮播同款: featured 优先, 没有才全库兜底
+                    c = s.scalar(
+                        select(Collection).where(
+                            Collection.status == "published",
+                            Collection.featured == True)  # noqa: E712
+                        .order_by(*newest))
+                if c is None:
                     c = s.scalar(
                         select(Collection).where(Collection.status == "published")
-                        .order_by(Collection.published_at.desc()))
+                        .order_by(*newest))
                 if c:
                     rel = _first_photo_filename(s, c.id)
         finally:

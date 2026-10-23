@@ -66,6 +66,19 @@
 - **TypeScript:不引入编译工具链**,用 ES Modules + JSDoc 类型标注 + `jsconfig.json` checkJs(`tsc --noEmit` 只检查不编译)。类型安全重点是 fetch 边界——手写 JSDoc `typedef` 覆盖 API 响应形状;将来可选用 openapi-typescript 从 FastAPI schema 生成 `.d.ts`,契约自动同步
 - 升级路径:Jinja2 模板粒度便于将来渐进迁移 SPA,路没有堵死
 
+**虚化背景的图源规则**(`templating._blur_src`, 2026-10-24 定稿):
+
+| 页面 | 垫底图 |
+|---|---|
+| `/` 首页 | **跟轮播同一本** —— 精选(featured)合集优先, 没有精选才最新入库; 前端 `pc:hero-bg` 事件再把轮播当前那张(2400 档)同步上墙, SSR 这张只管首帧 |
+| `/collections/<slug>` | 本合集 `sort_order` 最小的那张 |
+| `/models/<slug>` | 模特头像; 没头像 → 该模特最新入库合集的第一张 |
+| 其余(写真列表/模特列表/收藏/个人中心) | **最新入库(created_at), 不受 featured 影响** |
+
+两条规矩:①「最新」一律指入库时间 `created_at`, 不是源站发布日期
+`published_at`(老站转载的旧作今天刚入库, 按发布日期永远排后面);②精选是首页
+的编辑推荐位, 只许影响首页与轮播, 不许改浏览页观感。
+
 ## 四、后端模块划分
 
 ```
