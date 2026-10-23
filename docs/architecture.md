@@ -649,6 +649,33 @@ WebDAV 的 MKCOL 与 OpenList 的 `fs/mkdir` 在网盘驱动上都不便宜:115 
    支持 `--dry-run` / `--storage` / `--collection`, 修不回来的列出来交人工。
    非 dry-run 时退出码 1 表示有文件既不在本地也不在任何备份存储。
 
+### 6. 重启打断上传组 → 任务重排(2026-10-23)
+
+重启容器时如果正好有一个上传组在跑, 任务会被记成 `failed`
+「内部错误(详见日志)」。日志里其实是:
+
+```
+upload group [1019, 1020] crashed
+RuntimeError: cannot schedule new futures after shutdown
+  at worker.py:293  executor.submit(backend.upload, ...)
+```
+
+解释器退出时 `concurrent.futures.thread` 的 atexit 钩子先把**所有**
+ThreadPoolExecutor 置成 shutting down, 上传主线程还在往线程池投下一张, 于是
+`submit()` 抛错并冒到 `_consume_loop` 的兜底 `except` —— 任务本身没有任何
+问题, 只是被进程退出掐断, 却被当成真失败, 还得手工重排(线上 572 / 689 各一
+组, 4 条)。
+
+现在 `_consume_loop` 先认这个特定的 `RuntimeError`
+(`_is_shutdown_error`): 命中就 `_requeue_jobs` 把仍在 `running` 的任务放回
+`queued`(`error=None`), 然后直接 `return` —— executor 已经全局关闭, 再循环
+也没有意义, 进程随即退出。断点续传靠 `photo_uploads` 行, `photos_done` 下一
+轮会按它重算, 重跑只补缺的那几张; 被掐断在飞的那几张会被幂等重传一次(远端
+覆盖, 无副作用)。
+
+注意只认这一句错误串: 其它异常照旧 `failed`「内部错误」, 别把真崩也变成静默
+重排。
+
 ### 测试
 
 - `tests/test_storage_backends.py`:进程内 stub 同时实现两套协议,断言
@@ -656,5 +683,7 @@ WebDAV 的 MKCOL 与 OpenList 的 `fs/mkdir` 在网盘驱动上都不便宜:115 
   逐文件兜底」「校验能发现截断、重传后恢复」;
 - `tests/test_upload_concurrency.py`:打桩 backend 记录峰值并发(2..4);
   校验不一致时任务必须 failed、**撤掉 photo_uploads 行**、保留原图;一个存储
-  掉文件时另一个存储收尾**不得**删原图(两个存储都通过时才删);
+  掉文件时另一个存储收尾**不得**删原图(两个存储都通过时才删);重启竞态
+  (`cannot schedule new futures after shutdown`)任务回 `queued` 而不是
+  `failed`, 而普通异常仍记 failed;
 - `tests/test_collection_delete_async.py`:后台清理 + 重传竞态守卫。

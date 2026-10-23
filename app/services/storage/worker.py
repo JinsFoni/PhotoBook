@@ -141,11 +141,52 @@ def _consume_loop() -> None:
             s.close()
         try:
             _run_group(job_ids)
-        except Exception:
+        except Exception as e:
+            if _is_shutdown_error(e):
+                # 进程正在退出(容器重启 / compose down): atexit 已经把
+                # ThreadPoolExecutor 置成 shutting down, 主线程这时 submit()
+                # 必然抛错。这不是任务本身的失败 —— 放回队列, 下次启动续传
+                # (photo_uploads 行就是断点, 重跑只补缺的那几张)。
+                n = _requeue_jobs(job_ids)
+                log.warning("upload group %s 被进程退出打断, %d 个任务已重新排队",
+                            job_ids, n)
+                return  # executor 已全局关闭, 再循环也没有意义
             log.exception("upload group %s crashed", job_ids)
             for jid in job_ids:
                 _fail_job(jid, "内部错误(详见日志)")
         time.sleep(0.1)
+
+
+# 解释器退出时 concurrent.futures.thread 的 atexit 钩子会先把所有
+# ThreadPoolExecutor 置成 shutting down, 之后任何 submit() 都抛这句。
+_SHUTDOWN_RUNTIME_ERROR = "cannot schedule new futures after shutdown"
+
+
+def _is_shutdown_error(e: BaseException) -> bool:
+    """这个异常是否只是「进程正在退出」, 而不是任务自身出了问题。"""
+    return isinstance(e, RuntimeError) and _SHUTDOWN_RUNTIME_ERROR in str(e)
+
+
+def _requeue_jobs(job_ids: list[int]) -> int:
+    """把被进程退出打断的任务放回队列。返回放回的数量。
+
+    只动还在 `running` 的: 同组里已经 failed(真失败)的保持原状。
+    photos_done 不用重置 —— 下一轮开跑时会按 photo_uploads 重算。
+    """
+    from ...database import SessionLocal
+
+    s = SessionLocal()
+    try:
+        n = 0
+        for jid in job_ids:
+            job = s.get(UploadJob, jid)
+            if job and job.status == "running":
+                job.status, job.error = "queued", None
+                n += 1
+        s.commit()
+        return n
+    finally:
+        s.close()
 
 
 def _fail_job(job_id: int, error: str) -> None:
