@@ -142,18 +142,8 @@ def _consume_loop() -> None:
         try:
             _run_group(job_ids)
         except Exception as e:
-            if _is_shutdown_error(e):
-                # 进程正在退出(容器重启 / compose down): atexit 已经把
-                # ThreadPoolExecutor 置成 shutting down, 主线程这时 submit()
-                # 必然抛错。这不是任务本身的失败 —— 放回队列, 下次启动续传
-                # (photo_uploads 行就是断点, 重跑只补缺的那几张)。
-                n = _requeue_jobs(job_ids)
-                log.warning("upload group %s 被进程退出打断, %d 个任务已重新排队",
-                            job_ids, n)
+            if _handle_group_error(e, job_ids):
                 return  # executor 已全局关闭, 再循环也没有意义
-            log.exception("upload group %s crashed", job_ids)
-            for jid in job_ids:
-                _fail_job(jid, "内部错误(详见日志)")
         time.sleep(0.1)
 
 
@@ -165,6 +155,25 @@ _SHUTDOWN_RUNTIME_ERROR = "cannot schedule new futures after shutdown"
 def _is_shutdown_error(e: BaseException) -> bool:
     """这个异常是否只是「进程正在退出」, 而不是任务自身出了问题。"""
     return isinstance(e, RuntimeError) and _SHUTDOWN_RUNTIME_ERROR in str(e)
+
+
+def _handle_group_error(e: BaseException, job_ids: list[int]) -> bool:
+    """上传组抛异常后的收尾。返回 True 表示进程正在退出, 调用方该结束循环。
+
+    进程退出(容器重启 / compose down)时 atexit 已经把 ThreadPoolExecutor 置成
+    shutting down, 主线程这时 submit() 必然抛错 —— 任务本身没问题, 只是被掐断。
+    这种就放回队列, 下次启动续传(photo_uploads 行就是断点, 重跑只补缺的那几张);
+    其它异常是真崩, 照旧记 failed。
+    """
+    if _is_shutdown_error(e):
+        n = _requeue_jobs(job_ids)
+        log.warning("upload group %s 被进程退出打断, %d 个任务已重新排队",
+                    job_ids, n)
+        return True
+    log.exception("upload group %s crashed", job_ids)
+    for jid in job_ids:
+        _fail_job(jid, "内部错误(详见日志)")
+    return False
 
 
 def _requeue_jobs(job_ids: list[int]) -> int:

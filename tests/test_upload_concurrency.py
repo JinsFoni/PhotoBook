@@ -355,70 +355,27 @@ def test_originals_deleted_when_all_storages_pass(monkeypatch):
 # 「cannot schedule new futures after shutdown」, 冒到 _consume_loop 的兜底
 # except, 被当成普通错误记成 failed「内部错误(详见日志)」—— 于是平白多出
 # 4 条要手工重排的失败任务(写真集 572 / 689)。
+#
+# 这里只测收尾函数 `_handle_group_error`(返回值 = 是否该结束 worker 循环),
+# 不去驱动真的 `_consume_loop`: 应用启动的那个 upload-worker 线程也在跑同一个
+# 函数, 打桩全局函数会把它一起打断(实测会留下 PytestUnhandledThreadException
+# 警告, 还可能在用例之间把 worker 线程弄死)。
 
 
-@contextmanager
-def _sole_queued(job_id: int):
-    """让队列里只剩这一个任务。
-
-    DB 是会话级共享的, 别的用例可能留下 queued 的 UploadJob, 而
-    _consume_loop 取的是「id 最小的 queued」——不隔离的话会去处理别人的写真集。
-    """
-    parked: list[int] = []
-    s = SessionLocal()
-    try:
-        for j in s.scalars(select(UploadJob).where(UploadJob.status == "queued")).all():
-            if j.id != job_id:
-                parked.append(j.id)
-                j.status = "paused"
-        s.commit()
-    finally:
-        s.close()
-    try:
-        yield
-    finally:
-        s = SessionLocal()
-        try:
-            for jid in parked:
-                j = s.get(UploadJob, jid)
-                if j is not None:
-                    j.status = "queued"
-            s.commit()
-        finally:
-            s.close()
+def _mk_running_job(kind: str = "zzshut", n: int = 3) -> tuple[int, int]:
+    """建一个 running 状态的上传任务(等价于 _consume_loop 刚认领完)。"""
+    return _mk_case(kind, n=n)
 
 
-class _StopLoop(Exception):
-    """把 _consume_loop 从 wait 里拽出来的哨兵。"""
-
-
-def _make_queued_job(kind: str = "zzshut", n: int = 3) -> tuple[int, int]:
-    cid, jid = _mk_case(kind, n=n)
-    s = SessionLocal()
-    try:
-        j = s.get(UploadJob, jid)
-        j.status = "queued"
-        sid = j.storage_id
-        s.commit()
-    finally:
-        s.close()
-    return cid, jid
-
-
-def test_shutdown_race_requeues_instead_of_failing(monkeypatch):
-    """重启打断上传组 → 任务回 queued, 而不是 failed「内部错误」。"""
+def test_shutdown_error_requeues_and_stops_loop():
+    """重启打断 → 任务回 queued(error=None), 并让 worker 循环收工。"""
     cid = None
     sid = None
     try:
-        cid, jid = _make_queued_job()
-
-        def _boom(_job_ids):
-            raise RuntimeError("cannot schedule new futures after shutdown")
-
-        monkeypatch.setattr(upload_worker, "_run_group", _boom)
-        with _sole_queued(jid):
-            upload_worker._consume_loop()  # 必须 return, 不能空转/挂死
-
+        cid, jid = _mk_running_job()
+        stop = upload_worker._handle_group_error(
+            RuntimeError("cannot schedule new futures after shutdown"), [jid])
+        assert stop is True, "进程要退出了, 循环该结束(否则一直刷日志)"
         s = SessionLocal()
         try:
             job = s.get(UploadJob, jid)
@@ -432,42 +389,45 @@ def test_shutdown_race_requeues_instead_of_failing(monkeypatch):
             _cleanup(cid, sid)
 
 
-def test_genuine_crash_still_marks_failed(monkeypatch):
-    """真崩(不是退出)照旧记 failed —— 别把所有异常都改成静默重排。"""
+def test_genuine_crash_still_marks_failed():
+    """真崩(不是退出)照旧记 failed, 且不让循环结束 —— 别把异常都改成静默重排。"""
     cid = None
     sid = None
     try:
-        cid, jid = _make_queued_job()
-
-        def _boom(_job_ids):
-            raise ValueError("boom")
-
-        class _StopWake:
-            def wait(self, timeout=None):
-                raise _StopLoop
-
-            def clear(self):
-                pass
-
-            def set(self):
-                pass
-
-        monkeypatch.setattr(upload_worker, "_run_group", _boom)
-        monkeypatch.setattr(upload_worker, "_wake", _StopWake())
-        with _sole_queued(jid):
-            try:
-                upload_worker._consume_loop()
-            except _StopLoop:
-                pass
-            else:  # pragma: no cover - 循环没被拽出来说明行为变了
-                raise AssertionError("_consume_loop 没有回到等待队列, 用例需重写")
-
+        cid, jid = _mk_running_job()
+        stop = upload_worker._handle_group_error(ValueError("boom"), [jid])
+        assert stop is False
         s = SessionLocal()
         try:
             job = s.get(UploadJob, jid)
             sid = job.storage_id
             assert job.status == "failed"
             assert "内部错误" in (job.error or ""), job.error
+        finally:
+            s.close()
+    finally:
+        if cid:
+            _cleanup(cid, sid)
+
+
+def test_requeue_jobs_leaves_already_settled_ones_alone():
+    """同组里已经 failed(真失败)的任务不许被重排成 queued。"""
+    cid = None
+    sid = None
+    try:
+        cid, jid = _mk_running_job()
+        s = SessionLocal()
+        try:
+            job = s.get(UploadJob, jid)
+            sid = job.storage_id
+            job.status, job.error = "failed", "上传失败: x"
+            s.commit()
+        finally:
+            s.close()
+        assert upload_worker._requeue_jobs([jid]) == 0
+        s = SessionLocal()
+        try:
+            assert s.get(UploadJob, jid).status == "failed"
         finally:
             s.close()
     finally:
