@@ -123,15 +123,16 @@ def _first_photo_filename(s, collection_id: int) -> str | None:
 def _blur_src(request: Request) -> str | None:
     """虚化主题的垫底图源(整条链都挑不到则返回 None):
 
-    - `/models/<slug>`: 模特头像; 没头像 → 该模特最新入库合集的第一张
+    - `/models/<slug>`: 模特头像; 没头像 → 该模特发布日期最新合集的第一张
+      (模特详情页网格是发布日期序, 背景必须等于网格第一张)
     - `/collections/<slug>`: 本合集 sort_order 最小的那张
     - `/` 首页: **跟轮播图一致** —— 精选(featured)合集优先, 一本精选都没有
       才退化成最新入库; 轮播顺序就是这把尺子, 背景才不会和首屏头图各说各话
     - 其余页面(写真列表/模特列表/收藏/搜索…): 一律最新入库,
       **不受 featured 影响** —— 精选是首页的编辑推荐位, 不该改列表页的观感
 
-    合集一律按**最新入库**(created_at 新→旧, 同刻按 id)挑, 与列表页
-    「最新入库」排序、首页轮播、移动端写真 tab 同一个语义 —— 不是源站
+    除模特详情页那条兜底外, 合集一律按**最新入库**(created_at 新→旧, 同刻按 id)
+    挑, 与列表页「最新入库」排序、首页轮播、移动端写真 tab 同一个语义 —— 不是源站
     发布日期(published_at):老站转载的旧作今天刚入库, 按发布日期永远排
     在后面, 背景就永远不跟着新内容走(实测全库两个榜单前 10 名重合 0 条)。
 
@@ -151,6 +152,8 @@ def _blur_src(request: Request) -> str | None:
         from .db import Collection, Model
 
         newest = (desc(Collection.created_at), desc(Collection.id))
+        # 模特详情页网格是发布日期序(web._works_by_published), 兜底背景跟它走
+        by_published = (desc(Collection.published_at), desc(Collection.id))
         s = SessionLocal()
         try:
             if path.startswith("/models/"):
@@ -159,12 +162,12 @@ def _blur_src(request: Request) -> str | None:
                 if m:
                     rel = m.avatar_path
                     if not rel:
-                        # 头像缺省 → 该模特最新入库合集的第一张(标量查询)
+                        # 头像缺省 → 该模特发布日期最新合集的第一张(标量查询)
                         cid = s.scalar(
                             select(Collection.id).where(
                                 Collection.model_id == m.id,
                                 Collection.status == "published")
-                            .order_by(*newest).limit(1))
+                            .order_by(*by_published).limit(1))
                         if cid:
                             rel = _first_photo_filename(s, cid)
             elif path.startswith("/collections/"):

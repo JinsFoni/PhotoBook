@@ -252,9 +252,13 @@ def _model_payload(s: Session, m: Model, collections: list[Collection] | None = 
                    covers: dict[int, str] | None = None) -> dict:
     works = collections if collections is not None else m.collections
     photo_count = sum((counts or {}).get(c.id, 0) for c in works)
-    # 与 web 端 _model_payload 对齐: latest = 最新作品的入库日期(非源站发布日期)
-    _latest = max((c.created_at for c in works if c.created_at), default=None)
-    latest = _latest.date().isoformat() if _latest else ""
+    # 与 web 端 _model_payload 对齐: latest = 最新作品的入库日期(非源站发布日期);
+    # latestAt / latestCid 是精确到微秒的排序键(手机端列表序与 web 同一把尺子)
+    _newest = max(((c.created_at, c.id) for c in works if c.created_at),
+                  default=None)
+    latest = _newest[0].date().isoformat() if _newest else ""
+    latest_at = _newest[0].isoformat() if _newest else ""
+    latest_cid = _newest[1] if _newest else 0
     avatar = m.avatar_path
     if not avatar:  # 头像兜底:封面照片(covers 命中时零查询)
         for c in works:
@@ -272,6 +276,7 @@ def _model_payload(s: Session, m: Model, collections: list[Collection] | None = 
         "gender": m.gender or "", "age": m.age, "height": m.height,
         "measurements": m.measurements, "agency": m.agency or "", "bio": m.bio or "",
         "since": m.since or "", "featured": m.featured, "latest": latest,
+        "latestAt": latest_at, "latestCid": latest_cid,
         "tags": [t.name for t in m.tags],
         "count": len(works), "photoCount": photo_count,
     }
@@ -371,22 +376,50 @@ async def mobile_collection_detail(slug: str, s: Session = Depends(get_db)):
 
 # ---- models(列表/详情)-----------------------------------------------------
 
+def _models_by_newest_work(models: list[Model], by_model: dict[int, list[Collection]],
+                           newest_first: bool = True) -> list[Model]:
+    """模特序 = 按该模特**最新入库那本写真**的时间(`created_at` 精确到微秒,
+    同刻按合集 id 兜底)排 —— 与 web `/models` 的「排序: 最新」同一把尺子。
+
+    手机端列表完全依赖服务端的这个顺序(`sort=latest|oldest` 只是翻方向),
+    所以键必须够细: 只给到「天」时, 一次采集灌进来的几十个模特会挤成一组,
+    组内顺序由 SQL 的命运决定(生产实测单日并列 46-48 个)。
+
+    没有已发布作品的模特两种方向都垫底 —— 它们没有「最新入库写真」可比,
+    不该在「最早」里抢到前排。
+    """
+    def newest(m: Model) -> tuple[datetime, int]:
+        return max(((c.created_at, c.id) for c in (by_model.get(m.id) or [])
+                    if c.created_at), default=(datetime.min, 0))
+
+    dated = [m for m in models if newest(m)[0] != datetime.min]
+    undated = sorted((m for m in models if newest(m)[0] == datetime.min),
+                     key=lambda m: m.name)
+    # 先按 name 升序打底, 再稳定排时间键 —— 同刻时不会退化成随机序
+    dated.sort(key=lambda m: m.name)
+    dated.sort(key=newest, reverse=newest_first)
+    return dated + undated
+
+
 @router.get("/models")
 async def mobile_models(s: Session = Depends(get_db),
                         featured: str = Query("", pattern="^(|1)$"),
                         sort: str = Query("latest", pattern="^(latest|oldest)$"),
                         if_none_match: str | None = Header(default=None)):
-    # 精选永远置顶(与时间排序解耦),组内按创建时间 latest 新→旧 / oldest 旧→新
-    created = Model.created_at.desc() if sort == "latest" else Model.created_at.asc()
-    mid = Model.id.desc() if sort == "latest" else Model.id.asc()
-    models = s.scalars(select(Model).where(Model.status == "published")
-                       .order_by(desc(Model.featured), created, mid)).all()
-    if featured:
-        models = [m for m in models if m.featured]
+    # 精选永远置顶(与时间排序解耦),组内按「最新入库写真」新→旧 / 旧→新
     cols = _published_collections(s)
     counts = _photo_counts(s, cols)
     covers = load_covers(s, cols)
     by_model = _collections_by_model(cols)
+    models = s.scalars(select(Model).where(Model.status == "published")
+                       .order_by(Model.name)).all()
+    if featured:
+        models = [m for m in models if m.featured]
+    newest_first = sort == "latest"
+    models = (_models_by_newest_work([m for m in models if m.featured],
+                                     by_model, newest_first)
+              + _models_by_newest_work([m for m in models if not m.featured],
+                                       by_model, newest_first))
     return _etag_response(
         {"items": [_model_payload(s, m, by_model.get(m.id, []), counts, covers)
                    for m in models], "total": len(models)},
@@ -399,6 +432,9 @@ async def mobile_model_detail(slug: str, s: Session = Depends(get_db)):
                                      Model.status == "published"))
     if not m:
         raise ApiError("not_found", "Model not found", 404)
+    # 作品网格 = 源站发布日期新→旧, 与 web 模特页(_works_by_published)、
+    # `/api/mobile/collections`(`sort=latest`)同一把尺子 —— 详情页是作品目录,
+    # 按发行时间线看; `_published_collections` 本身就是这个序, 过滤时保持原序即可
     works = [c for c in _published_collections(s) if c.model_id == m.id]
     work_counts = _photo_counts(s, works)
     covers = load_covers(s, works)

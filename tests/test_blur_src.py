@@ -1,10 +1,13 @@
-"""虚化主题垫底图 —— 合集一律按「最新入库」挑, 不是源站发布日期。
+"""虚化主题垫底图 —— 合集按「最新入库」挑, 模特详情页兜底跟作品网格的发布日期序。
 
 2026-10-24 修: `_blur_src` 原来按 `published_at`(源站发布日期)选合集, 与全站
 「最新入库」(created_at)不是同一把尺子 —— 老站转载的旧作今天刚入库, 按发布
 日期永远排在后面, 背景就永远不跟着新内容走(实测全库两个榜单前 10 名重合 0
-条, 260 个模特里 47 个取到的是不同合集)。模特页作品网格(web.py)也一起对齐,
-否则背景图和网格第一张又不是同一本。
+条, 260 个模特里 47 个取到的是不同合集)。
+
+2026-10-24 追加: 模特详情页作品网格改**发布日期**序(作品目录要按发行时间线看),
+所以 `/models/<slug>` 的「没头像」兜底也跟着发布日期走 —— 背景恒等于网格第一张。
+其余页面仍是入库序。
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.db import Collection, Model, Photo
-from app.routers.web import _works_newest_first
+from app.routers.web import _works_by_published
 from app.templating import _blur_src
 
 PREFIX = "zz-blur"
@@ -65,18 +68,18 @@ def _drop(slug: str, *, model: bool = False) -> None:
         s.close()
 
 
-def test_model_page_uses_newest_ingested_collection():
-    """头像缺省时: 取「最新入库」那本的第一张, 而不是源站日期最新的那本。"""
+def test_model_page_falls_back_to_newest_published_collection():
+    """头像缺省时: 取发布日期最新那本的第一张 —— 与作品网格第一张同一本。"""
     s = SessionLocal()
     try:
         m = Model(slug=f"{PREFIX}-m1", name="Blur Model", status="published")
         s.add(m)
         s.flush()
-        # 源站日期很新, 但更早入库
+        # 源站日期最新(2026.10.22), 但入库更早 —— 网格里排在第一位, 背景也该是它
         _, old_names = _mk_collection(
             s, slug=f"{PREFIX}-c1-old-ingest", model_id=m.id,
             created=datetime(2026, 1, 1), published="2026.10.22")
-        # 今天才入库的老作品(源站 2022) —— 应该赢
+        # 今天才入库的老作品(源站 2022) —— 网格里垫底, 背景不该取它
         _, new_names = _mk_collection(
             s, slug=f"{PREFIX}-c2-new-ingest", model_id=m.id,
             created=datetime(2026, 6, 1), published="2022.12.25")
@@ -87,8 +90,8 @@ def test_model_page_uses_newest_ingested_collection():
 
     try:
         got = _blur(f"/models/{slug}")
-        assert got == "/t/s900/" + new_names[0], got
-        assert got != "/t/s900/" + old_names[0]
+        assert got == "/t/s900/" + old_names[0], got
+        assert got != "/t/s900/" + new_names[0]
     finally:
         _drop(f"{PREFIX}-m1", model=True)
 
@@ -238,11 +241,23 @@ def test_homepage_falls_back_to_newest_when_no_featured():
         _drop(f"{PREFIX}-c8")
 
 
-def test_works_order_is_newest_ingest_not_publish_date():
-    """模特页作品序 = 入库序; 源站日期只影响卡片上的日期文字。"""
+def test_works_order_is_publish_date_desc():
+    """模特详情页作品序 = 源站发布日期新→旧; 入库时间不参与。"""
     early_in = Collection(slug="zz-a", title="a", status="published",
                           created_at=datetime(2026, 1, 1), published_at="2026.10.22")
     late_in = Collection(slug="zz-b", title="b", status="published",
                          created_at=datetime(2026, 6, 1), published_at="2022.12.25")
-    got = _works_newest_first([early_in, late_in])
-    assert [c.slug for c in got] == ["zz-b", "zz-a"]
+    got = _works_by_published([early_in, late_in])
+    assert [c.slug for c in got] == ["zz-a", "zz-b"]
+    # 同一天出版 → 按合集 id 倒序兜底
+    same_day_a = Collection(id=11, slug="zz-c", title="c", status="published",
+                            published_at="2026.05.05")
+    same_day_b = Collection(id=12, slug="zz-d", title="d", status="published",
+                            published_at="2026.05.05")
+    got = _works_by_published([same_day_a, same_day_b])
+    assert [c.slug for c in got] == ["zz-d", "zz-c"]
+    # 没填发布日期 → 沉到最后
+    undated = Collection(id=13, slug="zz-e", title="e", status="published",
+                         published_at=None)
+    got = _works_by_published([undated, same_day_a])
+    assert [c.slug for c in got] == ["zz-c", "zz-e"]

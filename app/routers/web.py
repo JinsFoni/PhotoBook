@@ -136,10 +136,19 @@ def _model_payload(s: Session, m: Model, collections: list[Collection] | None = 
                    covers: dict[int, str] | None = None) -> dict:
     works = collections if collections is not None else m.collections
     photo_count = sum((counts or {}).get(c.id, 0) for c in works)
-    # 模特页「排序:最新」= 最新作品的入库日期(与写真列表「最新入库」同语义),
-    # 不是源站发布日期 —— 刚入库的老作品模特也应排前
-    _latest = max((c.created_at for c in works if c.created_at), default=None)
-    latest = _latest.date().isoformat() if _latest else ""
+    # 模特页「排序:最新」= 该模特**最新入库的那本写真**的时间(与写真列表
+    # 「最新入库」同语义), 不是源站发布日期 —— 刚入库的老作品模特也应排前。
+    #
+    # 排序键必须精确到时分秒(created_at 原值), 不能只给到「天」: 一次采集跑
+    # 一批模特, 生产上单日并列 46-48 个 —— 只比日期的话组内谁前谁后由 SQL 的
+    # name 序决定, 实测「最新」榜单前 10 名变成字母序(与真正的最新入库序重合
+    # 仅 2 条)。latestCid 兜同微秒的极端情况, 与全站 `created_at desc, id desc`
+    # 完全对齐; latest(日期)保留给手机端与展示用。
+    _newest = max(((c.created_at, c.id) for c in works if c.created_at),
+                  default=None)
+    latest = _newest[0].date().isoformat() if _newest else ""
+    latest_at = _newest[0].isoformat() if _newest else ""
+    latest_cid = _newest[1] if _newest else 0
     # 头像兜底:没设头像时用第一张合集封面(covers 命中时零查询)
     avatar = m.avatar_path
     if not avatar:
@@ -158,6 +167,7 @@ def _model_payload(s: Session, m: Model, collections: list[Collection] | None = 
         "gender": m.gender or "", "age": m.age, "height": m.height,
         "measurements": m.measurements, "agency": m.agency or "", "bio": m.bio or "",
         "since": m.since or "", "featured": m.featured, "latest": latest,
+        "latestAt": latest_at, "latestCid": latest_cid,
         "tags": [t.name for t in m.tags],
         "count": len(works), "photoCount": photo_count,
     }
@@ -170,17 +180,19 @@ def _published_collections(s: Session) -> list[Collection]:
         .order_by(desc(Collection.published_at), desc(Collection.id))).all())
 
 
-def _works_newest_first(works: list[Collection]) -> list[Collection]:
-    """模特页作品序 = 最新入库(created_at 新→旧, 同刻按 id 兜底)。
+def _works_by_published(works: list[Collection]) -> list[Collection]:
+    """模特详情页作品序 = 源站发布日期新→旧(同日按合集 id 兜底)。
 
-    与写真列表「最新入库」、首页轮播、移动端写真 tab 同一语义, **不是**源站
-    发布日期: 老站转载的旧作今天刚入库, 按 published_at 会被排到很后面。
-    虚化垫底图(templating._blur_src)按同一把尺子挑合集, 所以模特页背景恒等于
-    本网格第一张 —— 两处排序基准必须一致, 改一处就得改另一处。
+    与写真列表 `/collections`(`_published_collections`)同一把尺子: 模特详情页是
+    「这个人的作品目录」, 读者看的是发行时间线, 转载旧作该待在该待的年份上。
+    「最新入库」只属于浏览排序(写真列表的 `added_latest`、`/models` 的「最新」、
+    首页轮播), 不进详情页网格。
+
+    虚化垫底图(`templating._blur_src`)在该模特没头像时也按发布日期取第一本 ——
+    背景恒等于本网格第一张卡片, 两处基准必须一致, 改一处就得改另一处。
     """
-    # created_at 理论上不会为空(default=utcnow), 老数据兜底排到最后
-    return sorted(works, key=lambda c: (c.created_at or datetime.min, c.id),
-                  reverse=True)
+    # published_at 是 String(20) "YYYY.MM.DD", 字典序即日期序; 缺失的空串垫底
+    return sorted(works, key=lambda c: (c.published_at or "", c.id), reverse=True)
 
 
 # ---- Discovery --------------------------------------------------------------
@@ -326,8 +338,8 @@ async def model_detail(request: Request, slug: str, s: Session = Depends(get_db)
         return templates.TemplateResponse(request, "notfound.html",
                                           {"user": user, "page": "models", "text": text},
                                           status_code=404)
-    # 写真集按最新入库在前(与列表页「最新入库」、虚化背景同序)
-    works = _works_newest_first([c for c in m.collections if c.status == "published"])
+    # 写真集统一按源站发布日期新→旧(与 /collections 同一把尺子, 不看入库时间)
+    works = _works_by_published([c for c in m.collections if c.status == "published"])
     work_counts = _photo_counts(s, works)
     covers = load_covers(s, works)
     # 显式传 works + counts: 缺省时 photoCount 只能逐个兜底 0

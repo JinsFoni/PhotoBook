@@ -125,7 +125,13 @@
       return true;
     });
     if (f.sort === "name") list.sort(function (a, b) { return a.name.localeCompare(b.name); });
-    else if (f.sort === "latest") list.sort(function (a, b) { return (b.latest || "").localeCompare(a.latest || ""); });
+    /* 「最新」= 该模特最新入库那本写真的时间(精确到微秒); 同日并列按合集 id 兜底
+       —— 与全站 created_at desc, id desc 同一把尺子。只比到「天」的话, 一次采集
+       进来的几十个模特会退化成字母序(生产实测单日并列 46-48 个)。 */
+    else if (f.sort === "latest") list.sort(function (a, b) {
+      var k = (b.latestAt || b.latest || "").localeCompare(a.latestAt || a.latest || "");
+      return k || (b.latestCid || 0) - (a.latestCid || 0) || a.name.localeCompare(b.name);
+    });
     else list.sort(function (a, b) { return (b.featured ? 1 : 0) - (a.featured ? 1 : 0) || b.photoCount - a.photoCount; });
     return list;
   }

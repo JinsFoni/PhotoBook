@@ -353,20 +353,29 @@ def test_favorites_resolve_roundtrip(client, token):
 
 
 def test_models_sort_latest_then_oldest(client):
-    """sort=latest|oldest:精选仍置顶,组内创建时间反转。"""
+    """sort=latest|oldest:精选仍置顶,组内按「最新入库写真」反转。
+
+    没有已发布作品的模特两种方向都垫底(没有时间可比), 故只比较有作品的。
+    """
     latest = client.get("/api/mobile/models", params={"sort": "latest"}).json()["items"]
     oldest = client.get("/api/mobile/models", params={"sort": "oldest"}).json()["items"]
     assert len(latest) == len(oldest)
     if not latest:
         pytest.skip("no seeded models")
-    nf_latest = [m["slug"] for m in latest if not m["featured"]]
-    nf_oldest = [m["slug"] for m in oldest if not m["featured"]]
-    assert nf_oldest == list(reversed(nf_latest))
+
+    def dated(items):
+        return [m["slug"] for m in items if not m["featured"] and m["count"] > 0]
+
+    assert dated(oldest) == list(reversed(dated(latest)))
     # 精选段(若有)同样反转
     f_latest = [m["slug"] for m in latest if m["featured"]]
     f_oldest = [m["slug"] for m in oldest if m["featured"]]
     if f_latest:
         assert f_oldest == list(reversed(f_latest))
+    # 有作品的永远排在没作品的前面(两个方向都是)
+    for items in (latest, oldest):
+        counts = [1 if m["count"] else 0 for m in items]
+        assert counts == sorted(counts, reverse=True)
 
 
 def test_models_sort_invalid(client):
