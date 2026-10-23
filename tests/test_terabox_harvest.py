@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -293,3 +294,172 @@ def test_titlemodel_rejects_series_names():
     assert f.model_name_from_title("[LE] GMS-006A GMS") == ("", "")
     assert f.model_name_from_title("[JP] BLT MONSTER Round 8") == ("", "")
     assert f.model_name_from_title("[JP] 別冊SPA! 旬撮GIRL Vol.25") == ("", "")
+
+
+# ---- 镜像容错:MediaFire 死链 → terabox 备份(2026-10-23 任务 707) ----------
+
+class _FakeTB2:
+    """terabox 解析打桩(与 _2 号用例同形,单独一份免互相牵连)。"""
+
+    @staticmethod
+    def load_cookie_header(path):
+        assert path
+        return "ndus=x"
+
+    @staticmethod
+    def _share_page_token(hdr, surl):
+        return "tok"
+
+    @staticmethod
+    def _shorturlinfo(hdr, surl, tok, ref):
+        return {"errno": 0, "shareid": 1, "uk": 2, "sign": "s", "timestamp": 3,
+                "list": [{"isdir": "0", "fs_id": 77,
+                          "server_filename": "Coser@Hane Ame - 早期白皮合集.rar",
+                          "size": 599003486, "md5": "630a77c7"}]}
+
+    @staticmethod
+    def _flatten(hdr, surl, tok, ref, entries):
+        return entries
+
+
+def _patch_tb2(monkeypatch):
+    monkeypatch.setattr(worker.terabox, "load_cookie_header", _FakeTB2.load_cookie_header)
+    monkeypatch.setattr(worker.terabox, "_share_page_token", _FakeTB2._share_page_token)
+    monkeypatch.setattr(worker.terabox, "_shorturlinfo", _FakeTB2._shorturlinfo)
+    monkeypatch.setattr(worker.terabox, "_flatten", _FakeTB2._flatten)
+
+
+MF_DEAD = "https://www.mediafire.com/error.php?errno=378&quickkey=9jl0q201vahwb25"
+TB_MIRROR = "https://www.terabox.app/sharing/link?surl=PbnyWjeMu5R3QvEEVVemAg"
+
+
+def _fake_finish(monkeypatch):
+    """_finish 打到假 job 上,返回记录 dict。"""
+    class FakeJob:
+        serial = 999998
+        def __init__(self):
+            self.status = ""
+            self.error = None
+    job = FakeJob()
+    rec = {}
+
+    def fake_finish(s, j, status, error=None):
+        j.status = status
+        j.error = error
+        rec["status"] = status
+        rec["error"] = error
+    monkeypatch.setattr(worker, "_finish", fake_finish)
+    return job, rec
+
+
+def test_resolve_infos_mediafire_dead_falls_back_to_terabox(monkeypatch):
+    """第一条 ouo 落地 MediaFire 错误页、第二条是 TeraBox 备份 → 走 TeraBox。
+
+    707 实录:详情页挂 omuODmK(MediaFire, 已下架) 与 RFzVQAV(TeraBox 备份)。
+    以前第一条一失败就整任务判死,备份白放着。
+    """
+    def fake_resolve(link):
+        if "omuODmK" in link:
+            raise net.MediaFireDeadError("MediaFire 文件已被下架(违规或上传者删除)(errno=378)",
+                                         MF_DEAD)
+        raise net.UnsupportedHostError("TeraBox", TB_MIRROR)
+
+    monkeypatch.setattr(net, "resolve_ouo", fake_resolve)
+    _patch_tb2(monkeypatch)
+    job, rec = _fake_finish(monkeypatch)
+    with mock.patch.object(worker.settings_store, "harvest_conf",
+                           return_value={"harvest.terabox_cookie_file": "/tmp/c.txt"}):
+        infos = worker._resolve_infos(_FakeSession(), job,
+                                      _target(["https://ouo.io/omuODmK",
+                                               "https://ouo.io/RFzVQAV"]))
+    assert infos, rec
+    assert infos[0]["filename"].endswith(".rar")
+    assert infos[0]["size"] == 599003486
+    assert infos[0]["terabox"]["surl"] == "PbnyWjeMu5R3QvEEVVemAg"
+    assert "status" not in rec  # 没落失败终态
+
+
+def test_resolve_infos_uses_backup_shortlink_when_mediafire_dead(monkeypatch):
+    """锚文本标 TeraBox 的备用短链:主链下架时被启用(707 的真实形态)。
+
+    解析器按锚文本把 non-mediafire 的链收进 backup_shortlinks —— 老逻辑
+    直接把它们丢掉,于是备份链永远没机会被用。
+    """
+    def fake_resolve(link):
+        if "omuODmK" in link:
+            raise net.MediaFireDeadError("MediaFire 文件已被下架(违规或上传者删除)(errno=378)",
+                                         MF_DEAD)
+        raise net.UnsupportedHostError("TeraBox", TB_MIRROR)
+
+    monkeypatch.setattr(net, "resolve_ouo", fake_resolve)
+    _patch_tb2(monkeypatch)
+    job, rec = _fake_finish(monkeypatch)
+    target = _target(["https://ouo.io/omuODmK"])
+    target.backup_shortlinks = ["https://ouo.io/RFzVQAV"]
+    with mock.patch.object(worker.settings_store, "harvest_conf",
+                           return_value={"harvest.terabox_cookie_file": "/tmp/c.txt"}):
+        infos = worker._resolve_infos(_FakeSession(), job, target)
+    assert infos, rec
+    assert infos[0]["terabox"]["surl"] == "PbnyWjeMu5R3QvEEVVemAg"
+    assert "status" not in rec
+
+
+def test_resolve_infos_backup_not_touched_when_mediafire_ok(monkeypatch):
+    """主链好使时绝不解析备用链(省掉一次 30-50s 的 ouo 解析)。"""
+    seen = []
+
+    def fake_resolve(link):
+        seen.append(link)
+        return "https://www.mediafire.com/file/abc/x.rar/file"
+
+    monkeypatch.setattr(net, "resolve_ouo", fake_resolve)
+    monkeypatch.setattr(net, "mediafire_info_from_url",
+                        lambda page_url, **kw: {"quick_key": "k", "direct_url": "http://d",
+                                                "size": 1, "sha256": "",
+                                                "filename": "x.rar"})
+    target = _target(["https://ouo.io/main1"])
+    target.backup_shortlinks = ["https://ouo.io/backup1"]
+    infos = worker._resolve_infos(_FakeSession(), None, target)
+    assert infos and infos[0]["filename"] == "x.rar"
+    assert seen == ["https://ouo.io/main1"], seen
+
+
+def test_resolve_infos_mediafire_dead_without_backup_reports_reason(monkeypatch):
+    """MediaFire 下架且无备份 → 报「已被下架(errno=378)」,不是含糊的解析失败。"""
+    monkeypatch.setattr(net, "resolve_ouo",
+                        lambda link, **kw: (_ for _ in ()).throw(
+                            net.MediaFireDeadError(
+                                "MediaFire 文件已被下架(违规或上传者删除)(errno=378)",
+                                MF_DEAD)))
+    job, rec = _fake_finish(monkeypatch)
+    infos = worker._resolve_infos(_FakeSession(), job, _target(["https://ouo.io/omuODmK"]))
+    assert infos is None
+    assert rec["status"] == "failed"
+    assert "下架" in rec["error"] and "errno=378" in rec["error"]
+
+
+def test_resolve_infos_discards_partial_volumes(monkeypatch):
+    """分卷只拿到一部分、另一条镜像死掉 → 整批判失败,且关掉已开会话(不混下)。"""
+    class FakeSess:
+        closed = False
+        def close(self):
+            FakeSess.closed = True
+
+    def fake_resolve(link):
+        if "vol2" in link:
+            raise net.MediaFireDeadError("MediaFire 文件已被下架(errno=378)", MF_DEAD)
+        return "https://www.mediafire.com/file/abc/f.part1.rar/file"
+
+    monkeypatch.setattr(net, "resolve_ouo", fake_resolve)
+    monkeypatch.setattr(net, "mediafire_info_from_url",
+                        lambda page_url, **kw: {"quick_key": "k", "direct_url": "http://d",
+                                                "size": 10, "sha256": "",
+                                                "filename": "f.part1.rar",
+                                                "_session": FakeSess()})
+    job, rec = _fake_finish(monkeypatch)
+    infos = worker._resolve_infos(_FakeSession(), job,
+                                  _target(["https://ouo.io/vol1", "https://ouo.io/vol2"]))
+    assert infos is None
+    assert rec["status"] == "failed"
+    assert "下架" in rec["error"]
+    assert FakeSess.closed, "残缺分卷的页面会话必须关掉"

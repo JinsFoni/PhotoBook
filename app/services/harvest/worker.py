@@ -226,6 +226,14 @@ def _resolve_infos(s, job: HarvestJob, target) -> list[dict] | None:
     只在没有任何 mediafire 链接时整包走 TeraBox(4kup.net 这类站只挂
     terabox)。两类绝不混下:同一包的备份链,混下是双倍流量。
 
+    镜像容错(2026-10-23 任务 707):详情页挂多条 ouo 短链时**逐条试**,
+    某条落地 MediaFire 错误页(errno=378 文件已下架)或解析失败,不再立刻
+    判死 —— 继续试下一条。MediaFire 系全废、而短链里能解析出 TeraBox
+    备份分享时,整包改走 TeraBox(否则这个包明明有备份却永远下不来)。
+    分卷只拿到一部分视为失败:残包解不出东西,也不与备份混下。
+    页面上标了其他网盘的短链(锚文本 TeraBox)在 `target.backup_shortlinks`,
+    主链全废时才试 —— 707 的备份就藏在那边。
+
     返回 None 表示任务已在此落终态(失败)。
     """
     shortlinks = target.shortlinks
@@ -236,7 +244,15 @@ def _resolve_infos(s, job: HarvestJob, target) -> list[dict] | None:
         # 其他网盘(pixeldrain/mega/…): ouo 落地后按 OTHER_HOSTS 报平台名
         try:
             net.resolve_ouo(shortlinks[0])
+        except net.MediaFireDeadError as e:
+            _finish(s, job, "failed", e.reason)
+            s.commit()
+            return None
         except net.UnsupportedHostError as e:
+            landing = getattr(e, "url", "")
+            if e.host == "TeraBox" and terabox.is_terabox_url(landing):
+                # 落地其实是 TeraBox 备份(详情页锚文本没标出来): 直接用
+                return _resolve_terabox(s, job, [landing])
             _finish(s, job, "failed", str(e))
             s.commit()
             return None
@@ -245,38 +261,84 @@ def _resolve_infos(s, job: HarvestJob, target) -> list[dict] | None:
         return None
     if tb_links and not mf_links:
         return _resolve_terabox(s, job, tb_links)
+
     infos: list[dict] = []
-    for link in mf_links:
-        # 直挂 MediaFire 链接(老帖无 ouo 短链)直接取直链;ouo 短链先解析
+    failures: list[str] = []               # 失败说明(汇总进任务 error)
+    tb_backup: list[str] = list(tb_links)  # 备用 TeraBox 分享(含 ouo 落地收集的)
+
+    def _try_link(link: str):
+        """一条短链 → ("mf", [info…]) / ("tb", TeraBox 分享 URL) / ("fail", 说明)。"""
         direct_page = link
         if "ouo.io/" in link or "ouo.press/" in link:
             try:
                 direct_page = net.resolve_ouo(link)
+            except net.MediaFireDeadError as e:
+                return "fail", e.reason
             except net.UnsupportedHostError as e:
-                _finish(s, job, "failed", str(e))
-                s.commit()
-                return None
+                landing = getattr(e, "url", "")
+                if e.host == "TeraBox" and terabox.is_terabox_url(landing):
+                    return "tb", landing
+                return "fail", str(e)
             if not direct_page:
-                _finish(s, job, "failed", f"短链解析失败: {link}")
-                s.commit()
-                return None
+                return "fail", f"短链解析失败: {link}"
         if net.MF_FOLDER_RE.search(direct_page):
             # 落地是 MediaFire 文件夹(分卷包发布方把所有卷放一夹): API 展开逐卷
             folder_files = net.mediafire_folder_files(direct_page)
             if not folder_files:
-                _finish(s, job, "failed", f"文件夹为空: {direct_page}")
-                s.commit()
-                return None
-            infos.extend(folder_files)
-            continue
+                return "fail", f"文件夹为空: {direct_page}"
+            return "mf", folder_files
         # keep_session: 直链 dkey 绑「取页面的客户端」,下载要复用同一个 Session
         info = net.mediafire_info_from_url(direct_page, keep_session=True)
         if not info["direct_url"]:
-            _finish(s, job, "failed", f"未获取到直链: {info['filename']}")
-            s.commit()
-            return None
-        infos.append(info)
-    return infos
+            return "fail", f"未获取到直链: {info['filename']}"
+        return "mf", [info]
+
+    def _attempt(links: list[str]) -> tuple[list[dict], list[str]]:
+        """跑一组短链;拿到的 mediafire info 与失败说明分开返回。"""
+        got: list[dict] = []
+        fails: list[str] = []
+        for link in links:
+            kind, payload = _try_link(link)
+            if kind == "mf":
+                got.extend(payload)
+            elif kind == "tb":
+                tb_backup.append(payload)
+            else:
+                fails.append(payload)
+        return got, fails
+
+    infos, failures = _attempt(mf_links)
+    if infos and failures:
+        # 分卷只拿到一部分: 残包解不出东西, 关会话整批丢弃(不与备份混下)
+        for info in infos:
+            _close_info_session(info)
+        infos = []
+
+    if not infos:
+        # 主链全废: 再试页面上标了其他网盘的备用短链(锚文本不是 mediafire
+        # 的那些, 707 就是 TeraBox 备份藏在里面),只在这一步消耗解析时间。
+        backup_links = [x for x in (getattr(target, "backup_shortlinks", None) or [])
+                        if "mediafire.com/" in x or "ouo.io/" in x
+                        or "ouo.press/" in x or terabox.is_terabox_url(x)]
+        if backup_links:
+            log.warning("MediaFire 主链不可用(%s),改试 %d 条备用短链",
+                        "；".join(failures) or "无", len(backup_links))
+            infos, backup_fails = _attempt(backup_links)
+            failures.extend(backup_fails)
+            if infos and backup_fails:
+                for info in infos:
+                    _close_info_session(info)
+                infos = []
+
+    if infos:
+        return infos
+    if tb_backup:
+        log.warning("MediaFire 下载源全部不可用(%s),整包改走 TeraBox 备份: %s",
+                    "；".join(failures) or "无", tb_backup[0][:120])
+        return _resolve_terabox(s, job, tb_backup)
+    _finish(s, job, "failed", "；".join(failures) or "未找到可用下载源")
+    s.commit()
+    return None
 
 
 def _resolve_terabox(s, job: HarvestJob, tb_links: list[str]) -> list[dict] | None:

@@ -40,11 +40,49 @@ OTHER_HOSTS = {
 
 
 class UnsupportedHostError(RuntimeError):
-    """短链落地到不支持下载的网盘平台(包不在 MediaFire)。"""
+    """短链落地到不支持下载的网盘平台(包不在 MediaFire)。
 
-    def __init__(self, host: str):
+    url — 落地 URL。调用方要自己兜底(如 terabox 备份)时得靠它拿到
+    surl:只给平台名的话,想用也无从下手(2026-10-23 任务 707)。
+    """
+
+    def __init__(self, host: str, url: str = ""):
         self.host = host
+        self.url = url
         super().__init__(f"不支持{host}网盘下载")
+
+
+# MediaFire 的错误页。2026-10-23 任务 707 实录:详情页两条 ouo 短链,一条
+# 落地 https://www.mediafire.com/error.php?errno=378&quickkey=… —— 页面本身
+# 404,文件已被下架(违规/上传者删除)。这类失败重试无意义,也不该混进
+# 「短链解析失败」里(用户看不出是内容没了)。
+MF_ERRNO_RE = re.compile(r"[?&]errno=(\d+)")
+MF_ERRNO_TEXT = {
+    "378": "文件已被下架(违规或上传者删除)",
+    "320": "文件不存在(已被删除)",
+    "379": "文件不可用(可能被限制访问)",
+}
+
+
+class MediaFireDeadError(RuntimeError):
+    """短链落地到 MediaFire 错误页 —— 文件本身没了,换会话重试无意义。"""
+
+    def __init__(self, reason: str, url: str = ""):
+        self.reason = reason
+        self.url = url
+        super().__init__(reason)
+
+
+def mediafire_error_reason(url: str) -> str:
+    """MediaFire 错误页 URL → 中文原因;不是错误页返回 ""。"""
+    if not url or "error.php" not in url.lower() or "mediafire.com" not in url.lower():
+        return ""
+    m = MF_ERRNO_RE.search(url)
+    code = m.group(1) if m else ""
+    text = MF_ERRNO_TEXT.get(code)
+    if text:
+        return f"MediaFire {text}(errno={code})"
+    return f"MediaFire 文件不可用(errno={code or '未知'})"
 
 # ouo.io/ouo.press 专用指纹。ouo 套了 Cloudflare 人机盾(Cf-Mitigated: challenge),
 # 按「出口 IP + TLS 指纹」联合概率拦截:机房代理出口 + chrome 指纹实测 100% 403,
@@ -77,7 +115,11 @@ class HarvestTarget:
     title: str = ""
     model_name: str = ""
     password: str = ""
-    shortlinks: list[str] = field(default_factory=list)
+    shortlinks: list[str] = field(default_factory=list)   # 主用下载源(锚文本标 MediaFire)
+    # 页面上标了其他网盘的备用短链(锚文本 TeraBox 等)。不主用,只在主源全废时
+    # 兜底试一次 —— 2026-10-23 任务 707:MediaFire 那份已下架(error.php?errno=378),
+    # 同页的 TeraBox 备份链就因为锚文本不是 mediafire 被解析器直接丢了。
+    backup_shortlinks: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)  # 详情页自己的 tag(显示名,保序)
     published: str = ""  # 源站发布日期(YYYY.MM.DD);空 = 页面未提供,导入时回退当天
 
@@ -261,14 +303,19 @@ def _parse_buondua_detail_page(url: str, existing_html: str | None = None,      
     # 多候选原样保留,由 extract_archive 逐个尝试;单一密码则保持原文。
     if " or " in password and ("misskon.com" in password or "mrcong.com" in password):
         password = "misskon.com or mrcong.com"
-    # 短链按锚文本过滤: 详情页可能同时挂 MediaFire 与 TeraBox 等多网盘
-    # (同一包的备份链, 不是分卷), 只保留锚文本标注 MediaFire 的。
-    # 极少数 Terabox 链错标 MediaFire → resolve_ouo 落地后仍会兜底识别报错。
+    # 短链按锚文本分层: 详情页常同时挂 MediaFire 与 TeraBox 等多网盘(同一包
+    # 的备份链, 不是分卷)。锚文本标 MediaFire 的进 shortlinks 主用;标其他网盘
+    # 的进 backup_shortlinks **只备用**(主源全废时才试,不白耗解析时间)。
+    # 极少数 Terabox 链错标 MediaFire → resolve_ouo 落地后仍会兜底识别。
     shortlinks = []
+    backup_shortlinks: list[str] = []
     seen: set[str] = set()
     for link, anchor in SHORTLINK_RE.findall(html):
         label = ANCHOR_LABEL_RE.search(re.sub(r"<[^>]+>", "", anchor))
         if label and label.group(1).lower() != "mediafire":
+            if link not in seen:
+                seen.add(link)
+                backup_shortlinks.append(link)
             continue
         if link not in seen:
             seen.add(link)
@@ -281,7 +328,8 @@ def _parse_buondua_detail_page(url: str, existing_html: str | None = None,      
     dm = re.search(r'<small>\s*(\d{2}:\d{2})\s+(\d{2})-(\d{2})-(\d{4})\s*</small>', html)
     published = (f"{dm.group(4)}.{dm.group(3)}.{dm.group(2)}" if dm else "")
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
-                         password=password, shortlinks=shortlinks, tags=tags,
+                         password=password, shortlinks=shortlinks,
+                         backup_shortlinks=backup_shortlinks, tags=tags,
                          published=published)
 
 
@@ -499,14 +547,18 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
     pm = MISSKON_PASSWORD_RE.search(html)
     password = (pm.group(1) or pm.group(2)).strip() if pm else ""
 
-    # ouo 短链 + 锚文本 MediaFire 过滤:与 buondua 同构(直挂的 terabox 链
-    # 不是 ouo 域,SHORTLINK_RE 天然滤掉),去重保序。老帖直挂 MediaFire
-    # 链接(无 ouo 短链)也一并收。
+    # ouo 短链 + 锚文本分层:与 buondua 同构(直挂的 terabox 链不是 ouo 域,
+    # SHORTLINK_RE 天然滤掉),去重保序。标其他网盘的进 backup_shortlinks 备用。
+    # 老帖直挂 MediaFire 链接(无 ouo 短链)也一并收。
     shortlinks: list[str] = []
+    backup_shortlinks: list[str] = []
     seen_links: set[str] = set()
     for link, anchor in SHORTLINK_RE.findall(html):
         label = ANCHOR_LABEL_RE.search(re.sub(r"<[^>]+>", "", anchor))
         if label and label.group(1).lower() != "mediafire":
+            if link not in seen_links:
+                seen_links.add(link)
+                backup_shortlinks.append(link)
             continue
         if link not in seen_links:
             seen_links.add(link)
@@ -516,7 +568,8 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
             seen_links.add(link)
             shortlinks.append(link)
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
-                         password=password, shortlinks=shortlinks, tags=tags,
+                         password=password, shortlinks=shortlinks,
+                         backup_shortlinks=backup_shortlinks, tags=tags,
                          published=_to_dotted(_date_published_iso(html)))
 
 
@@ -709,7 +762,10 @@ def _ouo_step(s, link: str, *, wait: float = 3.0) -> str | None:
     # 落地到其他网盘(terabox 等): 短链活着, 只是托管不在 MediaFire。
     # 分类由 resolve_ouo 统一处理(抛 UnsupportedHostError / 记日志)。
     if "ouo.io/" not in final and "ouo.press/" not in final:
-        log.warning("ouo %s landed on non-mediafire host: %s", code, final[:120])
+        if mediafire_error_reason(final):
+            log.warning("ouo %s landed on mediafire error page: %s", code, final[:120])
+        else:
+            log.warning("ouo %s landed on non-mediafire host: %s", code, final[:120])
     # 落地 URL 可能缺尾部路径(如 .../file/<key>),完整链接在响应体里
     m = re.search(r'(https?://www\.mediafire\.com/file/[^"\'\s]+)', r3.text)
     return m.group(1) if m else final
@@ -723,7 +779,9 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
 
     CF 盾是概率拦截:单会话被盾/流程断掉 → 换新会话重试(safari17_0 优先,
     末轮 chrome 兕底, 兼容住宅出口场景)。落地到其他网盘(terabox 等)
-    抛 UnsupportedHostError(重试无意义);完全未知的域返回 None。
+    抛 UnsupportedHostError(带落地 URL,重试无意义);落地 MediaFire
+    错误页(errno=378 文件已下架)抛 MediaFireDeadError;完全未知的域
+    返回 None。三种「失败」要分开:前者有救(换源),后者无救(内容没了)。
     """
     proxy = _proxy()
     for attempt in range(3):
@@ -739,15 +797,20 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
                     return final
                 if "mediafire.com/folder/" in final:
                     return final
+                if "mediafire.com" in final:
+                    # 落地 MediaFire 错误页(文件已下架等): 文件没了,重试无意义
+                    reason = mediafire_error_reason(final)
+                    if reason:
+                        raise MediaFireDeadError(reason, final)
                 if "ouo.io/" not in final and "ouo.press/" not in final:
-                    # 落地到外部网盘: 已知平台抛错(带平台名), 完全未知域判短链坏
+                    # 落地到外部网盘: 已知平台抛错(带平台名 + 落地 URL), 未知域判短链坏
                     for frag, name in OTHER_HOSTS.items():
                         if frag in final:
-                            raise UnsupportedHostError(name)
+                            raise UnsupportedHostError(name, final)
                     return None
                 url = final  # 下一段短码,继续
-        except UnsupportedHostError:
-            raise  # 已知网盘平台, 原样上抛(带平台名)
+        except (UnsupportedHostError, MediaFireDeadError):
+            raise  # 已知平台 / 文件已下架: 原样上抛(重试无意义)
         except Exception:
             pass
     return None

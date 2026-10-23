@@ -397,6 +397,41 @@ Range 续传能接着下 —— 所以「连接失败且 `.part` 有增长」不
 `retries=3` 判死;软拒绝(验证页)按 `SOFT_BLOCK_BACKOFF` 加长退避。
 回归用例:`test_download_stream_keeps_resuming_when_attempts_advance`。
 
+### 镜像死链 → TeraBox 备份兜底(2026-10-23,任务 707)
+
+帖子详情页常挂**两条以上短链**:同一条 ouo 是 MediaFire,另一条是 TeraBox 备份。
+707 实录:第一条 `ouo.io/omuODmK` 落地
+`https://www.mediafire.com/error.php?errno=378&quickkey=…`(页面本身 404,
+文件已被 MediaFire 下架),第二条 `ouo.io/RFzVQAV` 是活的 TeraBox 分享。
+
+旧逻辑两条硬伤:
+
+1. `_resolve_infos` 按顺序处理,第一条失败就 `return None` 判 failed ——
+   后面的镜像根本不看;
+2. `resolve_ouo` 落地 terabox 抛 `UnsupportedHostError`(「不支持TeraBox网盘下载」),
+   但 TeraBox 下载通道我们本来就有(`terabox.py`,4kup 站用的就是它),
+   于是这个包明明有备份却永远下不来。
+
+改动:
+
+- `resolve_ouo` 落地 MediaFire 错误页 → 抛 `MediaFireDeadError`(带 errno 中文
+  原因,`mediafire_error_reason()` 映射);落地其他网盘 → `UnsupportedHostError`
+  **带上落地 URL**(`e.url`),调用方才有 surl 兜底
+- `_resolve_infos` 逐条试镜像:单条失败只记一笔继续;落地 TeraBox 的收作备用;
+  MediaFire 系全废而备用存在 → 整包走 `_resolve_terabox`;分卷只拿到一部分
+  视为失败(残包解不出东西,且**不与备份混下**,页面会话随即关掉)
+- 任务报错因此能分开:「MediaFire 文件已被下架(errno=378)」≠「短链解析失败」
+
+TeraBox 侧要注意的两个实测点(都已写在代码注释里):dlink 绑定**解析出口 IP**
+(`proxy_fallback=False`,直连抓是 404,与解析同出口才 200);`599003486 B`
+那类大包走代理约 1.1MB/s,比 MediaFire 直连慢一个量级,是备份兜底的代价。
+
+回归用例:`test_resolve_ouo_mediafire_error_page_raises`、
+`test_unsupported_host_error_carries_landing_url`、
+`test_resolve_infos_mediafire_dead_falls_back_to_terabox`、
+`test_resolve_infos_mediafire_dead_without_backup_reports_reason`、
+`test_resolve_infos_discards_partial_volumes`。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,
