@@ -660,6 +660,52 @@ canonical 页面 + API 取直链。落地 URL 的文件名段可能是双重编�
 `mediafire.com/file/u565jqfr9bphwh3/…`;重推 824 → 任务 825 正常下载
 (332MB)。
 
+### 进阶缺陷:入库标题被压缩包内目录名截短 + 模特名抽不到(2026-10-24,任务 825)
+
+上面那条修完,824 下载成功(任务 825,53 张),但合集成了
+`未分类-mfstar-vol-076`,标题只有「MFStar Vol.076」。两处各自独立:
+
+**1) 标题截短** —— 入库 title 取自**目录名**,而目录名取自压缩包内自带的
+顶层目录(4kup 老帖包内是 `MFStar Vol.076`,页面标题却是
+`MFStar Vol.076 Mu Yu Qian (慕羽茜)`):`archive_collection()` 优先用包内
+目录名,`import_album()` 又 `title = album_dir.name`,页面标题在中间被丢掉。
+顺带还和 worker 的 `dest_dir` 预检不一致(预检按页面标题算目录名)。
+
+修法(`pipeline.archive_collection`):**包内目录名是页面标题的前缀**且页面
+标题不带「(N photos)」尾缀时,改用页面标题做目录名。其他来源包内目录名通常
+就是完整标题(不是前缀关系),行为不变 —— 也顺手让「预检目录」与「真实目录」
+重新对齐。
+
+**2) 模特名** —— `titlemodel` 第 10 条白名单只有 XIUREN / UGIRLS / IMISS /
+YouMi,`MFStar Vol.076 …` / `BoLoli Bol.054 …` 这类老帖系列整批落「未分类」。
+抽样 25 条 4kup 老帖标题:修复前 15/25 抽到名,修复后 **25/25**。
+
+修法(`titlemodel` 新增 10b):通用「系列 编号 名字」规则
+`^[A-Za-z][A-Za-z0-9]{2,14}\s+(?:Vol|No|Bol)\.?\s*\d{1,5}\s+(.+)$`,系列名
+本身不当人名(名字位固定在编号后);排在原有白名单规则之后,不遮蔽任何既有
+形态。
+
+**3) 原生名一直没落下** —— `model_name_from_title()` 返回的是
+`(拉丁名, 原生名)`,采集链路只接了前半,`models.stage_name` 永远空着(前台
+模特页因此没有「又名 …」)。现在 `HarvestTarget.model_native` 一路带到
+`import_album(..., model_native=…)`,写进 `models.stage_name`:模特页显示
+「Known as 慕羽茜」,`/models` 与搜索也能用中文命中。已有模特**不覆盖**非空
+`stage_name`(人工填的艺名比自动抽取的可信),只在空的时候补。既有那条
+`Mu Yu Qian` 已补成 `慕羽茜`。
+
+数据修复(合集 801 就地改,不重下也不重传):DB 里改 title/slug/model_id +
+53 行 `photos.filename`、`_cache/` 下两个规格目录跟着改名(原图已在上传后
+本地清理,无需搬)、`harvest_jobs.collection_slug` 同步。
+`photo_uploads.remote_path` **不动** —— 远端文件没搬,改了反而断链。
+
+修复后:`/collections/mu-yu-qian-mfstar-vol-076-mu-yu-qian-(慕羽茜)` 200,
+标题「MFStar Vol.076 Mu Yu Qian (慕羽茜)」,模特 `Mu Yu Qian`,缩略图正常出图。
+
+测试:`tests/test_titlemodel_series.py` 13 条(10 条真帖标题语料 + 系列名不得
+当人名 + 不遮蔽既有前缀 + 无编号不抽),`tests/test_pipeline.py` 新增 3 条
+(截短名升级为页面标题 / 无前缀关系保持包内名 / 带张数尾缀的标题不拿来当
+目录名)。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,

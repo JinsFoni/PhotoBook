@@ -662,6 +662,7 @@ def _run_job(job_id: int) -> None:
                 s, final_dir, app_settings.media_dir, library_root=library_root,
                 unsorted_dir=str(conf["harvest.unsorted_dir"]),
                 tags=target.tags, thumbs=False,
+                model_native=getattr(target, "model_native", "") or "",
                 today=target.published or None)
             if r["skipped"]:
                 job.error = "→ 已导入过,跳过"

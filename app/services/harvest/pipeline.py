@@ -15,6 +15,7 @@ from curl_cffi import requests as cr
 log = logging.getLogger(__name__)
 
 from .filters import sanitize_path_part
+from .titlematch import photo_count
 
 
 def human(n: float) -> str:
@@ -416,8 +417,18 @@ def archive_collection(archive_path: Path, library_root: Path, *,
     model_part = sanitize_path_part(model_name) if model_name else sanitize_path_part(unsorted_dir)
     inner = _sole_top_dir(archive_path)
     title_part = sanitize_path_part(inner.name) if inner is not None else ""
+    page_part = sanitize_path_part(title or "")
+    # 包内目录名有时只是页面标题的**截短**(4kup 老帖实录:页面
+    # 「MFStar Vol.076 Mu Yu Qian (慕羽茜)」/ 包内「MFStar Vol.076」)。
+    # 入库 title 取自这个目录名(library_import.import_album),照抄截短名
+    # 会连模特名一起丢掉(任务 825 → 合集「MFStar Vol.076」+ 未分类)。
+    # 只在「包内名是页面标题的前缀」且页面标题不带「(N photos)」尾缀时
+    # 改用页面标题;其他来源页内目录名通常就是完整标题,行为不变。
+    if (title_part and page_part and photo_count(title) is None
+            and page_part.lower().startswith(title_part.lower())):
+        title_part = page_part
     if not title_part:
-        title_part = sanitize_path_part(title)
+        title_part = page_part
     target = library_root / model_part / title_part
     if target.exists() and any(target.iterdir()):
         n = 2

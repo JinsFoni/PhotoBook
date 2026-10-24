@@ -128,6 +128,9 @@ def test_4kup_parse_title_model_and_links():
                                         existing_html=FOURKUP_HTML)
     assert target.serial == 53150
     assert target.model_name == "Toyoda Runa"
+    # 原生名一并带出 → import_album 写 models.stage_name(前台「又名 …」)
+    # (这份 fixture 的 og:title 用数字实体写的, 原生名以解析结果为准)
+    assert target.model_native and target.model_native in target.title
     assert target.password == "4kup"
     assert target.shortlinks == ["https://1024terabox.com/s/19erS_KtZWnO8hvaraWCavg"]
     assert "Korean" in target.tags and "LE" in target.tags

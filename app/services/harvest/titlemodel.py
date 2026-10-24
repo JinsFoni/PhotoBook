@@ -183,6 +183,24 @@ def model_name_from_title(title: str,
             return cand, ""
         return "", ""
 
+    # 10b) 通用「系列 编号 名字」: MFStar Vol.190 程程CC /
+    #      BoLoli Bol.054 Liu You Qi Sevenbaby (柳侑绮Sevenbaby)
+    #      —— 4kup 老帖的主力形态(2021 及更早)。系列名本身不是人名,
+    #      名字位固定在编号之后;以前 MFStar / BoLoli 不在上面那份白名单里,
+    #      整批老帖落「未分类」(2026-10-24 任务 825 实录)。
+    m = re.match(
+        r"^[A-Za-z][A-Za-z0-9]{2,14}\s+(?:Vol|No|Bol)\.?\s*\d{1,5}\s+(.+)$",
+        t, re.I)
+    if m:
+        rest = m.group(1).strip()
+        p = _pair(rest)
+        if p:
+            return p
+        cand = rest.split()[0] if rest.split() else ""
+        if _valid(cand):
+            return cand, ""
+        return "", ""
+
     # 11) [JP] 纯 CJK 名 + 作品标记
     m = re.match(
         r"^\[(?:JP|KR|CN|TW|HK)\]\s*"

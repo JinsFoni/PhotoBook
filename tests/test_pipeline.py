@@ -35,6 +35,39 @@ def test_archive_uses_inner_dir_name(tmp_path):
     assert not (lib / "Yeha" / "School Nurse (219 photos)").exists()
 
 
+def test_archive_upgrades_truncated_inner_dir_to_page_title(tmp_path):
+    """包内目录名只是页面标题的截短 → 用页面标题(4kup 老帖:入库 title 取目录名)。"""
+    src = tmp_path / "extract"
+    (src / "MFStar Vol.076").mkdir(parents=True)
+    (src / "MFStar Vol.076" / "a.jpg").write_bytes(b"x")
+
+    dest = archive_collection(src, tmp_path / "lib", model_name="Mu Yu Qian",
+                              title="MFStar Vol.076 Mu Yu Qian (慕羽茜)")
+    assert dest.name == "MFStar Vol.076 Mu Yu Qian (慕羽茜)"
+    assert (dest / "a.jpg").read_bytes() == b"x"
+    assert not (dest.parent / "MFStar Vol.076").exists()   # 旧名不残留
+
+
+def test_archive_keeps_inner_dir_when_unrelated(tmp_path):
+    """包内目录名不是页面标题前缀 → 一律保留包内名(原行为不变)。"""
+    src = tmp_path / "extract"
+    (src / "XIUREN No.10977 CHENCHEN").mkdir(parents=True)
+    (src / "XIUREN No.10977 CHENCHEN" / "a.jpg").write_bytes(b"x")
+    dest = archive_collection(src, tmp_path / "lib", model_name="Yeha",
+                              title="School Nurse (219 photos)")
+    assert dest.name == "XIUREN No.10977 CHENCHEN"
+
+
+def test_archive_keeps_inner_dir_for_photo_count_titles(tmp_path):
+    """页面标题带「(N photos)」尾缀 → 不拿它当目录名(库内 title 不该带尾缀)。"""
+    src = tmp_path / "extract"
+    (src / "School Nurse").mkdir(parents=True)
+    (src / "School Nurse" / "a.jpg").write_bytes(b"x")
+    dest = archive_collection(src, tmp_path / "lib", model_name="Yeha",
+                              title="School Nurse (219 photos)")
+    assert dest.name == "School Nurse"
+
+
 def test_archive_ignores_junk_when_detecting_inner_dir(tmp_path):
     """__MACOSX 等系统垃圾项不计入唯一顶层目录判定。"""
     src = tmp_path / "extract"

@@ -154,6 +154,43 @@ def test_import_cjk_names(tmp_path):
         assert c.photos[0].filename == "麻花麻花酱/碧蓝航线-埃吉尔/001.jpg"
 
 
+def test_import_writes_native_name_to_stage_name(tmp_path):
+    """采集链路给的原生名 → models.stage_name(主名仍是拉丁名)。"""
+    lib, media = tmp_path / "library", tmp_path / "media"
+    album = _album(lib, "Mu Yu Qian", "MFStar Vol.076 Mu Yu Qian (慕羽茜)", n=1)
+
+    with SessionLocal() as s:
+        library_import.import_album(s, album, media, library_root=lib,
+                                    model_native="慕羽茜", thumbs=False)
+        m = s.scalar(select(Model).where(Model.name == "Mu Yu Qian"))
+        assert m is not None and m.stage_name == "慕羽茜"
+        c = _collection(s, "mu-yu-qian-mfstar-vol-076-mu-yu-qian-(慕羽茜)")
+        assert c is not None and c.model_id == m.id
+
+
+def test_import_native_name_does_not_clobber_manual_stage_name(tmp_path):
+    """人工填过的 stage_name(艺名)不被自动抽取覆盖;空的才补。"""
+    lib, media = tmp_path / "library", tmp_path / "media"
+    name = "StageName Probe"           # 独立名字, 不与其他用例抢同一行
+    a1 = _album(lib, name, "Album A", n=1)
+    a2 = _album(lib, name, "Album B", n=1)
+
+    with SessionLocal() as s:
+        s.add(Model(slug="stage-name-probe", name=name, stage_name="小茜",
+                    status="published"))
+        s.commit()
+        library_import.import_album(s, a1, media, library_root=lib,
+                                    model_native="慕羽茜", thumbs=False)
+        m = s.scalar(select(Model).where(Model.name == name))
+        assert m.stage_name == "小茜"
+
+        m.stage_name = None            # 空着 → 下次导入补上
+        s.commit()
+        library_import.import_album(s, a2, media, library_root=lib,
+                                    model_native="慕羽茜", thumbs=False)
+        assert m.stage_name == "慕羽茜"
+
+
 # ---- 幂等 / 预检 -------------------------------------------------------------
 
 def test_import_is_idempotent(tmp_path):

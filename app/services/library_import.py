@@ -127,15 +127,24 @@ def _unique_slug(s: Session, model_cls, base: str, maxlen: int) -> str:
     return slug
 
 
-def _get_or_create_model(s: Session, name: str) -> Model | None:
-    """按名字复用模特;没有则新建(published)。空名字 → None(未分类)。"""
+def _get_or_create_model(s: Session, name: str, native: str = "") -> Model | None:
+    """按名字复用模特;没有则新建(published)。空名字 → None(未分类)。
+
+    ``native``: 标题里的原生名(采集链路给的「Latin (中文)」中文那半)。
+    主名仍是拉丁名(与既有 XIUREN 那批一致),原生名写 stage_name ——
+    前台模特页显示「又名 …」,搜索也能用中文命中。已有模特**不覆盖**非空
+    stage_name(人工填的艺名比自动抽取的可信),只在空的时候补。
+    """
     if not name:
         return None
     m = s.scalar(select(Model).where(Model.name == name))
     if m:
+        if native and not m.stage_name:
+            m.stage_name = native[:120]
         return m
     m = Model(slug=_unique_slug(s, Model, slugify(name, maxlen=120), 120),
-              name=name[:120], status="published")
+              name=name[:120], stage_name=(native[:120] if native else None),
+              status="published")
     s.add(m)
     s.flush()
     log.info("new model: %s (%s)", m.name, m.slug)
@@ -173,7 +182,7 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
                  library_root: Path | None = None, unsorted_dir: str = "未分类",
                  today: str | None = None,
                  tags: list[str] | None = None,
-                 thumbs: bool = True) -> dict:
+                 thumbs: bool = True, model_native: str = "") -> dict:
     """导入单个写真目录。返回统计 {album, model, photos, videos, skipped, slug}。
 
     图片移动 → 建 models/collections/photos 记录;已导入过(slug 命中)则原样跳过。
@@ -183,6 +192,7 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
     前台不可见);False = 调用方自管(采集 worker 拿到 slug 后自己入队)。
     ``today``:写进 published_at 的日期(YYYY.MM.DD);采集链路传源站详情页
     的发布日期,None 回退导入当天(手动目录导入无源站日期)。
+    ``model_native``:标题里的原生名(仅采集链路有),写进 models.stage_name。
     """
     album_dir = Path(album_dir)
     parent = album_dir.parent
@@ -241,7 +251,7 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
         return stats
     stats["broken"] = broken
 
-    model = _get_or_create_model(s, model_name)
+    model = _get_or_create_model(s, model_name, native=model_native)
     owner_slug = model.slug if model else slugify(unsorted_dir, maxlen=120)
     slug = f"{owner_slug}-{slugify(title, maxlen=160)}"[:200]
     stats["slug"] = slug

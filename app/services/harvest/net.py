@@ -116,6 +116,9 @@ class HarvestTarget:
     serial: int
     title: str = ""
     model_name: str = ""
+    # 标题里的原生名(4kup 的「Latin (中文)」形态)。拉丁名仍作模特主名,
+    # 原生名带给 import_album 写 models.stage_name(前台「又名 …」+ 搜索命中)
+    model_native: str = ""
     password: str = ""
     shortlinks: list[str] = field(default_factory=list)   # 主用下载源(锚文本标 MediaFire)
     # 页面上标了其他网盘的备用短链(锚文本 TeraBox 等)。不主用,只在主源全废时
@@ -904,7 +907,7 @@ def parse_4kup_detail_page(url: str, existing_html: str | None = None,
         if hm:
             title = re.sub(r"<[^>]+>", "", hm.group(1)).strip()
 
-    name, _native = model_name_from_title(title)
+    name, native = model_name_from_title(title)
 
     # 分类名只取正文 <article> 内的 category 链接文本(页面导航/侧栏菜单
     # 也是 /category/ 链接,整页正则会把全站分类误收进来)
@@ -930,6 +933,7 @@ def parse_4kup_detail_page(url: str, existing_html: str | None = None,
         if gate_link not in shortlinks:
             shortlinks.append(gate_link)
     return HarvestTarget(serial=serial, title=title, model_name=name,
+                         model_native=native,
                          password="4kup", shortlinks=shortlinks, tags=tags,
                          published=_to_dotted(_date_published_iso(html)),
                          dead_shortlinks=_collect_dead_shortener_links(html))
