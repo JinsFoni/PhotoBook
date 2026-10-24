@@ -607,6 +607,59 @@ buondua / misskon / nicesss / 4kup 四个解析器把这类死链服务名记进
 注入 GM 打桩版脚本,首屏 20 个徽标(`⬇ 下载|new|27505` …),`Page.reload`
 后仍 20 个、无 `cbError`;修复前同一流程刷新后是 0 个并抛上述 TypeError。
 
+### 4kup 老帖的站内中转短链(bit.ly → getlink,XXTEA 加密)(2026-10-24,任务 824)
+
+824(`4kup.net/mfstar-vol-076-mu-yu-qian`)报「详情页未找到下载短链」。**源站
+链接是好的**:2022 及更早的 4kup 帖子不挂直链,下载按钮是站内广告中转短链,
+而且是**单引号** href:
+
+```html
+<a href='https://bit.ly/3U2VFgk' target='_blank' rel="nofollow noopener">Download from terabox.com</a>
+```
+
+链路(实查):
+
+```
+bit.ly/<code>   301→  https://www.4kup.net/p/go.html#?u=<XXTEA+base64 令牌>
+页面 JS          →   https://4kup.net/getlink/?u=<令牌>
+Tea.decrypt(令牌, config.defaultkey)  →  JSON {"url": "<真网盘链接>", "note2": "4kup"}
+```
+
+我们两边都没收:短链白名单(`SHORTLINK_RE`)只认 ouo,`TERABOX_LINK_RE` 又只
+匹配 terabox 系域名,页面上也没有直挂 terabox → 一条源都进不了 `shortlinks`。
+抽样确认这是一整类老帖(不是个例):`bololi-bol-05x`、`xiuren-no-4326/4327`、
+`xiaoyu-vol-00x`、`coser-money-no-027` 等全是 bit.ly 中转,落地 MF 与 TeraBox
+各占一半;2023 年后的帖子才改成直挂 `1024terabox.com`。
+
+修复(`net.py`):
+
+- `_collect_4kup_gate_links()`:白名单短链域名(bit.ly / tinyurl / cutt.ly /
+  rebrand.ly / s.id / is.gd / za.gl / shrinkme / t.ly / rb.gy / shorturl.at),
+  同时吃单双引号 —— 只收白名单,页面里的广告 iframe / 图库大图链接不会误入;
+- `is_4kup_gate_link()`:短链域,或 4kup 自家 `p/go.html` / `getlink` 页;
+- `resolve_4kup_gate()`:`allow_redirects=False` 自己跟跳转拿 `Location` →
+  取出 `u` 令牌(**先 `unquote`**,URL 里是百分号编码的)→ XXTEA 解出 JSON。
+  密钥先用实查常量 `maxbong`,解不开再现场读中转页里的 `defaultkey`(密钥换了
+  也不至于废);两者都失败报「令牌解不开(可能需要口令)」,不静默。
+- `parse_4kup_detail_page()`:中转短链补进 `shortlinks`(直挂 terabox 在前,
+  优先级不变)。
+
+worker 侧(`worker.py`):`mf_links` 与备用链过滤都认中转短链;`_try_link`
+解出落地 URL 后按域分流 —— TeraBox 走分享展开,MediaFire 走 760 那套
+canonical 页面 + API 取直链。落地 URL 的文件名段可能是双重编码
+(`%2528…`),不影响:760 起只用 `quick_key`,页面一律走 canonical 链接。
+
+测试:`tests/test_4kup_gate.py` 16 条(XXTEA 加解密往返、单引号收取与去重、
+解析进 shortlinks、`is_4kup_gate_link` 正负例、terabox/MF 两种落地、密钥变了
+走中转页兜底、需要口令、没跳转、落地不是 URL、worker 三种分流 + 失败文案)。
+令牌用测试内的 `xxtea_encrypt`(镜像页面 `Tea.encode`)自造,`cr.get` 与
+`fetch_html` 全打桩,不发网络请求。
+
+实测:修复后 `parse_4kup_detail_page` 拿到 `['https://bit.ly/3U2VFgk']`,三条
+真实短链分别解出 `terabox.com/s/1OmrqqD…`、`mediafire.com/file/19vcmlv1ba2n4rv/…`、
+`mediafire.com/file/u565jqfr9bphwh3/…`;重推 824 → 任务 825 正常下载
+(332MB)。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,

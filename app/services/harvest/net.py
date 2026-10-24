@@ -8,11 +8,13 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import re
 import time
 from dataclasses import dataclass, field
-from urllib.parse import urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 from curl_cffi import requests as cr
 
@@ -737,6 +739,143 @@ def _collect_terabox_links(html: str) -> list[str]:
     return out
 
 
+# ---- 4kup 自家的中转短链(bit.ly → p/go.html → getlink,XXTEA 加密) ----------
+# 2022 及更早的帖子不挂直链,下载按钮是站内中转短链(任务 824 实录):
+#
+#   <a href='https://bit.ly/3U2VFgk'>Download from terabox.com</a>   ← 单引号
+#     → 301  https://www.4kup.net/p/go.html#?u=<XXTEA+base64 令牌>
+#     → 页面 JS  https://4kup.net/getlink/?u=<令牌>
+#     → Tea.decrypt(令牌, config.defaultkey) → JSON {"url": "<真网盘链接>"}
+#
+# 我们两边都没收过:短链域名不在 SHORTLINK_RE 白名单(只认 ouo),页面上也没有
+# 直挂 terabox —— 于是「详情页未找到下载短链」。落地可能是 MediaFire 也可能是
+# TeraBox,按帖子模板飘,所以解析出来再交给 worker 的按域分流。
+FOURKUP_GATE_HOST_RE = re.compile(
+    r"^(?:bit\.ly|tinyurl\.com|cutt\.ly|rebrand\.ly|s\.id|is\.gd|za\.gl|"
+    r"shrinkme\.io|t\.ly|rb\.gy|shorturl\.at)$", re.I)
+FOURKUP_GATE_LINK_RE = re.compile(
+    r"href=['\"](https?://(?:bit\.ly|tinyurl\.com|cutt\.ly|rebrand\.ly|s\.id|"
+    r"is\.gd|za\.gl|shrinkme\.io|t\.ly|rb\.gy|shorturl\.at)/[^'\"]+)['\"]",
+    re.I)
+FOURKUP_GATE_U_RE = re.compile(r"[?#&]u=([^&'\"\s]+)")
+FOURKUP_GATE_KEY_RE = re.compile(
+    r"defaultkey:\s*'([^']+)'|defaultkey:\s*\"([^\"]+)\"")
+# getlink 页面的默认密钥(实查 4 条老帖一致);变了还有现场读页兜底
+FOURKUP_GATE_KEY = "maxbong"
+_XXTEA_DELTA = 0x9E3779B9
+_M32 = 0xFFFFFFFF
+
+
+def _collect_4kup_gate_links(html: str) -> list[str]:
+    """页面上挂的中转短链(bit.ly 等,去重保序)。
+
+    只认白名单短链域名:页面里还有大量广告 iframe / 统计脚本链接,不能
+    整页收 href。注意老帖模板用的是**单引号** href。
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for link in FOURKUP_GATE_LINK_RE.findall(html):
+        link = link.replace("&amp;", "&")
+        if link not in seen:
+            seen.add(link)
+            out.append(link)
+    return out
+
+
+def is_4kup_gate_link(url: str) -> bool:
+    """中转短链(bit.ly 等)或 4kup 自家的 go.html / getlink 中转页。"""
+    if not url:
+        return False
+    host = urlparse(url).netloc.lower().split(":")[0]
+    if FOURKUP_GATE_HOST_RE.match(host):
+        return True
+    return bool(re.search(r"4kup\.net/(?:p/go\.html|getlink)", url))
+
+
+def _xxtea_longs(data: bytes) -> list[int]:
+    data = data + b"\0" * ((4 - len(data) % 4) % 4)
+    return [int.from_bytes(data[i:i + 4], "little")
+            for i in range(0, len(data), 4)]
+
+
+def _xxtea_decrypt(token: str, key: str) -> bytes:
+    """XXTEA 解密(与 4kup getlink 页面里的 Tea.decode 同算法/同字节序)。"""
+    v = _xxtea_longs(base64.b64decode(token, validate=False))
+    k = _xxtea_longs(key.encode("utf-8")[:16].ljust(4, b"\0"))
+    while len(k) < 4:
+        k.append(0)
+    n = len(v)
+    if n < 2:
+        raise ValueError("令牌太短")
+    total = ((6 + 52 // n) * _XXTEA_DELTA) & _M32
+    y, z = v[0], v[n - 1]
+    while total:
+        e = (total >> 2) & 3
+        for p in range(n - 1, -1, -1):
+            z = v[p - 1] if p > 0 else v[n - 1]
+            mx = ((((z >> 5) ^ ((y << 2) & _M32))
+                   + ((y >> 3) ^ ((z << 4) & _M32))) & _M32) \
+                ^ (((total ^ y) + (k[(p & 3) ^ e] ^ z)) & _M32)
+            y = v[p] = (v[p] - mx) & _M32
+        total = (total - _XXTEA_DELTA) & _M32
+    return b"".join(x.to_bytes(4, "little") for x in v).rstrip(b"\0")
+
+
+def _gate_key_from_page(token: str) -> str | None:
+    """中转页里写着 `defaultkey: '…'`(与实查常量一致,变了也不至于废)。"""
+    try:
+        page = fetch_html(f"https://4kup.net/getlink/?u={token}")
+    except Exception as e:                    # 取不到就用常量
+        log.warning("取 4kup 中转页失败: %s", e)
+        return None
+    m = FOURKUP_GATE_KEY_RE.search(page)
+    return (m.group(1) or m.group(2)) if m else None
+
+
+def _gate_json(token: str) -> dict:
+    """令牌 → JSON。先试常量密钥,不行再现场读页面里的 defaultkey。"""
+    for key in (FOURKUP_GATE_KEY, _gate_key_from_page(token)):
+        if not key:
+            continue
+        try:
+            raw = _xxtea_decrypt(token, key)
+            return json.loads(raw.decode("utf-8"))
+        except Exception:                     # 密钥不对 / 需要口令
+            continue
+    raise ValueError("令牌解不开(可能需要口令)")
+
+
+def resolve_4kup_gate(url: str, *, timeout: float = 30.0) -> str:
+    """中转短链 → 真实网盘 URL(MediaFire 文件页 / TeraBox 分享)。
+
+    只做一次跳转(短链 → 站内 go.html/getlink),再解令牌;落地 URL 由
+    worker 按域分流(MF 走 API 取直链,TeraBox 走分享展开)。
+    """
+    cur = url
+    for _ in range(4):
+        if FOURKUP_GATE_U_RE.search(cur):
+            break
+        try:
+            r = cr.get(cur, impersonate=UA_IMPERSONATE, timeout=timeout,
+                       allow_redirects=False)
+        except Exception as e:
+            raise ValueError(f"短链打不开: {e}") from e
+        loc = (r.headers.get("location") or "").strip()
+        if r.status_code in (301, 302, 303, 307, 308) and loc:
+            cur = urljoin(cur, loc)
+            continue
+        raise ValueError(f"短链没有跳到中转页(HTTP {r.status_code})")
+    m = FOURKUP_GATE_U_RE.search(cur)
+    if not m:
+        raise ValueError("没拿到中转页令牌")
+    token = unquote(m.group(1))               # 页面 JS 也是先 decodeURIComponent
+    data = _gate_json(token)
+    target = str(data.get("url") or "").strip()
+    if not re.match(r"^https?://", target, re.I):
+        raise ValueError(f"中转页没给出下载地址: {data}")
+    return target
+
+
 def parse_4kup_detail_page(url: str, existing_html: str | None = None,
                            model_exclude: str | None = None) -> HarvestTarget:
     """解析 4kup.net 详情页。
@@ -786,6 +925,10 @@ def parse_4kup_detail_page(url: str, existing_html: str | None = None,
 
     # 该站下载区只挂 terabox,无 password 字样;归档密码是站点公开约定 4kup
     shortlinks = _collect_terabox_links(html)
+    # 老帖的下载按钮是中转短链(bit.ly → 站内 getlink),worker 侧解析成真网盘
+    for gate_link in _collect_4kup_gate_links(html):
+        if gate_link not in shortlinks:
+            shortlinks.append(gate_link)
     return HarvestTarget(serial=serial, title=title, model_name=name,
                          password="4kup", shortlinks=shortlinks, tags=tags,
                          published=_to_dotted(_date_published_iso(html)),

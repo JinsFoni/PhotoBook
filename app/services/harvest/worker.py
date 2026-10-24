@@ -237,11 +237,16 @@ def _resolve_infos(s, job: HarvestJob, target) -> list[dict] | None:
     一并收进 `shortlinks`,这里按域分流进 `tb_links`(760:misskon 页就是
     这种形态,以前整条备份链没人收)。
 
+    4kup 老帖的 `bit.ly` 中转短链(`net.is_4kup_gate_link`)也算主链候选:
+    它可能落到 MediaFire 也可能落到 TeraBox,由 `_try_link` 解出落地 URL
+    后再按域分流(824)。
+
     返回 None 表示任务已在此落终态(失败)。
     """
     shortlinks = target.shortlinks
     mf_links = [x for x in shortlinks if "mediafire.com/" in x
-                or "ouo.io/" in x or "ouo.press/" in x]
+                or "ouo.io/" in x or "ouo.press/" in x
+                or net.is_4kup_gate_link(x)]
     tb_links = [x for x in shortlinks if terabox.is_terabox_url(x)]
     if not mf_links and not tb_links:
         # 其他网盘(pixeldrain/mega/…): ouo 落地后按 OTHER_HOSTS 报平台名
@@ -298,6 +303,16 @@ def _resolve_infos(s, job: HarvestJob, target) -> list[dict] | None:
                 return "fail", f"短链解析异常: {e}"
             if not direct_page:
                 return "fail", f"短链解析失败: {link}"
+        elif net.is_4kup_gate_link(link):
+            # 4kup 老帖的 bit.ly 中转页:解出真网盘链接再分流(2026-10-24 任务 824)
+            try:
+                landing = net.resolve_4kup_gate(link)
+            except Exception as e:
+                log.warning("4kup 中转短链解析失败(%s): %s", link, e)
+                return "fail", f"中转短链解析失败: {e}"
+            if terabox.is_terabox_url(landing):
+                return "tb", landing
+            direct_page = landing
         try:
             if net.MF_FOLDER_RE.search(direct_page):
                 # 落地是 MediaFire 文件夹(分卷包发布方把所有卷放一夹): API 展开逐卷
@@ -342,7 +357,8 @@ def _resolve_infos(s, job: HarvestJob, target) -> list[dict] | None:
         # 的那些, 707 就是 TeraBox 备份藏在里面),只在这一步消耗解析时间。
         backup_links = [x for x in (getattr(target, "backup_shortlinks", None) or [])
                         if "mediafire.com/" in x or "ouo.io/" in x
-                        or "ouo.press/" in x or terabox.is_terabox_url(x)]
+                        or "ouo.press/" in x or terabox.is_terabox_url(x)
+                        or net.is_4kup_gate_link(x)]
         if backup_links:
             log.warning("MediaFire 主链不可用(%s),改试 %d 条备用短链",
                         "；".join(failures) or "无", len(backup_links))
