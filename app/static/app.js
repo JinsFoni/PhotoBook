@@ -384,32 +384,9 @@ window.PC = (function () {
   function renderChrome() {
     var page = activeKey();
 
-    var header = document.querySelector("[data-header]");
-    if (header) {
-      /* 全站顶栏统一轻霜玻璃(同首页): 半透明深底 + backdrop-filter,
-         前景文字/图标保持白;首页 hero 仍由 .shell--immersive 上移垫图 */
-      header.className = "header header--immersive";
-      header.innerHTML =
-        '<div class="wrap header__inner">' +
-        '<button class="icon-btn header__burger" type="button" data-drawer-open aria-label="' + t("Open menu") + '">' + icon("menu") + "</button>" +
-        '<a class="wordmark" href="/">Photo&nbsp;Collection</a>' +
-        '<nav class="nav" aria-label="' + t("Primary") + '">' +
-        NAV.map(function (n) {
-          return '<a class="nav__link" href="' + n.href + '"' + (n.key === page ? ' aria-current="page"' : "") + ">" + n.label + "</a>";
-        }).join("") +
-        "</nav>" +
-        '<div class="header__end">' +
-        '<button class="icon-btn" type="button" data-search-open aria-label="' + t("Search the archive") + '">' + icon("search") + "</button>" +
-        '<a class="icon-btn" href="/favorites" aria-label="' + t("Favourites") + '">' + icon("heart") +
-        '<span class="icon-btn__dot" data-fav-dot hidden></span></a>' +
-        '<button class="icon-btn" type="button" data-theme-toggle aria-label="' + t("Switch theme") + '"></button>' +
-        '<a class="avatar-btn" href="/profile" aria-label="' + t("Your profile") + '">' +
-        (ME.avatar
-          ? '<img src="' + ME.avatar + '" alt="" width="30" height="30">'
-          : '<span class="avatar-btn__initial">' + escapeHtml((ME.name || "?").charAt(0).toUpperCase()) + "</span>") +
-        "</a>" +
-        "</div></div>";
-    }
+    /* 顶栏不在这里建: 由 _shell.html 服务端直出(空壳后塞 HTML 会让首屏
+       内容先按顶栏 0 高排版, 脚本一到整页下跳 68px)。这里只管下面的
+       tabbar / drawer / search / footer 这几个开屏不参与首屏排版的壳。 */
 
     var tabbar = document.querySelector("[data-tabbar]");
     if (tabbar) {

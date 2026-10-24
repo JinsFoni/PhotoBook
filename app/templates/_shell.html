@@ -1,9 +1,43 @@
 {% from '_ui.html' import icon %}
 {% extends 'base.html' %}
 
+{# 顶栏在服务端直出: 原来 <header> 是空壳、由 app.js 在 DOMContentLoaded 里塞
+   innerHTML, 首屏先按「顶栏 0 高」排版, 脚本一到再插进 68px → 整页内容往下
+   跳一下(刷新时最明显)。这里把 nav/图标/头像全部直出, 脚本只负责绑事件和
+   填主题按钮图标(主题存在 localStorage, 服务端不知道)。
+   导航高亮按路径算, 与 app.js activeKey() 同一把尺子, 详情页也归到列表项。 #}
+{% set p = request.url.path %}
+{% set nav_key = 'discovery' if p == '/' else
+   ('models' if p.startswith('/models') else
+   ('collections' if p.startswith('/collections') else
+   ('favorites' if p.startswith('/favorites') else
+   ('profile' if p.startswith('/profile') else '')))) %}
+
 {% block body %}
 <div class="shell{% if shell_immersive %} shell--immersive{% endif %}">
-  <header data-header></header>
+  <header class="header header--immersive" data-header>
+    <div class="wrap header__inner">
+      <button class="icon-btn header__burger" type="button" data-drawer-open aria-label="{{ t('Open menu') }}">{{ icon('menu') }}</button>
+      <a class="wordmark" href="/">Photo&nbsp;Collection</a>
+      <nav class="nav" aria-label="{{ t('Primary') }}">
+        <a class="nav__link" href="/"{% if nav_key == 'discovery' %} aria-current="page"{% endif %}>{{ t('Discovery') }}</a>
+        <a class="nav__link" href="/models"{% if nav_key == 'models' %} aria-current="page"{% endif %}>{{ t('Models') }}</a>
+        <a class="nav__link" href="/collections"{% if nav_key == 'collections' %} aria-current="page"{% endif %}>{{ t('Collections') }}</a>
+      </nav>
+      <div class="header__end">
+        <button class="icon-btn" type="button" data-search-open aria-label="{{ t('Search the archive') }}">{{ icon('search') }}</button>
+        <a class="icon-btn" href="/favorites" aria-label="{{ t('Favourites') }}">{{ icon('heart') }}<span class="icon-btn__dot" data-fav-dot hidden></span></a>
+        <button class="icon-btn" type="button" data-theme-toggle aria-label="{{ t('Switch theme') }}"></button>
+        <a class="avatar-btn" href="/profile" aria-label="{{ t('Your profile') }}">
+          {%- if user -%}
+          <img src="{{ avatar(user.avatar_seed or user.username) }}" alt="" width="30" height="30">
+          {%- else -%}
+          <span class="avatar-btn__initial">?</span>
+          {%- endif -%}
+        </a>
+      </div>
+    </div>
+  </header>
 
   <main class="main" id="main">
     {% block main %}{% endblock %}
