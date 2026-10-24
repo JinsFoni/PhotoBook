@@ -28,7 +28,6 @@
     </select>
 
     <span class="filters__spacer"></span>
-    <span class="filters__count num" data-count></span>
 
     <select class="select" data-f-sort aria-label="{{ t('Sort') }}">
       <option value="latest" selected>{{ t('Sort: Latest') }}</option>
@@ -242,8 +241,6 @@
   function render() {
     list = filtered();
     var m = build();
-    var count = document.querySelector("[data-count]");
-    count.textContent = PC.t(list.length === 1 ? "{n} model" : "{n} models", { n: list.length });
     win = { first: -1, count: -1, top: 0, w: 0 };
     cells.forEach(function (el) { el.remove(); });
     cells = [];

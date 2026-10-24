@@ -867,7 +867,6 @@ html[data-theme="blur"] .search {
   margin-bottom: var(--s7);
 }
 .filters__spacer { flex: 1; }
-.filters__count { font-size: var(--fs-small); color: var(--ink-3); white-space: nowrap; }
 
 .searchbox {
   display: flex;
