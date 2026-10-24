@@ -500,6 +500,45 @@ TeraBox 侧要注意的两个实测点(都已写在代码注释里):dlink 绑定
 `test_resolve_infos_mediafire_dead_without_backup_reports_reason`、
 `test_resolve_infos_discards_partial_volumes`。
 
+### 短链落地 URL 被截断 + 直挂 TeraBox 备份没人收(2026-10-24,任务 760)
+
+760 报 `MediaFire 页面取不到(HTTP 400)`,看上去像「MediaFire 链接失效」,
+实际**两个源都完好**,是三个缺陷叠在一起:
+
+1. **ouo 的 302 `Location` 把目标 URL 截断在 255 字符**。760 落在
+   `…%E4%B8%83%E` 这个半个百分号转义上(非 Latin-1 字符百分号编码后很长),
+   MediaFire 对畸形路径回 HTTP 400。修复:`mediafire_info_from_url` 只用传进来
+   的 URL 取 `quick_key`,页面一律走 API `links.normal_download`(MF 自己的
+   canonical 写法;没给就退裸 `<host>/file/<key>/`)。文件名段本就只是装饰,
+   同一文件用 canonical 链接 2 秒拿到直链。预热(`_mf_prime_url` → `__cf_bm`)
+   照旧,因为 canonical 带文件名段、与裸 key 页不同。
+2. **单条源的 RuntimeError 穿透 `_resolve_infos`**。`_try_link` 只 catch
+   `MediaFireDeadError`/`UnsupportedHostError`,页面/API 的 `RuntimeError`
+   (400 / 502 / CF 盾打满 3 次)直接冒到 `_run_job` —— 后续镜像与备份全不看,
+   任务连 failed 文案都写不进去。修复:`_try_link` 把「这条源这轮取不到」
+   一律收成 `("fail", 说明)`,与「内容已下架」同列,由上层决定换源。
+3. **详情页直挂的 TeraBox 链接从未进过解析**。760 页面形态:
+
+   ```html
+   <a href="https://ouo.io/oL053g">Download link: MediaFire</a>
+   <a href="https://terabox.com/s/1Y96hEf0OjWQO_yOyS_6qTg">Download link: Terabox</a>
+   ```
+
+   旧解析器只收 `SHORTLINK_RE`(ouo 域)与 `MEDIAFIRE_LINK_RE`(MF 文件页),
+   直挂的 terabox 分享两边都不匹配,直接被丢 —— 备份躺在页面上却永远用不上。
+   修复:`_collect_direct_download_links()`(MF 直链 + `_collect_terabox_links`)
+   收进 `shortlinks`,buondua / misskon / nicesss 三个解析器共用;worker 侧
+   `_try_link` 见 terabox 域直接判 `("tb", …)`,不再当 MediaFire 页面解析
+   (以前会撞「无法从 URL 提取 quick_key」)。
+
+优先级不变:同一包仍**只走一个源**,MediaFire 优先,TeraBox 只在 MF 全废时兜底
+(混下就是双倍流量)。回归用例:
+`test_misskon_direct_terabox_collected_from_real_page_shape`、
+`test_mediafire_info_prefers_api_canonical_page`、
+`test_resolve_infos_mf_page_error_falls_back_to_direct_terabox`、
+`test_resolve_infos_direct_terabox_link_in_backup_list`、
+`test_resolve_infos_mf_page_error_reported_not_raised`。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,

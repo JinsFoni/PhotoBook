@@ -463,3 +463,88 @@ def test_resolve_infos_discards_partial_volumes(monkeypatch):
     assert rec["status"] == "failed"
     assert "下架" in rec["error"]
     assert FakeSess.closed, "残缺分卷的页面会话必须关掉"
+
+
+# ---- 760: MediaFire 页面异常 + 直挂 TeraBox 备份 -----------------------------
+
+TB_DIRECT = "https://terabox.com/s/1Y96hEf0OjWQO_yOyS_6qTg"
+
+
+def test_resolve_infos_mf_page_error_falls_back_to_direct_terabox(monkeypatch):
+    """760 实录:MF 页面回 HTTP 400(RuntimeError 穿透) + 同页直挂 TeraBox
+    备份 → 整包改走 TeraBox,不判死。
+
+    修复前三处一起坑:直挂 terabox 链接解析器没收;MF 的 RuntimeError 不是
+    MediaFireDeadError,直接穿透 _resolve_infos;于是「文件两个源都完好」
+    的任务被记成 failed。
+    """
+    monkeypatch.setattr(net, "resolve_ouo",
+                        lambda link, **kw: "https://www.mediafire.com/file/6g0gnjr4z5gjjbp/x.rar/file")
+
+    def boom(page_url, **kw):
+        raise RuntimeError("MediaFire 页面取不到(HTTP 400): https://www.mediafire.com/file/…")
+
+    monkeypatch.setattr(net, "mediafire_info_from_url", boom)
+    _patch_tb2(monkeypatch)
+    job, rec = _fake_finish(monkeypatch)
+    with mock.patch.object(worker.settings_store, "harvest_conf",
+                           return_value={"harvest.terabox_cookie_file": "/tmp/c.txt"}):
+        infos = worker._resolve_infos(_FakeSession(), job,
+                                      _target(["https://ouo.io/oL053g", TB_DIRECT]))
+    assert infos, rec
+    assert infos[0]["terabox"]["surl"] == "1Y96hEf0OjWQO_yOyS_6qTg"
+    assert "status" not in rec
+
+
+def test_resolve_infos_mf_page_error_reported_not_raised(monkeypatch):
+    """MF 页面异常(非 DeadError)在无备份时按失败收口:报错文案落库,异常不再
+    穿透 _resolve_infos(以前会一路冒到 _run_job,连 failed 文案都没有)。"""
+    monkeypatch.setattr(net, "resolve_ouo",
+                        lambda link, **kw: "https://www.mediafire.com/file/bad1/x.rar/file")
+
+    def fake_mf_info(page_url, **kw):
+        raise RuntimeError("MediaFire 页面取不到(HTTP 400): https://www.mediafire.com/file/bad1/")
+
+    monkeypatch.setattr(net, "mediafire_info_from_url", fake_mf_info)
+    job, rec = _fake_finish(monkeypatch)
+    infos = worker._resolve_infos(_FakeSession(), job, _target(["https://ouo.io/bad"]))
+    assert infos is None
+    assert rec["status"] == "failed"
+    assert "HTTP 400" in rec["error"]
+
+
+def test_resolve_infos_direct_terabox_link_in_backup_list(monkeypatch):
+    """备用清单里放直挂 terabox 链接(非 ouo)→ 直接归到 TeraBox 分支,
+    不会当成 MediaFire 页面去解析(以前会撞 "无法提取 quick_key")。"""
+    monkeypatch.setattr(net, "resolve_ouo",
+                        lambda link, **kw: (_ for _ in ()).throw(
+                            net.MediaFireDeadError("MediaFire 文件已被下架(errno=378)",
+                                                   MF_DEAD)))
+
+    def no_mf(page_url, **kw):
+        raise AssertionError(f"不该把 terabox 链接当 MediaFire 页面: {page_url}")
+
+    monkeypatch.setattr(net, "mediafire_info_from_url", no_mf)
+    _patch_tb2(monkeypatch)
+    job, rec = _fake_finish(monkeypatch)
+    target = _target(["https://ouo.io/omuODmK"])
+    target.backup_shortlinks = [TB_DIRECT]
+    with mock.patch.object(worker.settings_store, "harvest_conf",
+                           return_value={"harvest.terabox_cookie_file": "/tmp/c.txt"}):
+        infos = worker._resolve_infos(_FakeSession(), job, target)
+    assert infos, rec
+    assert infos[0]["terabox"]["surl"] == "1Y96hEf0OjWQO_yOyS_6qTg"
+
+
+def test_misskon_direct_terabox_collected_from_real_page_shape():
+    """760 详情页的真实形态:ouo(MF) + 直挂 terabox.com/s/… —— 两条都收。"""
+    html = """
+    <h1 class="name post-title entry-title">[JP] M: T (79 photos)</h1>
+    <div class="entry">
+      <p><a href="https://ouo.io/oL053g" class="shortc-button">Download link: MediaFire</a></p>
+      <p><a href="https://terabox.com/s/1Y96hEf0OjWQO_yOyS_6qTg">Download link: Terabox</a></p>
+    </div>
+    """
+    t = net.parse_misskon_detail_page(
+        "https://misskon.com/120000-jp-m-79-photos/", existing_html=html)
+    assert t.shortlinks == ["https://ouo.io/oL053g", TB_DIRECT]

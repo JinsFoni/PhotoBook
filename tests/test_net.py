@@ -266,8 +266,10 @@ def test_misskon_parse_detail_fields():
     assert t.model_name == "Lee Ahrin"
     assert t.tags == ["BLUECAKE", "Lee Ahrin"]
     assert t.password == "misskon.com"
-    # 直挂的 TeraBox 备份链不是 ouo 域,天然滤掉;只留锚文本 MediaFire 的 ouo 链
-    assert t.shortlinks == ["https://ouo.io/F3FYal"]
+    # 锚文本 MediaFire 的 ouo 主链 + 直挂的 TeraBox 备份链。760 起后者不再被
+    # 丢掉:备链只在 MF 全废时由 worker 兜底启用,主源优先级不变
+    assert t.shortlinks == ["https://ouo.io/F3FYal",
+                            "https://1024terabox.com/s/xyz"]
     # JSON-LD datePublished → YYYY.MM.DD
     assert t.published == "2026.10.12"
 
@@ -336,13 +338,14 @@ def test_misskon_legacy_unzip_password_variant():
 
 
 def test_misskon_direct_mediafire_link():
-    """老帖不挂 ouo 短链,直接放 MediaFire 链接 → 进 shortlinks。"""
+    """老帖不挂 ouo 短链,直接放 MediaFire 链接 → 进 shortlinks(顺序:MF 先)。"""
     html = MISSKON_HTML.replace(
         '<a href="https://ouo.io/F3FYal" target="_blank" class="shortc-button"><i class="fa fa-download"></i>Download link: MediaFire</a>',
         '<a href="http://www.mediafire.com/file/abc123/XIUREN_No.1577.rar/file" target="_blank">Download</a>')
     t = net.parse_misskon_detail_page(MISSKON_URL, existing_html=html)
     assert t.shortlinks == [
-        "http://www.mediafire.com/file/abc123/XIUREN_No.1577.rar/file"]
+        "http://www.mediafire.com/file/abc123/XIUREN_No.1577.rar/file",
+        "https://1024terabox.com/s/xyz"]
 
 
 @pytest.mark.parametrize("url,key", [
@@ -390,18 +393,24 @@ def test_mediafire_info_from_action_check_url(monkeypatch):
 
 def test_mediafire_info_hands_back_session_for_download(monkeypatch):
     """keep_session=True:把取页面那份 Session 交出来 —— 直链 dkey 绑客户端,
-    下载换个无 cookie 的连接会被塞 download_repair 验证页(2026-10-22 实测)。"""
+    下载换个无 cookie 的连接会被塞 download_repair 验证页(2026-10-22 实测)。
+
+    取页面用 API 的 canonical 链接(这里 file_info 没给 links → 回退裸 key
+    页),不用传进来的 URL:ouo 的 302 Location 会截断(760)。
+    """
 
     class _Resp:
         status_code = 200
         headers: dict = {}
         text = ""
+        seen_params = []
 
         def json(self):
             return {"response": {"file_info": {
                 "size": "1", "hash": "AA", "filename": "x.rar"}}}
 
     sess = object()
+    fetched = []
 
     class _S:
         closed = False
@@ -410,15 +419,52 @@ def test_mediafire_info_hands_back_session_for_download(monkeypatch):
             _S.closed = True
 
     monkeypatch.setattr(net.cr, "get", lambda *a, **k: _Resp())
-    monkeypatch.setattr(net, "mediafire_page_session",
-                        lambda url, **kw: ('href="https://download9.mediafire.com/y"',
-                                           _S()))
+
+    def _page_session(url, **kw):
+        fetched.append(url)
+        return 'href="https://download9.mediafire.com/y"', _S()
+
+    monkeypatch.setattr(net, "mediafire_page_session", _page_session)
     info = net.mediafire_info_from_url(
         "https://www.mediafire.com/file/abc123/x.rar", keep_session=True)
     assert isinstance(info["_session"], _S)
-    assert info["_referer"].endswith("/file/abc123/x.rar")
+    assert fetched == ["https://www.mediafire.com/file/abc123/"]
+    assert info["_referer"] == "https://www.mediafire.com/file/abc123/"
     assert _S.closed is False
     assert sess is not None
+
+
+def test_mediafire_info_prefers_api_canonical_page(monkeypatch):
+    """页面走 API 给的 links.normal_download:传进来的 URL 可能被截断(760)。"""
+
+    class _Resp:
+        status_code = 200
+        headers: dict = {}
+        text = ""
+
+        def json(self):
+            return {"response": {"file_info": {
+                "size": "1", "hash": "AA", "filename": "x.rar",
+                "links": {"normal_download":
+                          "https://www.mediafire.com/file/abc123/x.rar/file"}}}}
+
+    fetched = []
+
+    class _S:
+        def close(self):
+            pass
+
+    monkeypatch.setattr(net.cr, "get", lambda *a, **k: _Resp())
+    monkeypatch.setattr(net, "mediafire_page_session",
+                        lambda url, **kw: (fetched.append(url),
+                                           'href="https://download9.mediafire.com/y"',
+                                           _S())[1:])
+    info = net.mediafire_info_from_url(
+        "https://www.mediafire.com/file/abc123/%5BJP%5D_x_%E4%B8%83%E",  # 截断的落地 URL
+        keep_session=True)
+    assert fetched == ["https://www.mediafire.com/file/abc123/x.rar/file"]
+    assert info["quick_key"] == "abc123"
+    assert info["direct_url"] == "https://download9.mediafire.com/y"
 
 
 def test_misskon_legacy_no_postid_raises(monkeypatch):

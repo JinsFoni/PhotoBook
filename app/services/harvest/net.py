@@ -245,6 +245,28 @@ def _collect_mediafire_links(html: str) -> list[str]:
     return out
 
 
+def _collect_direct_download_links(html: str) -> list[str]:
+    """详情页直挂的下载链接(MediaFire 文件/文件夹 + terabox 系分享),去重保序。
+
+    直挂 terabox 链接的形态(2026-10-24 任务 760 misskon 实录):
+
+        <a href="https://terabox.com/s/1Y96hEf0OjWQO_yOyS_6qTg"
+           …>Download link: Terabox</a>
+
+    以前只收 ouo 短链(SHORTLINK_RE)与 MediaFire 直链,这条 TeraBox
+    备份链连解析都没进过 —— MediaFire 那份一失效整个任务就死,明明有
+    备份躺在页面上。这里与 MF 直链同放 shortlinks:worker 按域分流,
+    MF 优先、TeraBox 只在 MF 全废时兜底,不会混下双倍流量。
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for link in _collect_mediafire_links(html) + _collect_terabox_links(html):
+        if link not in seen:
+            seen.add(link)
+            out.append(link)
+    return out
+
+
 def serial_from_url(url: str) -> int:
     """按站点分派的序号提取:buondua 尾段数字 / misskon slug 前缀或 postid /
     nicesss <id>.html / 4kup post id(slug 多无数字,回退页面 post-N)。"""
@@ -307,6 +329,8 @@ def _parse_buondua_detail_page(url: str, existing_html: str | None = None,      
     # 的备份链, 不是分卷)。锚文本标 MediaFire 的进 shortlinks 主用;标其他网盘
     # 的进 backup_shortlinks **只备用**(主源全废时才试,不白耗解析时间)。
     # 极少数 Terabox 链错标 MediaFire → resolve_ouo 落地后仍会兜底识别。
+    # 直挂(非 ouo)的 MF 文件页与 terabox 分享收进 shortlinks, 见
+    # _collect_direct_download_links。
     shortlinks = []
     backup_shortlinks: list[str] = []
     seen: set[str] = set()
@@ -320,7 +344,7 @@ def _parse_buondua_detail_page(url: str, existing_html: str | None = None,      
         if link not in seen:
             seen.add(link)
             shortlinks.append(link)
-    for link in _collect_mediafire_links(html):
+    for link in _collect_direct_download_links(html):
         if link not in seen:
             seen.add(link)
             shortlinks.append(link)
@@ -408,6 +432,12 @@ def parse_nicesss_detail_page(url: str, existing_html: str | None = None) -> Har
     shortlinks: list[str] = []
     seen: set[str] = set()
     for link in NICESSS_SHORTLINK_RE.findall(html):
+        if link not in seen:
+            seen.add(link)
+            shortlinks.append(link)
+    # 直挂的 terabox 分享(与 misskon/buondua 同形态, 本页实测暂无)一并收:
+    # 收了不会改变主源优先级(worker 侧 MF 优先), 漏收则备份永远用不上。
+    for link in _collect_terabox_links(html):
         if link not in seen:
             seen.add(link)
             shortlinks.append(link)
@@ -547,9 +577,9 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
     pm = MISSKON_PASSWORD_RE.search(html)
     password = (pm.group(1) or pm.group(2)).strip() if pm else ""
 
-    # ouo 短链 + 锚文本分层:与 buondua 同构(直挂的 terabox 链不是 ouo 域,
-    # SHORTLINK_RE 天然滤掉),去重保序。标其他网盘的进 backup_shortlinks 备用。
-    # 老帖直挂 MediaFire 链接(无 ouo 短链)也一并收。
+    # ouo 短链 + 锚文本分层:与 buondua 同构,去重保序。标其他网盘的进
+    # backup_shortlinks 备用。直挂链接(老帖的 MediaFire 文件页 + 760 那种
+    # 直挂 terabox 分享)一并收进 shortlinks。
     shortlinks: list[str] = []
     backup_shortlinks: list[str] = []
     seen_links: set[str] = set()
@@ -563,7 +593,7 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
         if link not in seen_links:
             seen_links.add(link)
             shortlinks.append(link)
-    for link in _collect_mediafire_links(html):
+    for link in _collect_direct_download_links(html):
         if link not in seen_links:
             seen_links.add(link)
             shortlinks.append(link)
@@ -1001,6 +1031,13 @@ def mediafire_folder_files(folder_url: str) -> list[dict]:
 def mediafire_info_from_url(page_url: str, *, keep_session: bool = False) -> dict:
     """文件页 URL → {quick_key, direct_url, size, sha256, filename}。
 
+    页面必须用 **API 给的 canonical 链接**取, 不用传进来的 URL:ouo 的
+    302 `Location` 会把目标地址截断到 255 字符(2026-10-24 任务 760:
+    落在 `…%E4%B8%83%E` 这个半个百分号转义上, MediaFire 回 HTTP 400,
+    文件其实完好 —— 同一文件用 canonical 链接 2s 拿到直链)。文件名段
+    只是装饰,key 才是本体,而 API `links.normal_download` 就是 MF 自己
+    的写法,连二次编码都不用我们操心。
+
     keep_session=True 时额外返回 `_session`/`_referer`:下载必须复用这个
     Session(dkey 绑客户端),调用方负责 close。
     """
@@ -1012,7 +1049,10 @@ def mediafire_info_from_url(page_url: str, *, keep_session: bool = False) -> dic
     api = _mf_api_get("https://www.mediafire.com/api/1.5/file/get_info.php",
                       params={"quick_key": key, "response_format": "json"})
     fi = api.json()["response"]["file_info"]
-    html, sess = mediafire_page_session(page_url)
+    # 传进来的 URL 只用来取 key;页面一律走 canonical(见 docstring)
+    page = ((fi.get("links") or {}).get("normal_download")
+            or f"https://www.mediafire.com/file/{key}/")
+    html, sess = mediafire_page_session(page)
     info = {
         "quick_key": key,
         "direct_url": _mf_direct_from_html(html),
@@ -1022,7 +1062,7 @@ def mediafire_info_from_url(page_url: str, *, keep_session: bool = False) -> dic
     }
     if keep_session:
         info["_session"] = sess
-        info["_referer"] = page_url
+        info["_referer"] = page
     else:
         try:
             sess.close()

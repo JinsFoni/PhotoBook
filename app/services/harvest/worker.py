@@ -233,6 +233,9 @@ def _resolve_infos(s, job: HarvestJob, target) -> list[dict] | None:
     分卷只拿到一部分视为失败:残包解不出东西,也不与备份混下。
     页面上标了其他网盘的短链(锚文本 TeraBox)在 `target.backup_shortlinks`,
     主链全废时才试 —— 707 的备份就藏在那边。
+    **直挂**的 TeraBox 链接(不经 ouo,`https://terabox.com/s/…`)由解析器
+    一并收进 `shortlinks`,这里按域分流进 `tb_links`(760:misskon 页就是
+    这种形态,以前整条备份链没人收)。
 
     返回 None 表示任务已在此落终态(失败)。
     """
@@ -267,7 +270,18 @@ def _resolve_infos(s, job: HarvestJob, target) -> list[dict] | None:
     tb_backup: list[str] = list(tb_links)  # 备用 TeraBox 分享(含 ouo 落地收集的)
 
     def _try_link(link: str):
-        """一条短链 → ("mf", [info…]) / ("tb", TeraBox 分享 URL) / ("fail", 说明)。"""
+        """一条短链 → ("mf", [info…]) / ("tb", TeraBox 分享 URL) / ("fail", 说明)。
+
+        单条解析失败只是「这条源不可用」:继续试下一条,最后再兜底备份 /
+        报错。MediaFire 页面/API 抽风(5xx、CF 盾打满 3 次、400 等)与
+        「文件已下架」同属此列 —— 760 实录:唯一的 MF 短链落地页面回
+        HTTP 400,RuntimeError 直接穿透到 _resolve_infos,同页的 TeraBox
+        备份链连兜底机会都没有,任务被判死(文件其实两个源都完好)。
+        """
+        if terabox.is_terabox_url(link):
+            # 详情页直挂的 TeraBox 备份分享(不过 ouo);这里就分流,别拿它
+            # 去当 MediaFire 页面解析
+            return "tb", link
         direct_page = link
         if "ouo.io/" in link or "ouo.press/" in link:
             try:
@@ -279,16 +293,25 @@ def _resolve_infos(s, job: HarvestJob, target) -> list[dict] | None:
                 if e.host == "TeraBox" and terabox.is_terabox_url(landing):
                     return "tb", landing
                 return "fail", str(e)
+            except Exception as e:           # 短链链路异常: 只算这条坏
+                log.warning("短链解析异常(%s): %s", link, e)
+                return "fail", f"短链解析异常: {e}"
             if not direct_page:
                 return "fail", f"短链解析失败: {link}"
-        if net.MF_FOLDER_RE.search(direct_page):
-            # 落地是 MediaFire 文件夹(分卷包发布方把所有卷放一夹): API 展开逐卷
-            folder_files = net.mediafire_folder_files(direct_page)
-            if not folder_files:
-                return "fail", f"文件夹为空: {direct_page}"
-            return "mf", folder_files
-        # keep_session: 直链 dkey 绑「取页面的客户端」,下载要复用同一个 Session
-        info = net.mediafire_info_from_url(direct_page, keep_session=True)
+        try:
+            if net.MF_FOLDER_RE.search(direct_page):
+                # 落地是 MediaFire 文件夹(分卷包发布方把所有卷放一夹): API 展开逐卷
+                folder_files = net.mediafire_folder_files(direct_page)
+                if not folder_files:
+                    return "fail", f"文件夹为空: {direct_page}"
+                return "mf", folder_files
+            # keep_session: 直链 dkey 绑「取页面的客户端」,下载要复用同一个 Session
+            info = net.mediafire_info_from_url(direct_page, keep_session=True)
+        except net.MediaFireDeadError as e:
+            return "fail", e.reason
+        except Exception as e:               # 页面/API 取不到: 只算这条坏
+            log.warning("MediaFire 解析失败(%s): %s", direct_page[:100], e)
+            return "fail", str(e) or type(e).__name__
         if not info["direct_url"]:
             return "fail", f"未获取到直链: {info['filename']}"
         return "mf", [info]
