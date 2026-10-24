@@ -1,0 +1,36 @@
+{% from '_ui.html' import icon %}
+{# 全站顶栏(含管理后台 / 404 页) — 服务端直出, 单一一处定义。
+   为什么不在 app.js 里建: 空壳 `<header>` 高度是 0, 浏览器会先按「顶栏 0 高」
+   把内容从页面顶端排下来, 脚本一到插入 68px → 整页下跳一格(刷新时最明显)。
+   用 {% include '_header.html' %} 引入; 上下文里没有 user 时回落到
+   request.state.user(管理后台路由不传 user)。 #}
+{% set p = request.url.path %}
+{% set nav_key = 'discovery' if p == '/' else
+   ('models' if p.startswith('/models') else
+   ('collections' if p.startswith('/collections') else
+   ('favorites' if p.startswith('/favorites') else
+   ('profile' if p.startswith('/profile') else '')))) %}
+{% set me = user if user is defined and user else request.state.user %}
+<header class="header header--immersive" data-header>
+  <div class="wrap header__inner">
+    <button class="icon-btn header__burger" type="button" data-drawer-open aria-label="{{ t('Open menu') }}">{{ icon('menu') }}</button>
+    <a class="wordmark" href="/">Photo&nbsp;Collection</a>
+    <nav class="nav" aria-label="{{ t('Primary') }}">
+      <a class="nav__link" href="/"{% if nav_key == 'discovery' %} aria-current="page"{% endif %}>{{ t('Discovery') }}</a>
+      <a class="nav__link" href="/models"{% if nav_key == 'models' %} aria-current="page"{% endif %}>{{ t('Models') }}</a>
+      <a class="nav__link" href="/collections"{% if nav_key == 'collections' %} aria-current="page"{% endif %}>{{ t('Collections') }}</a>
+    </nav>
+    <div class="header__end">
+      <button class="icon-btn" type="button" data-search-open aria-label="{{ t('Search the archive') }}">{{ icon('search') }}</button>
+      <a class="icon-btn" href="/favorites" aria-label="{{ t('Favourites') }}">{{ icon('heart') }}<span class="icon-btn__dot" data-fav-dot hidden></span></a>
+      <button class="icon-btn" type="button" data-theme-toggle aria-label="{{ t('Switch theme') }}"></button>
+      <a class="avatar-btn" href="/profile" aria-label="{{ t('Your profile') }}">
+        {%- if me -%}
+        <img src="{{ avatar(me.avatar_seed or me.username) }}" alt="" width="30" height="30">
+        {%- else -%}
+        <span class="avatar-btn__initial">?</span>
+        {%- endif -%}
+      </a>
+    </div>
+  </div>
+</header>

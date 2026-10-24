@@ -111,18 +111,25 @@
 xxx 位模特」计数(`.filters__count` + `[data-count]` + render() 里两行赋值),
 它会跟着筛选实时变, 跟页头的总量混淆, 且让排序栏挤成左右两头。
 
-**顶栏服务端直出**(`_shell.html`, 2026-10-24):顶栏原来是空壳
+**顶栏服务端直出**(`_header.html`, 2026-10-24):顶栏原来是空壳
 `<header data-header></header>`, 由 `app.js` 在 `DOMContentLoaded` 里 `innerHTML`
 塞进去。问题在首屏排版: 空壳高度是 0, 浏览器先按「顶栏 0 高」把内容从页面顶端
 排下来, 脚本一到顶栏变成 68px(移动端 56px), 整页往下**跳一格** —— 刷新时最明显
 (先用 CDP 量过: 250ms 延迟下 0→68px 的空窗约 350ms)。现在站名/导航/搜索/收藏/
-主题钮/头像全部由 Jinja 直出, 样式类 `header header--immersive` 也一起直出(原来
+主题钮/头像全部由 Jinja 直出(`_shell.html` 与后台模板都 include 同一个 partial), 样式类 `header header--immersive` 也一起直出(原来
 由 JS 加, 首帧会先白后黑), 导航高亮按 `request.url.path` 前缀在模板里算, 与
 `activeKey()` 同一把尺子(详情页归到所属列表项)。`app.js` 只剩
 `tabbar / drawer / search / footer` 这些**不参与首屏排版**的壳, 顶栏的按钮由
 `bindChrome()` 照常绑定; 主题按钮图标仍由 `applyTheme()` 填(主题存 localStorage,
 服务端不知道), 收藏小红点仍由 `syncAll()` 控制。
-注意顶栏标记只有模板一处(JS 那份已删), 别再往回加 —— 两处必然漂移。
+顶栏标记收在**一个** partial 里(`_header.html`), 用 `{% include '_header.html' %}`
+引入: `_shell.html`(前台 7 个页面) + `admin/*.html` 11 个页面 + `notfound.html`。
+后台模板走 `base.html` 自己手写 `.shell`/`<main>`, 原来各自带一份空壳
+`<header data-header></header>`, 靠同一段 JS 填 —— 所以「顶栏改直出」第一次只改了
+`_shell.html`, 后台 11 个页面的顶栏当场变空白(已修: 12 处空壳统一换成 include)。
+partial 里的用户从 `user` 变量取, 没有就回落 `request.state.user`(后台路由不传
+`user`); 导航高亮对后台路径不匹配任何一项, 与旧 JS 的 `activeKey()` 行为一致。
+`app.js` 那份建头部的代码已删, 别再往回加 —— 两处必然漂移。
 另外 `<main>` 里的照片墙仍是 JS 按窗口构建的(首屏 900px → 全量 47k px), 从页面
 顶部刷新时看不出位移, 但如果**滚到中间再刷新**, 浏览器恢复的滚动位置会随卡片
 补进而抖动; 那是瀑布流分页/定位的话题, 与顶栏无关。
