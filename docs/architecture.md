@@ -100,6 +100,17 @@
 首页轮播), 不进详情页。两端口径一致, 客户端同样无需改动。对应的虚化兜底
 (`/models/<slug>` 无头像分支)也跟着改发布日期序, 保证背景恒等于网格第一张。
 
+**列表页页头 = 统计信息**(`/collections` / `/models`, 2026-10-24):页头那行主题句
+(`.page-head__sub` + `data-sub`, 原来给虚化模式做淡出)换成两段数字 ——
+「`{n} 个写真集` / `{n} 位模特` + `{n} 张照片`」, 由 `web.collections_page` /
+`web.models_page` 传 `stats` 进模板, 复用页面本来就算好的 `_photo_counts` 一遍
+`GROUP BY`, 不额外查库。照片总数口径 = **各已发布写真集的照片数之和**(`photos` 表
+没有发布状态字段, 这就是全部照片), 因此两个页面算出的照片总数必然一致。
+样式 `.page-head__stats` 只加了 `display:flex; flex-wrap:wrap; gap:var(--s6)`;
+数字用 `.num`(tabular-nums), 窄屏自动换行。同时删掉排序栏右侧那个「xxx 个写真集 /
+xxx 位模特」计数(`.filters__count` + `[data-count]` + render() 里两行赋值),
+它会跟着筛选实时变, 跟页头的总量混淆, 且让排序栏挤成左右两头。
+
 ## 四、后端模块划分
 
 ```

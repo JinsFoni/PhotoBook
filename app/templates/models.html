@@ -4,7 +4,10 @@
 {% block main %}
 <div class="wrap">
   <div class="page-head" style="padding-top:var(--s6)">
-    <p class="page-head__sub" style="margin-top:0">{{ t('Profiles in the archive. Each one collects the sittings we have published with that model.') }}</p>
+    <p class="page-head__sub page-head__stats" style="margin-top:0">
+      <span class="num">{{ t('{n} models', n=stats.models) }}</span>
+      <span class="num">{{ t('{n} photos', n=stats.photos) }}</span>
+    </p>
   </div>
 
   <div class="filters">

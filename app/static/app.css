@@ -382,6 +382,13 @@ table { border-collapse: collapse; }
   font-size: var(--fs-small);
   color: var(--ink-3);
 }
+/* 页头统计(写真集数/模特数 + 照片总数): 两段数字并排, 中间留大间距 */
+.page-head__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s6);
+  max-width: none;
+}
 
 /* ---------- 5. Header --------------------------------------------------- */
 

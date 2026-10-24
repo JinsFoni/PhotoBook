@@ -269,6 +269,8 @@ async def collections_page(request: Request, s: Session = Depends(get_db),
     }
     return templates.TemplateResponse(request, "collections.html", {
         "user": user, "page": "collections",
+        # 顶部统计(页头文案): 收录写真集数 + 照片总数(已发布范围, 与网格同口径)
+        "stats": {"collections": len(cols), "photos": sum(counts.values())},
         "data_json": json.dumps(payload, ensure_ascii=False),
     })
 
@@ -325,6 +327,8 @@ async def models_page(request: Request, s: Session = Depends(get_db),
     }
     return templates.TemplateResponse(request, "models.html", {
         "user": user, "page": "models",
+        # 顶部统计(页头文案): 模特数 + 照片总数(只看已发布的写真集, 与 /collections 同口径)
+        "stats": {"models": len(models), "photos": sum(counts.values())},
         "data_json": json.dumps(payload, ensure_ascii=False),
     })
 

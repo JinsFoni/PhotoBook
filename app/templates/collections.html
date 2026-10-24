@@ -5,7 +5,10 @@
 {% block main %}
 <div class="wrap">
   <div class="page-head" style="padding-top:var(--s6)">
-    <p class="page-head__sub" style="margin-top:0" data-sub>{{ t('Every published sitting in the archive, newest first.') }}</p>
+    <p class="page-head__sub page-head__stats" style="margin-top:0">
+      <span class="num">{{ t('{n} collections', n=stats.collections) }}</span>
+      <span class="num">{{ t('{n} photos', n=stats.photos) }}</span>
+    </p>
   </div>
 
   <div class="filters">
