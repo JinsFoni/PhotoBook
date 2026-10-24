@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua/misskon/nicesss/4kup → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.8.1
+// @version      1.8.2
 // @description  在 buondua.com / misskon.com / nicesss.com / 4kup.net 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列(同一本写真跨站转载也判已入库)
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -256,6 +256,9 @@
 
   // 卡片标题文本(随状态查询上报服务端做跨站标题比对,判「已入库」)
   function cardTitle(card) {
+    // 调用方常写 cards.find(...) || {} —— 找不到卡片时别抛
+    // "card.querySelector is not a function", 那会打断整轮渲染
+    if (!card || !card.querySelector) return "";
     const sel = IS_NICESSS ? "h2.entry-title a"
       : IS_MISSKON ? "h2.post-box-title a" : IS_4KUP ? "h2.entry-title a" : ".page-header h2 a.item-link";
     const a = card.querySelector(sel);
@@ -439,13 +442,25 @@
     const known = urls.filter(u => resolvedSerial(u));
     const fresh = urls.filter(u => !resolvedSerial(u));
     if (!fresh.length) {
-      if (known.length) queryBySerial(known.map(u => ({
-        url: u, serial: resolvedSerial(u),
-        title: u === location.href ? detailTitle() : cardTitle(
-          cards.find(c => {
-            const a = c.querySelector("a[href*='://misskon.com/']");
-            return a && a.href === u;
-          }) || {})}), cards));
+      // 注意括号: 必须是 queryBySerial(map(...), cards)。
+      // 1.8.1 及以前这里写成 queryBySerial(known.map(u => ({...}), cards)),
+      // cards 被吞进 Array.map 的 thisArg 位置(箭头函数本就忽略 this),
+      // queryBySerial 拿到的 cards 是 undefined → applyUnknown 里
+      // cards.forEach 抛 TypeError → 一张徽标都画不出来。
+      // 触发条件正是「本页所有卡片本地都取不到序号(老帖 slug) + 序号已在
+      // GM 存储里」= 同一页面的第二次及以后访问(F5 刷新/再进);
+      // 首次访问走 fresh 分支(/status-by-url)所以正常 ——
+      // 2026-10-24 /tag/xiuren/page/320/ "首次有角标, 刷新后全没了"。
+      if (known.length) queryBySerial(
+        known.map(u => ({
+          url: u, serial: resolvedSerial(u),
+          title: u === location.href ? detailTitle() : cardTitle(
+            cards.find(c => {
+              const a = c.querySelector("a[href*='://misskon.com/']");
+              return a && a.href === u;
+            })),
+        })),
+        cards);
       return;
     }
     const titles = {};
@@ -487,6 +502,9 @@
   }
 
   function applyUnknown(byUrl, cards) {
+    // 兜底: 调用方漏传卡片列表时现场重取, 而不是在这里抛
+    // (1.8.1 的 queryBySerial 就漏传过, 徽标全没了)
+    if (!cards) cards = cardNodes();
     cards.forEach(c => {
       const a = c.querySelector("a[href*='://misskon.com/']");
       if (!a) return;

@@ -573,6 +573,40 @@ buondua / misskon / nicesss / 4kup 四个解析器把这类死链服务名记进
 文案)、`tests/test_net.py::test_dead_shortener_page_has_no_usable_links`
 等 3 条(死链不污染 shortlinks、与可用短链共存时照记、按服务去重)。
 
+### 老帖列表页「刷新后徽标全消失」(2026-10-24,misskon tag 第 320 页)
+
+用户报 `https://misskon.com/tag/xiuren/page/320/` 首次打开 20 张卡片都有「⬇ 下载」
+角标,**F5 一次就全没了**,再刷也不回来。是脚本自己的 bug,与服务端无关:
+
+1. 该页 20 张卡片全是老帖 slug(`/xiuren-no-1131-…/`,无 `<序号>-` 前缀),
+   脚本本地取不到序号 → 走「未知 URL」通道;
+2. 首次访问: 序号不在 GM 存储 → `fresh` 非空 → `POST /status-by-url` 让服务端
+   解析,拿到 `serial` 后写进 `GM_setValue("pb_serial:<url>")`,顺手把徽标画出来;
+3. 刷新后: 20 个 URL 全在 GM 存储里 → `fresh` 为空 → 改走
+   `queryBySerial()`,而调用处写成了
+
+   ```js
+   queryBySerial(known.map(u => ({…}), cards));
+   ```
+
+   `cards` 落进了 `Array.map` 的 thisArg 位置(箭头函数本就忽略 this),
+   `queryBySerial` 的第二参数是 `undefined` → `applyUnknown` 里
+   `cards.forEach` 抛 `TypeError: Cannot read properties of undefined
+   (reading 'forEach')` → 一张徽标都画不出来,**且异常在 GM 回调里被吞掉**,
+   页面看起来只是"没角标"。首次访问走的是 `fresh` 分支,所以正常。
+
+修法:调用处括号改对(`queryBySerial(known.map(…), cards)`),另外两处兜底
+(以后同类漏参不会再静默失败)`applyUnknown` 缺 `cards` 时现场 `cardNodes()`;
+`cardTitle()` 对 `cards.find(…) || {}` 的假卡片直接返回空串(否则抛
+`card.querySelector is not a function`)。脚本 1.8.1 → 1.8.2。
+
+顺带的好处: 刷新后走 `/status`(单次批量),不再每次轮询都让服务端回源 20 个
+详情页。
+
+验证方式(没有 JS 测试框架,用真浏览器跑):headless Chrome + CDP 打开该页,
+注入 GM 打桩版脚本,首屏 20 个徽标(`⬇ 下载|new|27505` …),`Page.reload`
+后仍 20 个、无 `cbError`;修复前同一流程刷新后是 0 个并抛上述 TypeError。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,
