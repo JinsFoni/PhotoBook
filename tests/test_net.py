@@ -620,3 +620,54 @@ def test_mf_api_get_retries_challenge(monkeypatch):
     r = net._mf_api_get("https://www.mediafire.com/api/1.5/file/get_info.php",
                         params={"quick_key": "abc"})
     assert r.status_code == 200 and calls["n"] == 2
+
+
+# ---- 已停用的第三方短链(老视频帖) -------------------------------------------
+
+# 2016-2017 的视频帖把下载按钮挂在 shink.me / adf.ly 上,这两个服务现在都废了
+# (2026-10-24 实查:shink.me 域名进 ParkLogic 停放页,adf.ly 全量 302 到
+# linkvertise)。页面形态照 misskon FEILIN Video No.031 抄。
+DEAD_LINK_HTML = """
+<html><head><title>FEILIN Video No.031: Model Mu Yu Qian (慕羽茜) – MissKon.com</title>
+<script type="application/ld+json">{"@type":"Article","datePublished":"2017-01-16T08:06:49+08:00"}</script></head>
+<body class="post-template-default single single-post postid-15464">
+  <h1 class="name post-title entry-title">FEILIN Video No.031: Model Mu Yu Qian (慕羽茜)</h1>
+  <div class="entry">
+    <div class="box info"><strong>File size:</strong> 557MB</div>
+    <p style="text-align: center;">Download video<br />
+      <a href="http://shink.me/wyxfh" target="_blank" class="shortc-button medium green "><i class="fa fa-download"></i>Download link: Google Drive</a></p>
+    <p><a href="http://adf.ly/1gPRzU" target="_blank">Download link: Google Drive (mirror)</a></p>
+  </div>
+  <p class="post-tag">Tags<a href="https://misskon.com/tag/feilin/" rel="tag">FEILIN</a></p>
+</body></html>
+"""
+
+
+def test_dead_shortener_page_has_no_usable_links():
+    """整页只有已停用的短链 → shortlinks 为空, 服务名进 dead_shortlinks。"""
+    t = net.parse_misskon_detail_page("https://misskon.com/15464-feilin-video-no-031/",
+                                      existing_html=DEAD_LINK_HTML)
+    assert t.title.startswith("FEILIN Video No.031")
+    assert t.shortlinks == []
+    assert t.dead_shortlinks == ["shink.me", "adf.ly"]
+
+
+def test_dead_shortener_recorded_alongside_working_link():
+    """有可用短链时也照记:报错文案不会用到,但别把页面信息丢了。"""
+    html = DEAD_LINK_HTML.replace(
+        '<p class="post-tag">',
+        '<p><a href="https://ouo.io/F3FYal">Download link: MediaFire</a></p>\n  <p class="post-tag">')
+    t = net.parse_misskon_detail_page("https://misskon.com/15464-feilin-video-no-031/",
+                                      existing_html=html)
+    assert t.shortlinks == ["https://ouo.io/F3FYal"]
+    assert t.dead_shortlinks == ["shink.me", "adf.ly"]
+
+
+def test_dead_shortener_dedupes_by_service():
+    """同一服务多条只报一次;linkvertise 新旧两个域名算同一服务。"""
+    html = ('<html><body class="postid-1">'
+            '<a href="http://shink.me/aaa">x</a><a href="https://shink.me/bbb">y</a>'
+            '<a href="https://linkvertise.com/253297/x">z</a>'
+            '<a href="https://linkvertise.net/abc">w</a></body></html>')
+    t = net.parse_misskon_detail_page("https://misskon.com/1-x/", existing_html=html)
+    assert t.dead_shortlinks == ["shink.me", "linkvertise"]

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua/misskon/nicesss/4kup → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.8.0
+// @version      1.8.1
 // @description  在 buondua.com / misskon.com / nicesss.com / 4kup.net 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列(同一本写真跨站转载也判已入库)
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -142,9 +142,11 @@
   style.textContent = CSS;
   document.head.appendChild(style);
 
+  // 服务端 push 拒绝(false)时回的是 state;LABEL 里没有的(如 rejected =
+  // URL 解析不出序号)以前会原样把英文状态画到徽标上(用户看到 "rejected")。
   const LABEL = {
     new: "⬇ 下载", queued: "⏳ 队列中", done: "✓ 已入库",
-    failed: "✕ 失败·重推", skipped: "⊘ 跳过·重推",
+    failed: "✕ 失败·重推", skipped: "⊘ 跳过·重推", rejected: "✕ 链接无效",
   };
   const CLS = { new: "", queued: "is-busy", done: "is-done", failed: "is-off", skipped: "is-skip" };
 
@@ -332,7 +334,7 @@
 
   function setBadge(host, serial, state, pending) {
     const st = pending || state;
-    const text = pending === "pending" ? "…" : (LABEL[st] || st);
+    const text = pending === "pending" ? "…" : (LABEL[st] || "✕ 推送失败");
     // 标签行内联布局(标记类含 tags / post-tag / entry-title), 非封面绝对定位
     const inline = /(^|\s)(tags|post-tag|entry-title)(\s|$)/.test(host.className);
     let el = host.querySelector(".pb-badge");
@@ -352,7 +354,7 @@
     el.dataset.serial = serial;
     el.className = "pb-badge " +
       (inline ? "pb-badge--inline " : "") +
-      (pending === "pending" ? "is-wait" : CLS[st] || "");
+      (pending === "pending" ? "is-wait" : (st in CLS ? CLS[st] : "is-off"));
     el.textContent = text;
     if (inline) el.style.marginLeft = "auto";
     // 已入库/队列中的按钮不响应点击
@@ -521,11 +523,15 @@
     const state = el.dataset.state;
     if (state === "done" || state === "queued" || el.dataset.busy) return;
     // 列表页卡片自带详情链接(a.item-link / misskon、4kup 的详情链接 /
-    // nicesss 的 a[href*='.html']); 详情页本身就是详情 URL, 直接用
+    // nicesss 的 a[href*='.html']); 详情页的徽标挂在本页自己身上, 直接推
+    // 当前 URL —— 不能再从宿主节点里找链接: misskon 详情页的徽标挂在
+    // p.post-tag(标签行)上, 行里全是 https://misskon.com/tag/... 归档链接,
+    // 抓到的是标签页, 服务端解析不出序号 → state=rejected(2026-10-24
+    // FEILIN Video No.031 就是这么"下载按钮点击后显示 rejected"的)。
     const linkSel = IS_NICESSS ? "a[href*='.html']"
       : IS_MISSKON ? "a[href*='://misskon.com/']"
       : IS_4KUP ? "a[href*='://4kup.net/']" : "a.item-link";
-    const link = host.querySelector(linkSel);
+    const link = isDetailPage() ? null : host.querySelector(linkSel);
     const realUrl = link ? link.href : location.href;
     el.dataset.busy = "1";
     setBadge(host, serial, state, "pending");

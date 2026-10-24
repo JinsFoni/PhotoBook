@@ -542,7 +542,15 @@ def _run_job(job_id: int) -> None:
         #    TeraBox 备份链,**优先 MediaFire**(稳定、无需 Cookie、带
         #    SHA256);只挂 terabox 的站(4kup)整包走 TeraBox。
         if not target.shortlinks:
-            _finish(s, job, "failed", "详情页未找到下载短链")
+            # 老视频帖(shink.me / adf.ly 时代)整页只有已停用的短链服务:
+            # 报错要说清是源站链接废了,不是解析器没认出来(2026-10-24
+            # misskon FEILIN Video No.031)。
+            dead = getattr(target, "dead_shortlinks", None) or []
+            if dead:
+                _finish(s, job, "failed",
+                        f"源站短链已停用({' / '.join(dead)}),没有可用的下载源")
+            else:
+                _finish(s, job, "failed", "详情页未找到下载短链")
             s.commit()
             return
         infos = _resolve_infos(s, job, target)

@@ -122,6 +122,9 @@ class HarvestTarget:
     backup_shortlinks: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)  # 详情页自己的 tag(显示名,保序)
     published: str = ""  # 源站发布日期(YYYY.MM.DD);空 = 页面未提供,导入时回退当天
+    # 页面上只挂了已停用的第三方短链(shink.me / adf.ly 之类)时记下服务名:
+    # worker 报错才能说清「源站链接废了」,而不是笼统的「未找到下载短链」。
+    dead_shortlinks: list[str] = field(default_factory=list)
 
 
 def fetch_html(url: str, *, timeout: float = 30.0) -> str:
@@ -267,6 +270,39 @@ def _collect_direct_download_links(html: str) -> list[str]:
     return out
 
 
+# 老帖(多数是 2016-2017 的视频帖)把文件挂在第三方广告短链上,这些服务如今
+# 全都没法自动解析 —— 2026-10-24 实查 misskon FEILIN Video No.031:
+#   shink.me  → 域名进了 ParkLogic 停放页("domain may be for sale"),站点
+#               自己的 router 也只剩停放广告,拿不到任何跳转目标(真 Chrome
+#               点过一次,落到停放页为止,目标地址无残留,不可恢复);
+#   adf.ly    → 关站,全量 302 到 linkvertise.com(要人工过广告/验证);
+#   linkvertise → 页面本身还能开,但直链要过验证,自动化拿不到。
+# 这类页面在我们这边表现为「一条可用短链都没有」,所以 parser 把它们单独记进
+# HarvestTarget.dead_shortlinks,由 worker 报「源站短链已停用」。
+DEAD_SHORTENER_HOSTS: dict[str, str] = {
+    "shink.me": "shink.me",
+    "adf.ly": "adf.ly",
+    "linkvertise.com": "linkvertise",
+    "linkvertise.net": "linkvertise",
+}
+DEAD_SHORTENER_RE = re.compile(
+    r'href="(https?://(?:[A-Za-z0-9-]+\.)*(?:'
+    + "|".join(re.escape(h) for h in DEAD_SHORTENER_HOSTS) + r')/[^"]*)"')
+
+
+def _collect_dead_shortener_links(html: str) -> list[str]:
+    """页面上挂的已停用短链服务名(去重保序),只用于报错文案,不参与下载。"""
+    out: list[str] = []
+    for url in DEAD_SHORTENER_RE.findall(html):
+        host = urlparse(url).netloc.lower().split(":")[0]
+        for domain, label in DEAD_SHORTENER_HOSTS.items():
+            if host == domain or host.endswith("." + domain):
+                if label not in out:
+                    out.append(label)
+                break
+    return out
+
+
 def serial_from_url(url: str) -> int:
     """按站点分派的序号提取:buondua 尾段数字 / misskon slug 前缀或 postid /
     nicesss <id>.html / 4kup post id(slug 多无数字,回退页面 post-N)。"""
@@ -354,7 +390,8 @@ def _parse_buondua_detail_page(url: str, existing_html: str | None = None,      
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
                          password=password, shortlinks=shortlinks,
                          backup_shortlinks=backup_shortlinks, tags=tags,
-                         published=published)
+                         published=published,
+                         dead_shortlinks=_collect_dead_shortener_links(html))
 
 
 def download_archive_urls(target: HarvestTarget) -> list[dict]:
@@ -449,7 +486,8 @@ def parse_nicesss_detail_page(url: str, existing_html: str | None = None) -> Har
         tags = [publisher, *tags]
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
                          password=password, shortlinks=shortlinks, tags=tags,
-                         published=_to_dotted(_date_published_iso(html)))
+                         published=_to_dotted(_date_published_iso(html)),
+                         dead_shortlinks=_collect_dead_shortener_links(html))
 
 
 # ---- misskon 列表页 ----------------------------------------------------------
@@ -531,7 +569,7 @@ def _misskon_serial_from_page(url: str) -> int:
     html = fetch_html(url)
     m = MISSKON_POSTID_RE.search(html)
     if not m:
-        raise ValueError(f"URL 无序号且页面无 postid: {url}")
+        raise ValueError(f"URL 里没有序号, 页面也取不到 postid(不是详情页?): {url}")
     serial = int(m.group(1))
     if len(_misskon_serial_cache) >= _misskon_serial_cache_max:
         _misskon_serial_cache.clear()
@@ -558,7 +596,7 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
     except ValueError:
         idm = MISSKON_POSTID_RE.search(html)
         if not idm:
-            raise ValueError(f"URL 无序号且页面无 postid: {url}")
+            raise ValueError(f"URL 里没有序号, 页面也取不到 postid(不是详情页?): {url}")
         serial = int(idm.group(1))
 
     title = _misskon_title(html)
@@ -578,8 +616,8 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
     password = (pm.group(1) or pm.group(2)).strip() if pm else ""
 
     # ouo 短链 + 锚文本分层:与 buondua 同构,去重保序。标其他网盘的进
-    # backup_shortlinks 备用。直挂链接(老帖的 MediaFire 文件页 + 760 那种
-    # 直挂 terabox 分享)一并收进 shortlinks。
+    # backup_shortlinks 备用。直挂链接(老帖的 MediaFire 文件页、760 那种
+    # 直挂 `terabox.com/s/…` 备份)一并收进 shortlinks。
     shortlinks: list[str] = []
     backup_shortlinks: list[str] = []
     seen_links: set[str] = set()
@@ -600,7 +638,8 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
                          password=password, shortlinks=shortlinks,
                          backup_shortlinks=backup_shortlinks, tags=tags,
-                         published=_to_dotted(_date_published_iso(html)))
+                         published=_to_dotted(_date_published_iso(html)),
+                         dead_shortlinks=_collect_dead_shortener_links(html))
 
 
 # ---- 4kup.net 详情页 ----------------------------------------------------------
@@ -749,7 +788,8 @@ def parse_4kup_detail_page(url: str, existing_html: str | None = None,
     shortlinks = _collect_terabox_links(html)
     return HarvestTarget(serial=serial, title=title, model_name=name,
                          password="4kup", shortlinks=shortlinks, tags=tags,
-                         published=_to_dotted(_date_published_iso(html)))
+                         published=_to_dotted(_date_published_iso(html)),
+                         dead_shortlinks=_collect_dead_shortener_links(html))
 
 
 # ---- ouo.io 跳转链(已验证;2026-09 起为两段式) -------------------------------

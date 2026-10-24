@@ -539,6 +539,40 @@ TeraBox 侧要注意的两个实测点(都已写在代码注释里):dlink 绑定
 `test_resolve_infos_direct_terabox_link_in_backup_list`、
 `test_resolve_infos_mf_page_error_reported_not_raised`。
 
+### 源站短链本身已停用(2026-10-24,misskon FEILIN Video No.031)
+
+用户报「详情页的下载按钮点了显示 rejected」。点了 `rejected` 的是**我们自己
+的油猴徽标**,不是源站,也不涉及下载:
+
+1. `buondua-bridge.user.js` 在 misskon 详情页把徽标挂在 `p.post-tag`(标签行)
+   上;点击时它从宿主节点里找 `a[href*='://misskon.com/']` 当详情 URL,而标签
+   行里全是 `https://misskon.com/tag/…` 归档链接 —— 推上去的是标签页;
+2. 服务端 `_serial_from_url` → `net.serial_from_url` 对标签页既无 slug 序号
+   也取不到 postid,抛 ValueError → `/api/ext/harvest` 回 `state: "rejected"`;
+3. 徽标文案是 `LABEL[st] || st`,没有 `rejected` 这一项 → 原样把英文状态画在
+   徽标上。
+
+修法:详情页直接用 `location.href`(只有列表页卡片才从卡片里找详情链接),
+`LABEL` 补 `rejected: "✕ 链接无效"` + 未知状态兜底「✕ 推送失败」,序号解析失败
+的文案也改成人话。脚本 `@version` 1.8.0 → 1.8.1。
+
+顺带查清该帖真实状态:它是 2017 年的**视频**帖,整页只有一条
+`http://shink.me/wyxfh`(锚文本写 Google Drive)。shink.me 已关站,域名进了
+ParkLogic 停放页(真 Chrome 从 misskon 点进去,落到 "This domain name may be
+for sale",router 也只回停放广告) —— 目标地址无残留,**不可恢复**;同类老帖
+(No.025/027)用的是 adf.ly,现在全量 302 到 linkvertise,同样过不去。所以这类
+帖子在源站就是死档,不是我们解析器的问题。
+
+为此加了 `net.DEAD_SHORTENER_HOSTS` + `_collect_dead_shortener_links()`:
+buondua / misskon / nicesss / 4kup 四个解析器把这类死链服务名记进
+`HarvestTarget.dead_shortlinks`;worker 在「没有可用短链」时据此报
+「源站短链已停用(shink.me),没有可用的下载源」,而不是笼统的「详情页未找到
+下载短链」—— 前者一眼看出是源站废了,后者容易被当成解析 bug。
+
+测试:`tests/test_dead_shortener.py`(死链页面 failed 文案 + 无链接页面维持原
+文案)、`tests/test_net.py::test_dead_shortener_page_has_no_usable_links`
+等 3 条(死链不污染 shortlinks、与可用短链共存时照记、按服务去重)。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,
