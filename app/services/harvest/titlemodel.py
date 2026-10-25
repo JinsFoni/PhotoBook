@@ -228,3 +228,55 @@ def model_name_from_title(title: str,
 
     return "", ""
 
+
+def _norm_name(s: str) -> str:
+    """比对用归一化:压掉大小写、空格、标点,只留字母/数字/CJK。"""
+    return re.sub(r"[^0-9a-z\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]+",
+                  "", (s or "").lower())
+
+
+def native_name_for_model(title: str, model_name: str) -> str:
+    """标题里与 model_name 同属一人的原生名(写 models.stage_name 用)。
+
+    buondua / misskon / nicesss 的模特名来自页面 tag,原生名只藏在标题里:
+      "[JP] Asano Kokoro (浅野こころ) - FRIDAYデジタル写真集 Sentimental"
+    两条路:① 标题规则抽出的 (拉丁名, 原生名) 与 model_name 是同一个人 → 直接用;
+    ② 名字后面紧跟括号(全角半角都认),括号内是 CJK 才算原生名 —— 标题里
+    别的括号是系列/张数(如 "(57 photos)"),靠 CJK 守卫排除。
+
+    抽不到、或原生名与模特名本身相同(模特名本来就是中文)→ 返回空串:
+    不写「又名 某某」这种同义重复。
+    """
+    if not title or not model_name:
+        return ""
+    target = _norm_name(model_name)
+    if not target:
+        return ""
+
+    latin, native = model_name_from_title(title)
+    if native and latin and _norm_name(latin) == target:
+        return "" if _norm_name(native) == target else native
+
+    m = re.search(re.escape(model_name.strip()) +
+                  r"\s*[（(]\s*([^()（）]{1,30}?)\s*[)）]", title, re.I)
+    if m:
+        cand = m.group(1).strip()
+        if _valid_native(cand) and _norm_name(cand) != target:
+            return cand
+    return ""
+
+
+def split_trailing_native(name: str) -> tuple[str, str]:
+    """把「Latin (原名)」整体从一个模特名里拆开 → (模特名, 原生名)。
+
+    nicesss 的标题正则会把括号一起抓进名字位(`Asano Kokoro (浅野こころ)`),
+    站点 tag 也偶尔带括号。不拆就会新建一个带括号的模特条目,前台还搜不到。
+    括号内不是 CJK(如 `(55 photos)` / `(Vol.2)`)→ 原样返回,不动名字。
+    """
+    s = (name or "").strip()
+    m = re.match(r"^(.*?)\s*[（(]\s*([^()（）]{1,30}?)\s*[)）]$", s)
+    if m:
+        head, tail = m.group(1).strip(), m.group(2).strip()
+        if head and _valid(head) and _valid_native(tail):
+            return head, tail
+    return s, ""

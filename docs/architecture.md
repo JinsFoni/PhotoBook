@@ -726,6 +726,44 @@ Mu Fei Fei (穆菲菲)`、`HuaYang 2017-09-25 Vol.007 Mu Fei Fei (穆菲菲)`),
 杂志卷号 / 中文角色名)。脚本是临时用的,没进仓库 —— 判据(能抽名 + 未分类)
 放在 `titlemodel` 里,以后新采的不会再落这条坑。
 
+### 取页抖动零重试 + 三站点原生名没带走(2026-10-25,任务 869)
+
+任务 869(`misskon.com/120229-…-sentimental-57-photos`)在 5 秒内 `failed`,
+`bytes_done=0`、`title`/`model_name` 都是 NULL,报错原文是裸的
+`Failed to perform, curl: (35) Recv failure: Connection reset by peer.`。
+
+**根因**:`net.fetch_html` 单次请求、零重试,被对端 reset 一次就是任务终态。
+报错里没有 `下载连接失败 …` 前缀正是判据 —— 那是 `download_stream` 的措辞,
+说明死在第一步取详情页,根本没进解析/下载。同一批的 870 号任务 1 秒后在
+同一个代理出口上正常下完 52MB,可见站点与出口当时都通,纯粹是单连接抖动。
+重排后同一个 URL 一次就过(详情页 1.4s / 83,768B),`ouo.io` → MediaFire
+`78,288,398` 字节 / sha256 也对得上,内容侧没有问题。
+
+**修法**:`fetch_html(url, *, timeout, retries=FETCH_RETRIES)` 对**连接层**异常
+(连接重置 / TLS / 超时 / 代理)按 `FETCH_RETRY_BACKOFF = (1s, 3s, 6s)` 退避重试;
+HTTP 非 200 **不重试**(404/403 是站点的确定答复),`InvalidURL` 这类参数级错误
+也不重试。用尽后报错保留原始 curl 文本并追加 `(已重试 N 次)`,日志能直接看出
+是 curl 35 还是 28。
+
+**顺带补的原生名**:上一节只让 4kup 传 `model_native`,而 buondua / misskon /
+nicesss 的模特名来自页面 tag,原名(日文/中文)只藏在标题里,于是这三家的模特
+`stage_name` 永远空着 —— 869 就是活例:`Asano Kokoro` 明明带 `(浅野こころ)`,
+模特 164 号却没有「又名」。现在三家解析器都调 `native_name_for_model(title, 模特名)`:
+① 标题规则的 `(拉丁名, 原生名)` 与模特名同一人 → 直接用;
+② 模特名后面紧跟括号、括号内是 CJK → 取它(标题里别的括号是张数/系列,
+靠 CJK 守卫排除);抽不到或原名与名字本身相同 → 空串,不写同义「又名」。
+
+还有一处会**建错模特**:nicesss 的标题正则把括号一起吃进名字位
+(`Asano Kokoro (浅野こころ)`),tag 偶尔也这么写。`split_trailing_native(名字)`
+把「Latin (原名)」拆成 (模特名, 原生名),三家解析器都先过一道 ——
+否则会长出一个带括号、前台搜不到的模特条目。
+
+测试:`tests/test_net.py` 新增 10 条(连接重置重试后成功 / 用尽保留 curl 原文 /
+HTTP 404 不重试 / 非法 URL 不重试 / `retries=1` 单次 / 三家站点各带出原生名 /
+名字位「Latin (原名)」拆开 / tag 带括号拆开),
+`tests/test_titlemodel_series.py` 新增 3 组(括号取原名 + 全角括号 /
+张数与同义重复不取 / 拉丁名对不上时不猜)。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,

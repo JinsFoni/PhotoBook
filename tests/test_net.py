@@ -671,3 +671,146 @@ def test_dead_shortener_dedupes_by_service():
             '<a href="https://linkvertise.net/abc">w</a></body></html>')
     t = net.parse_misskon_detail_page("https://misskon.com/1-x/", existing_html=html)
     assert t.dead_shortlinks == ["shink.me", "linkvertise"]
+
+
+# ---- fetch_html:连接层抖动重试(2026-10-25 任务 869) ----------------------
+
+class _FakeResp:
+    def __init__(self, status_code=200, text="<html>ok</html>"):
+        self.status_code = status_code
+        self.text = text
+
+
+def _conn_reset():
+    """真帖复现的异常:curl_cffi 的 ConnectionError,消息里带 curl(35)。"""
+    from curl_cffi.requests.exceptions import ConnectionError as CurlConnError
+    return CurlConnError(
+        "Failed to perform, curl: (35) Recv failure: Connection reset by peer.")
+
+
+def test_fetch_html_retries_connection_reset(monkeypatch):
+    """被对端 reset 一次不该判死整个采集任务(869 实录:零重试 → 5 秒 failed)。"""
+    calls = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        if len(calls) < 3:
+            raise _conn_reset()
+        return _FakeResp(text="<html>page</html>")
+
+    monkeypatch.setattr(net.cr, "get", fake_get)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    assert net.fetch_html("https://misskon.com/120229-x/") == "<html>page</html>"
+    assert len(calls) == 3
+
+
+def test_fetch_html_retry_exhausted_keeps_original_reason(monkeypatch):
+    """重试用尽:报错仍要能看出是 curl 35(而不是笼统的「取页失败」)。"""
+    calls = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        raise _conn_reset()
+
+    monkeypatch.setattr(net.cr, "get", fake_get)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    with pytest.raises(RuntimeError) as ei:
+        net.fetch_html("https://misskon.com/120229-x/")
+    msg = str(ei.value)
+    assert "curl: (35)" in msg and "已重试 3 次" in msg
+    assert len(calls) == net.FETCH_RETRIES
+
+
+def test_fetch_html_does_not_retry_http_error(monkeypatch):
+    """404/403 是站点的确定答复:一次就报,不浪费重试预算。"""
+    calls = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        return _FakeResp(status_code=404, text="nope")
+
+    monkeypatch.setattr(net.cr, "get", fake_get)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    with pytest.raises(RuntimeError) as ei:
+        net.fetch_html("https://misskon.com/gone/")
+    assert "HTTP 404" in str(ei.value)
+    assert len(calls) == 1
+
+
+def test_fetch_html_does_not_retry_bad_url(monkeypatch):
+    """参数级错误(URL 非法)重试无意义。"""
+    from curl_cffi.requests.exceptions import InvalidURL
+    calls = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        raise InvalidURL("no scheme")
+
+    monkeypatch.setattr(net.cr, "get", fake_get)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    with pytest.raises(RuntimeError):
+        net.fetch_html("misskon.com/no-scheme")
+    assert len(calls) == 1
+
+
+def test_fetch_html_retries_param(monkeypatch):
+    """retries=1 → 单次尝试(列表页这类可代价低的取页可显式关掉)。"""
+    calls = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        raise _conn_reset()
+
+    monkeypatch.setattr(net.cr, "get", fake_get)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    with pytest.raises(RuntimeError):
+        net.fetch_html("https://misskon.com/120229-x/", retries=1)
+    assert len(calls) == 1
+
+
+# ---- 模特原生名(model_native)—— 三家站点的模特名来自 tag,原名只在标题里 ----
+
+ASANO_BUONDUA_HTML = """
+<html><head><meta property="og:title" content="[JP] Asano Kokoro (浅野こころ) - FRIDAYデジタル写真集 Sentimental (57 photos)"></head>
+<body><div class="article-tags"><div class="tags">
+<a class="tag is-medium" href="/tag/asano-kokoro-1"><span class="">Asano Kokoro</span></a>
+</div></div></body></html>
+"""
+
+
+def test_buondua_detail_carries_model_native():
+    """模特名取 tag,原名取标题里的括号 —— 一并带出,导入时写 stage_name。"""
+    t = net.parse_detail_page(REAL_URL, existing_html=ASANO_BUONDUA_HTML)
+    assert t.model_name == "Asano Kokoro"
+    assert t.model_native == "浅野こころ"
+
+
+def test_misskon_detail_carries_model_native():
+    t = net.parse_detail_page(MISSKON_LEGACY_URL, existing_html=MISSKON_LEGACY_HTML)
+    assert t.model_name == "Xiao Reba"
+    assert t.model_native == "小热巴"
+
+
+def test_nicesss_model_native_empty_when_name_is_native():
+    """名字位本身就是中文名 → 不写同义「又名」。"""
+    t = net.parse_nicesss_detail_page(NICESSS_URL, existing_html=NICESSS_HTML)
+    assert t.model_name == "妲己_Toxic"
+    assert t.model_native == ""
+
+
+def test_nicesss_splits_latin_and_native_in_name_slot():
+    """名字位是「Latin (原名)」时拆开:不能建出带括号的模特条目。"""
+    html = NICESSS_HTML.replace(
+        'content="[Xiuren秀人网]2026.01.30 NO.11301 妲己_Toxic[70+1P／959MB] - 呦糖社"',
+        'content="[Xiuren秀人网]2026.01.30 NO.11301 Asano Kokoro (浅野こころ)[70+1P／959MB] - 呦糖社"')
+    t = net.parse_nicesss_detail_page(NICESSS_URL, existing_html=html)
+    assert t.model_name == "Asano Kokoro"
+    assert t.model_native == "浅野こころ"
+
+
+def test_tag_name_with_parenthesised_native_is_split():
+    """tag 本身写成「Latin (原名)」时同样拆开(不新建带括号的模特)。"""
+    html = _tags_html([("asano-kokoro", "Asano Kokoro (浅野こころ)")])
+    t = net.parse_detail_page(REAL_URL, existing_html=html)
+    assert t.model_name == "Asano Kokoro"
+    assert t.model_native == "浅野こころ"

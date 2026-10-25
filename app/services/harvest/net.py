@@ -18,6 +18,11 @@ from urllib.parse import unquote, urljoin, urlparse
 
 from curl_cffi import requests as cr
 
+# 标题 → 模特名/原生名的规则级联。titlemodel 只依赖标准库,不会有循环引用,
+# 放在模块级:四个站点解析器都要用(4kup 用全部规则,其余三家补原生名)。
+from .titlemodel import (model_name_from_title, native_name_for_model,
+                         split_trailing_native)
+
 log = logging.getLogger("harvest")
 
 UA_IMPERSONATE = "chrome"
@@ -116,8 +121,8 @@ class HarvestTarget:
     serial: int
     title: str = ""
     model_name: str = ""
-    # 标题里的原生名(4kup 的「Latin (中文)」形态)。拉丁名仍作模特主名,
-    # 原生名带给 import_album 写 models.stage_name(前台「又名 …」+ 搜索命中)
+    # 标题里的原生名(「Latin (中文/日文)」形态,四个源站通用)。拉丁名仍作
+    # 模特主名,原生名带给 import_album 写 models.stage_name(前台「又名 …」+ 搜索命中)
     model_native: str = ""
     password: str = ""
     shortlinks: list[str] = field(default_factory=list)   # 主用下载源(锚文本标 MediaFire)
@@ -132,12 +137,53 @@ class HarvestTarget:
     dead_shortlinks: list[str] = field(default_factory=list)
 
 
-def fetch_html(url: str, *, timeout: float = 30.0) -> str:
-    """GET 页面,返回 HTML 文本。失败抛 RuntimeError。"""
-    r = cr.get(url, impersonate=UA_IMPERSONATE, timeout=timeout, proxy=_proxy())
-    if r.status_code != 200:
-        raise RuntimeError(f"HTTP {r.status_code} for {url}")
-    return r.text
+# 取页失败的重试预算 —— **只对连接层**(TLS 握手、连接被重置、超时、代理)重试。
+# 2026-10-25 任务 869 实录:详情页那一次 GET 被对端 reset(curl 35),旧实现零重试,
+# 整个任务在 5 秒内判死、bytes 停留在 0;而 1 秒后同一代理上的同批任务正常下完。
+# 单站点 + 单代理出口,单连接被 reset 是常态抖动,不该算任务的终态。
+FETCH_RETRIES = 3
+FETCH_RETRY_BACKOFF = (1.0, 3.0, 6.0)
+
+
+def _is_conn_error(exc: BaseException) -> bool:
+    """该异常是连接层抖动(值得重试),还是站点/参数的语义回答(重试无意义)。"""
+    from curl_cffi.requests.exceptions import (ConnectionError as CurlConnError,
+                                               ProxyError as CurlProxyError,
+                                               SSLError as CurlSSLError,
+                                               Timeout as CurlTimeout)
+    return isinstance(exc, (CurlConnError, CurlTimeout,
+                            CurlProxyError, CurlSSLError))
+
+
+def fetch_html(url: str, *, timeout: float = 30.0,
+               retries: int = FETCH_RETRIES) -> str:
+    """GET 页面,返回 HTML 文本。失败抛 RuntimeError。
+
+    连接层异常按 FETCH_RETRY_BACKOFF 退避重试;HTTP 非 200 **不**重试 ——
+    404/403 是站点给出的确定答复,重试只会把一次失败拖成三次。
+    """
+    attempts = max(1, int(retries))
+    for attempt in range(1, attempts + 1):
+        try:
+            r = cr.get(url, impersonate=UA_IMPERSONATE, timeout=timeout,
+                       proxy=_proxy())
+        except Exception as exc:
+            if not _is_conn_error(exc):
+                raise RuntimeError(str(exc)) from exc
+            if attempt >= attempts:
+                # 保留原始异常文本(用户/日志要能直接看出是 curl 35 还是 28)
+                raise RuntimeError(
+                    f"{exc}(已重试 {attempt} 次)") from exc
+            delay = FETCH_RETRY_BACKOFF[min(attempt - 1,
+                                            len(FETCH_RETRY_BACKOFF) - 1)]
+            log.warning("取页第 %d/%d 次连接失败,%.1fs 后重试: %s — %s",
+                        attempt, attempts, delay, exc, url[:140])
+            time.sleep(delay)
+            continue
+        if r.status_code != 200:
+            raise RuntimeError(f"HTTP {r.status_code} for {url}")
+        return r.text
+    raise RuntimeError(f"取页失败: {url}")   # 循环必然 return/raise,兜底不可达
 
 
 # ---- buondua 列表页 ---------------------------------------------------------
@@ -359,6 +405,12 @@ def _parse_buondua_detail_page(url: str, existing_html: str | None = None,      
 
     tags = _article_tags(html)
     model_name = pick_model_name(tags, model_exclude)
+    # tag 里偶尔也带「Latin (原名)」,先拆开;原生名(日文/中文名)一般只在
+    # 标题里 —— 抽到就带上,由 import_album 写 models.stage_name
+    # (前台「又名 …」+ 搜索命中)
+    model_name, model_native = split_trailing_native(model_name)
+    if not model_native:
+        model_native = native_name_for_model(title, model_name)
 
     pm = PASSWORD_RE.search(html)
     password = pm.group(1).strip() if pm else ""
@@ -393,6 +445,7 @@ def _parse_buondua_detail_page(url: str, existing_html: str | None = None,      
     dm = re.search(r'<small>\s*(\d{2}:\d{2})\s+(\d{2})-(\d{2})-(\d{4})\s*</small>', html)
     published = (f"{dm.group(4)}.{dm.group(3)}.{dm.group(2)}" if dm else "")
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
+                         model_native=model_native,
                          password=password, shortlinks=shortlinks,
                          backup_shortlinks=backup_shortlinks, tags=tags,
                          published=published,
@@ -467,6 +520,10 @@ def parse_nicesss_detail_page(url: str, existing_html: str | None = None) -> Har
     tm = NICESSS_TITLE_RE.match(title)
     if tm:
         publisher, model_name = tm.group(1).strip(), tm.group(2).strip()
+    # 标题正则把「Latin (原名)」整体抓进名字位时拆开,否则会建出带括号的模特
+    model_name, model_native = split_trailing_native(model_name)
+    if not model_native:
+        model_native = native_name_for_model(title, model_name)
 
     pm = NICESSS_PASSWORD_RE.search(html) or NICESSS_PASSWORD_PLAIN_RE.search(html)
     password = pm.group(1).strip() if pm else ""
@@ -490,6 +547,7 @@ def parse_nicesss_detail_page(url: str, existing_html: str | None = None) -> Har
     if publisher:
         tags = [publisher, *tags]
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
+                         model_native=model_native,
                          password=password, shortlinks=shortlinks, tags=tags,
                          published=_to_dotted(_date_published_iso(html)),
                          dead_shortlinks=_collect_dead_shortener_links(html))
@@ -616,6 +674,10 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
                 seen.add(label.lower())
                 tags.append(label)
     model_name = pick_model_name(tags, model_exclude)
+    # 同上:tag 带的「Latin (原名)」先拆,原生名再从标题里挨着名字的括号取
+    model_name, model_native = split_trailing_native(model_name)
+    if not model_native:
+        model_native = native_name_for_model(title, model_name)
 
     pm = MISSKON_PASSWORD_RE.search(html)
     password = (pm.group(1) or pm.group(2)).strip() if pm else ""
@@ -641,6 +703,7 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
             seen_links.add(link)
             shortlinks.append(link)
     return HarvestTarget(serial=serial, title=title, model_name=model_name,
+                         model_native=model_native,
                          password=password, shortlinks=shortlinks,
                          backup_shortlinks=backup_shortlinks, tags=tags,
                          published=_to_dotted(_date_published_iso(html)),
@@ -888,8 +951,6 @@ def parse_4kup_detail_page(url: str, existing_html: str | None = None,
     标题抽取出的模特名(供黑白名单 tag 过滤与 import_album 关联),
     另加页面分类名。密码固定 4kup(站点公开约定)。
     """
-    from .titlemodel import model_name_from_title
-
     html = existing_html if existing_html is not None else fetch_html(url)
     import html as _html
     html = _html.unescape(html)   # og:title/正文带 &#8211; 等实体,先统一解码

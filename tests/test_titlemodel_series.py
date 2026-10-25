@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.harvest.titlemodel import model_name_from_title
+from app.services.harvest.titlemodel import (model_name_from_title,
+                                             native_name_for_model)
 
 # (标题, 期望拉丁名, 期望原生名) —— 原生名允许为空
 CASES = [
@@ -67,3 +68,37 @@ def test_series_banned_from_swallowing_street_shot_titles():
     for title in ("260921A70016-精选街拍作品 NO.5926 BYD展台车模[327P／216MB]",
                   "260915-7N0003-精选街拍作品 NO.5889 敏敏牛仔长腿[251P／494MB]"):
         assert model_name_from_title(title) == ("", ""), title
+
+
+# ---- 原生名补全(misskon/buondua/nicesss 的模特名来自 tag,原名只在标题里) ----
+
+def test_native_name_from_title_parenthesis():
+    """名字后面紧跟的括号里是日文/中文原名 → 取出来写「又名」。"""
+    assert native_name_for_model(
+        "[JP] Asano Kokoro (浅野こころ): FRIDAYデジタル写真集 Sentimental (57 photos)",
+        "Asano Kokoro") == "浅野こころ"
+    assert native_name_for_model(
+        "XIUREN No.962: Model Xiao Reba (小热巴) (44 photos)",
+        "Xiao Reba") == "小热巴"
+    # 全角括号同样认
+    assert native_name_for_model(
+        "[JP] Toyoda Runa（豊田ルナ） 週刊少年", "Toyoda Runa") == "豊田ルナ"
+
+
+def test_native_name_skips_non_name_parentheses():
+    """张数/系列括号不是原名;模特名本身就是中文名时不写同义重复。"""
+    assert native_name_for_model("Some Post (57 photos)", "Some Model") == ""
+    assert native_name_for_model("[Cosplay] 麻花麻花酱 (55 photos)",
+                                 "麻花麻花酱") == ""
+    # 标题里出现的是别人名字的括号 → 不认
+    assert native_name_for_model("Asano Kokoro & Someone Else (小热巴)",
+                                 "Asano Kokoro") == ""
+
+
+def test_native_name_requires_same_person():
+    """抽出的 (拉丁名, 原名) 必须是同一个人才算 —— 拉丁名对不上就退回括号法。"""
+    assert native_name_for_model(
+        "[JP] Ria Aise (藍瀬りあ) - 写真集 X (110 photos)", "Ria Aise") == "藍瀬りあ"
+    # 名字写法不同(顺序换了)→ 不猜,宁可不写
+    assert native_name_for_model(
+        "[JP] Asano Kokoro (浅野こころ) - X", "Kokoro Asano") == ""
