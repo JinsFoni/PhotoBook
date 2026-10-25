@@ -25,6 +25,13 @@ CASES = [
     ("BoLoli Bol.053 Jing Zi (靖子)", "Jing Zi", "靖子"),
     ("BoLoli Bol.051 Wang Yu Chun (王雨纯)", "Wang Yu Chun", "王雨纯"),
     ("BoLoli Bol.050 Xi Mu Zi (熙目子)", "Xi Mu Zi", "熙目子"),
+    # UGirls 的「U 编号」写法(2026-10-24:8 条老帖全落未分类的直接原因)
+    ("UGirls U098 Mu Yu Qian (慕羽茜)", "Mu Yu Qian", "慕羽茜"),
+    ("UGirls U258 Mu Fei Fei (穆菲菲)", "Mu Fei Fei", "穆菲菲"),
+    ("UGIRLS No.258 Mu Fei Fei (穆菲菲)", "Mu Fei Fei", "穆菲菲"),
+    # 系列名与编号之间夹日期(HuaYang 的写法)
+    ("HuaYang 2017-09-25 Vol.007 Mu Fei Fei (穆菲菲)", "Mu Fei Fei", "穆菲菲"),
+    ("HuaYang Vol.363 赵惟依coco", "赵惟依coco", ""),
 ]
 
 
@@ -51,3 +58,12 @@ def test_series_rule_does_not_shadow_existing_prefixes():
 def test_series_rule_wants_a_number_after_the_series():
     """没有编号就不是这套形态:宁可不抽,也不要把系列名当人。"""
     assert model_name_from_title("MFStar 慕羽茜 写真集") == ("", "")
+    # 编号后面没有名字位(纯番号)同样不抽
+    assert model_name_from_title("XIUREN No.313") == ("", "")
+
+
+def test_series_banned_from_swallowing_street_shot_titles():
+    """街拍批量标题(带 NO.xxxx + 货号)不能被当成模特名。"""
+    for title in ("260921A70016-精选街拍作品 NO.5926 BYD展台车模[327P／216MB]",
+                  "260915-7N0003-精选街拍作品 NO.5889 敏敏牛仔长腿[251P／494MB]"):
+        assert model_name_from_title(title) == ("", ""), title

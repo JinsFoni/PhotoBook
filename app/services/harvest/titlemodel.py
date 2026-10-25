@@ -188,8 +188,12 @@ def model_name_from_title(title: str,
     #      —— 4kup 老帖的主力形态(2021 及更早)。系列名本身不是人名,
     #      名字位固定在编号之后;以前 MFStar / BoLoli 不在上面那份白名单里,
     #      整批老帖落「未分类」(2026-10-24 任务 825 实录)。
+    #      也吃「系列 U258 …」(UGirls 的写法)与「系列 日期 Vol.007 …」
+    #      (HuaYang 的写法),日期只允许出现在系列名与编号之间。
     m = re.match(
-        r"^[A-Za-z][A-Za-z0-9]{2,14}\s+(?:Vol|No|Bol)\.?\s*\d{1,5}\s+(.+)$",
+        r"^[A-Za-z][A-Za-z0-9]{2,14}[\s._-]+"
+        r"(?:\d{4}[-._/]\d{1,2}[-._/]\d{1,2}[\s._-]+)?"
+        r"(?:Vol|No|Bol|U)\.?[\s._-]*\d{1,5}[\s._-]+(.+)$",
         t, re.I)
     if m:
         rest = m.group(1).strip()
@@ -223,3 +227,4 @@ def model_name_from_title(title: str,
         return m.group(1), ""
 
     return "", ""
+
