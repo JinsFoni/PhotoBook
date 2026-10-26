@@ -127,6 +127,33 @@ def _unique_slug(s: Session, model_cls, base: str, maxlen: int) -> str:
     return slug
 
 
+def _find_model(s: Session, name: str) -> Model | None:
+    """按名字找模特:先精确匹配,再按归一化键兜底。
+
+    站点对同一个人的写法会飘 —— tag 是 `U Hwa`、标题是 `U.Hwa`;老条目是
+    `Coco (瑚々)`(括号里是原生名)、新规则抽出来是 `Coco`。只比精确名字会
+    多建一条同人模特,而模特名一变,合集 slug / 媒体目录跟着变,采集侧那套
+    「这本是不是已经导过」的预检就认不出来了(2026-10-27 假模特 `le` 那批
+    重复下载 120 张就是这么来的)。
+    """
+    if not (name or "").strip():
+        return None
+    m = s.scalar(select(Model).where(Model.name == name))
+    if m:
+        return m
+    # 延迟导入:harvest 包一进来就会 import 本模块,模块级反向依赖会成环
+    from .harvest.titlemodel import model_key
+
+    key = model_key(name)
+    if not key:
+        return None
+    for cand in s.scalars(select(Model)):
+        if model_key(cand.name) == key:
+            log.info("model name matched by key: %s → %s", name, cand.name)
+            return cand
+    return None
+
+
 def _get_or_create_model(s: Session, name: str, native: str = "") -> Model | None:
     """按名字复用模特;没有则新建(published)。空名字 → None(未分类)。
 
@@ -137,7 +164,7 @@ def _get_or_create_model(s: Session, name: str, native: str = "") -> Model | Non
     """
     if not name:
         return None
-    m = s.scalar(select(Model).where(Model.name == name))
+    m = _find_model(s, name)
     if m:
         if native and not m.stage_name:
             m.stage_name = native[:120]
@@ -154,7 +181,7 @@ def _get_or_create_model(s: Session, name: str, native: str = "") -> Model | Non
 def _owner_slug(s: Session, model_name: str, unsorted_dir: str) -> str:
     """媒体目录名 / slug 前缀:有模特用其 slug,否则用未分类目录名。"""
     if model_name:
-        m = s.scalar(select(Model).where(Model.name == model_name))
+        m = _find_model(s, model_name)
         if m:
             return m.slug
         return slugify(model_name, maxlen=120)

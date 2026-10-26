@@ -264,6 +264,16 @@ def _norm_name(s: str) -> str:
 norm_name = _norm_name
 
 
+def model_key(name: str | None) -> str:
+    """模特名归一化键(查重用):拆掉尾随的「(原生名)」后只留字母数字/汉字。
+
+    `Coco (瑚々)` 与 `Coco` 同键,`U.Hwa` 与 `U Hwa` 同键 —— 站点对同一个人的
+    写法会飘,精确比名字会多建一条同人模特。
+    """
+    base, _ = split_trailing_native(name or "")
+    return _norm_name(base)
+
+
 def native_name_for_model(title: str, model_name: str) -> str:
     """标题里与 model_name 同属一人的原生名(写 models.stage_name 用)。
 

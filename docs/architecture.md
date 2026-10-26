@@ -824,13 +824,33 @@ tag 都是出品方」这条统计结论得靠标题交叉验证兜底,而不是
 `/t/s900/` 62,084B(302 回源与搬过来的缩略图缓存都通)。
 改前快照 `photobook.db.bak-lefix-20261027`。
 
-遗留(未动):库里还有 `Coco (瑚々)`、`Jdabyeol (정다별이)` 这类「名字里带
-原生名括号」的模特条目,新采到同一个人会按拆分后的名字再建一条 —— 要给
-`library_import` 的模特查重加归一化匹配才能治。
+**顺带治了同类隐患(同日晚)**:库里还有 7 个「名字里带原生名括号」的老条目
+(`Coco (瑚々)`、`Jdabyeol (정다별이)`、`Seo Yi (박서이)`、`Rlwndud (쥬입니댜)`、
+`Kasame 花雨(かさめ)`、`Unpai (うんぱい)`、`Marupi (まるぴ)`),而新规则抽出来的
+是拆开后的名字 —— 精确比名字会给同一个人再建一条,模特名一变,合集 slug /
+媒体目录跟着变,采集侧的「这本导过没有」预检就认不出来(重复下载的老路)。
 
-测试:`tests/test_model_resolve.py` 9 条(出品方 tag 让位给标题名 / tag 全排除
-时标题兜底 / 同一人保留 tag 名与原生名 / 不一致时保持 tag / GMS 是模特名 /
-账号尾冒号与出品方方括号清洗 / 两路都没名字仍归未分类)。
+- `library_import._find_model`:先精确匹配,再按 `titlemodel.model_key`(拆掉
+  「(原生名)」+ 忽略标点/大小写)兜底;`_get_or_create_model` 与 `_owner_slug`
+  都走它 —— 后者尤其关键,预检 slug 必须落在**既有**模特的 slug 前缀上。
+  比较键没有走模块级导入:harvest 包一进来就 import `library_import`,反向
+  模块级依赖会成环,所以在函数里延迟导入。
+- 7 个条目就地改名:`models.name/slug/stage_name`(括号里的原生名转进
+  stage_name)、合集 slug、`photos.filename` 前缀、本地媒体目录、各档缩略图
+  缓存目录、`harvest_jobs.collection_slug` 一起搬,`photo_uploads.remote_path`
+  不动。12 本合集 / 1,148 张;改前快照 `photobook.db.bak-paren`。
+  **踩坑记录**:`photos.filename` 重写用 `新slug||'/'||substr(filename, len(旧slug)+1)`
+  时 `substr` 起点正好是原来那个 `/`,会写成 `coco//[jp]-…`(1,148 行),
+  当场修掉并复查 —— 正确的起点是 `len(旧slug)+2`,或干脆 `||substr(...)` 里
+  不补 `/`。迁移后 `collection_exists` / `collection_slug` 对这 12 本全部
+  重算出原 slug(预检认得出),模型页 `/models/{coco,unpai,marupi,kasame-花雨,
+  seo-yi,jdabyeol,rlwndud}` 200、旧带括号 URL 404、原图与 s900/s2400 缩略图 200。
+
+测试:`tests/test_library_import.py` 新增 5 条(带括号的老条目按归一化键复用 /
+标点变体复用 / 不同的人不合并 / 预检 slug 用既有模特 slug / 端到端导入不新建);
+`tests/test_model_resolve.py` 新增 10 条(出品方 tag 让位给标题名 / tag 全排除
+时标题兜底 / 同一人保留 tag 名与原生名 / 写法不同取标题写法 / 不一致时保持 tag /
+GMS 是模特名 / 账号尾冒号与出品方方括号清洗 / 两路都没名字仍归未分类)。
 
 ### 测试
 

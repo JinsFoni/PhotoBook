@@ -291,3 +291,60 @@ def test_imported_album_visible_on_pages(tmp_path, admin_client):
     assert d["title"] == "Visible Album" and len(d["photos"]) == 2
     assert admin_client.get("/media/yeha/visible-album/001.jpg").status_code == 200
     assert admin_client.get("/t/400/yeha/visible-album/001.jpg").status_code == 200
+
+
+# ---- 模特名查重:写法漂移不该建第二条(2026-10-27) ---------------------------
+
+def _mk_model(s, slug: str, name: str) -> Model:
+    m = Model(slug=slug, name=name, status="published")
+    s.add(m)
+    s.flush()
+    return m
+
+
+def test_model_lookup_matches_name_with_native_parens(tmp_path):
+    """老条目名里带原生名括号(`Coco (瑚々)`),新规则抽出 `Coco` → 复用同一条。"""
+    with SessionLocal() as s:
+        old = _mk_model(s, "dedup-paren-probe-(瑚々)", "Dedup Paren Probe (瑚々)")
+        got = library_import._get_or_create_model(s, "Dedup Paren Probe", "瑚々")
+        assert got is not None and got.id == old.id
+        assert s.scalar(select(func.count()).select_from(Model)
+                        .where(Model.name.like("Dedup Paren Probe%"))) == 1
+
+
+def test_model_lookup_matches_punctuation_variant(tmp_path):
+    """`U Hwa` / `U.Hwa` 只是标点不同 → 同一条模特。"""
+    with SessionLocal() as s:
+        old = _mk_model(s, "dedup-dot-probe", "Dedup.Dot Probe")
+        got = library_import._get_or_create_model(s, "Dedup Dot Probe", "")
+        assert got is not None and got.id == old.id
+
+
+def test_model_lookup_keeps_distinct_people_apart():
+    with SessionLocal() as s:
+        a = library_import._get_or_create_model(s, "Dedup Distinct One", "")
+        b = library_import._get_or_create_model(s, "Dedup Distinct Two", "")
+        assert a.id != b.id
+
+
+def test_collection_slug_uses_existing_model_slug(tmp_path):
+    """预检 slug 必须落在既有模特的 slug 前缀上,否则会重复下载/重复入库。"""
+    with SessionLocal() as s:
+        _mk_model(s, "dedup-slug-probe-(瑚々)", "Dedup Slug Probe (瑚々)")
+        assert (library_import.collection_slug(s, "Dedup Slug Probe", "Album X")
+                == "dedup-slug-probe-(瑚々)-album-x")
+        assert not library_import.collection_exists(s, "Dedup Slug Probe", "Album X")
+
+
+def test_import_reuses_model_matched_by_key(tmp_path):
+    """端到端:库目录是 `Coco`,库里只有 `Coco (瑚々)` → 挂到那条,不新建。"""
+    lib, media = tmp_path / "library", tmp_path / "media"
+    album = _album(lib, "Dedup Import Probe", "Album Y", n=2)
+    with SessionLocal() as s:
+        old = _mk_model(s, "dedup-import-probe-(ぬ)", "Dedup Import Probe (ぬ)")
+        library_import.import_album(s, album, media, library_root=lib, thumbs=False)
+        c = _collection(s, "dedup-import-probe-(ぬ)-album-y")
+        assert c is not None and c.model_id == old.id
+        assert c.photos[0].filename.startswith("dedup-import-probe-(ぬ)/")
+        assert s.scalar(select(func.count()).select_from(Model)
+                        .where(Model.name.like("Dedup Import Probe%"))) == 1
