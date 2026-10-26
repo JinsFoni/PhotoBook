@@ -852,6 +852,42 @@ tag 都是出品方」这条统计结论得靠标题交叉验证兜底,而不是
 时标题兜底 / 同一人保留 tag 名与原生名 / 写法不同取标题写法 / 不一致时保持 tag /
 GMS 是模特名 / 账号尾冒号与出品方方括号清洗 / 两路都没名字仍归未分类)。
 
+### 「已入库」判定:跳过时没有登记本站序号(2026-10-27)
+
+用户报 buondua `/tag/le` 里 **888-891** 四本没显示「已入库」,可它们其实在库里。
+浏览器联动脚本判态只看 `ext_api.collection_exists(serial)` —— 即
+`collections.source_serial` 与 `source_serials`;**跟任务状态、`harvest_jobs` 行
+都没关系**。这四本是 buondua 链接,下完 235MB、解包后才在 `import_album` 的
+slug 幂等上命中 misskon 那批同内容(888≡396、889≡398、890≡402、891≡411),
+任务判 done,序号却没写进任何写真集 → 脚本永远显示「可下载」,点了白下一遍。
+
+三处跳过路径都补了 `_register_existing_serial`(序号进 `source_serials`,
+`harvest_jobs.collection_slug` 补上那条写真集):
+
+1. **预检 ②(slug 命中)** —— 顺手修了它为什么没拦住这四本:页面标题带源站
+   装饰 `[LE] GMS-006A: GMS (60 photos)`,而归档目录名是 `[LE] GMS-006A GMS`,
+   slug 差一个 `-(60-photos)` 尾缀 → 预检永远比不中,整包白下。现在算两个
+   候选:原样 + `titlematch.strip_counts()` 剥掉尾缀;剥尾缀那条**必须过
+   真实张数守卫**(`photo_count(标题) == 该写真集实际张数`),否则泛化系列
+   标题的不同批次(诛仙-陆雪琪 25/121/310 张)会互相误判 —— 与 44755 那条
+   误判实录同一类坑。
+2. **`import_album` 幂等跳过** —— 这条正是 888-891 走到的:跳过时要回传
+   既有写真集的 slug(`stats["slug"]`),采集侧才拿得到那条记录去登记。
+3. **`FileExistsError` 兜底** —— 按目标标题算 slug 再登记;算不出就放弃
+   (不比以前差)。③ 标题等价预检本来就会登记,不动。
+
+**存量回填**(同日一次性):按「剥尾缀 slug + 张数守卫」和「token 序列全等 +
+张数相等」两条判据,把历史上 `collection_slug is null` 且 `已导入过` 的任务
+补登记 —— 命中 12 条(含 888-891 与两条跨站改写过的 445/449),另 2 条
+(217 `Nitori Hina …[Graphis] Limited Edition`、314 `精选街拍 NO.5734`)
+库里确实没有对应写真集,不动。快照 `photobook.db.bak-skipserials`。
+复查:`select` 全表「挂了合集但序号没登记」的任务 = **0**;
+`/api/ext/status?serials=57073,56653,56612,56353` 全部 `done`;
+拿这 4 条线上 URL 真解析跑一遍预检,4/4 在下载前就命中(候选=剥尾缀)。
+
+测试:`tests/test_harvest_serial_link.py` 5 条(跳过登记后脚本判得出 / 幂等 /
+FileExistsError 兜底 / 幂等跳过回传既有 slug / 剥尾缀必须过张数守卫)。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,

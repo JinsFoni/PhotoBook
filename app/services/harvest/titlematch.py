@@ -68,6 +68,20 @@ def title_tokens(title: str | None) -> list[str]:
     return tokens
 
 
+def strip_counts(title: str | None) -> str:
+    """剥掉源站的张数/体积尾缀(`(60 photos)` / `[101P／307MB]` / `- 呦糖社`)。
+
+    归档目录名里没有这些尾缀(它们是站点装饰),页面标题有 —— 采集侧
+    「这本导过没有」的 slug 预检要拿剥掉尾缀的形态去比,否则永远差一截
+    (2026-10-27 那 4 本白白下了一遍)。剥完可能就和别的批次同名了,
+    所以调用方必须配 `photo_count()` 张数守卫再用。
+    """
+    s = _PHOTOS_TAIL_RE.sub("", title or "")
+    s = _COUNT_SIZE_RE.sub("", s)
+    s = _SITE_SUFFIX_RE.sub("", s)
+    return s.strip(" -–—")
+
+
 def photo_count(title: str | None) -> int | None:
     """标题里的照片张数;解析不出返回 None。
 

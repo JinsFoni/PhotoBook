@@ -22,7 +22,8 @@ from ...database import SessionLocal
 from ...i18n import t
 from . import net, pipeline, terabox
 from .filters import check_title
-from .titlematch import photo_count, title_matches_collection, titles_match
+from .titlematch import (photo_count, strip_counts, title_matches_collection,
+                         titles_match)
 
 log = logging.getLogger("harvest")
 
@@ -453,6 +454,46 @@ def _download_terabox_volume(job_id: int, info: dict, archive_file,
                           on_progress=on_progress, stream_key=job_id)
 
 
+def _register_existing_serial(s, job, col) -> None:
+    """「同内容已在库」时,把本站序号登记到那条写真集上。
+
+    浏览器联动脚本判定「已入库」只看 `collections.source_serial` /
+    `source_serials`(`ext_api.collection_exists`),与任务状态无关。跳过的
+    任务不登记,同一本写真在另一站的链接就永远显示「可下载」——
+    2026-10-27 用户报的 buondua `/tag/le` 那 4 本就是这么来的:
+    888-891 是 buondua 的链接,下完解包后才发现 misskon 那批已入库,
+    序号没落到任何写真集上。
+    """
+    import json as _json
+
+    known = {col.source_serial}
+    try:
+        known |= set(_json.loads(col.source_serials or "[]"))
+    except (ValueError, TypeError):
+        pass
+    known.discard(None)
+    if job.serial not in known:
+        known.add(job.serial)
+        col.source_serials = _json.dumps(sorted(known))
+        log.info("duplicate skip: serial %s registered on %s", job.serial, col.slug)
+    job.collection_slug = col.slug
+
+
+def _register_existing_serial_for_target(s, job, target, conf) -> None:
+    """FileExistsError 兜底:按目标标题算出既有写真集,再登记本站序号。"""
+    if target is None or conf is None:
+        return
+    from .. import library_import
+    from .filters import sanitize_path_part
+
+    title_part = sanitize_path_part(target.title or f"serial-{job.serial}")
+    slug = library_import.collection_slug(s, target.model_name, title_part,
+                                          str(conf["harvest.unsorted_dir"]))
+    col = s.scalar(select(Collection).where(Collection.slug == slug))
+    if col is not None:
+        _register_existing_serial(s, job, col)
+
+
 def _run_job(job_id: int) -> None:
     """执行单个任务(独立 session,串行调用)。
 
@@ -467,6 +508,8 @@ def _run_job(job_id: int) -> None:
     library_root = None
     archive_tmp = None
     serial: int | None = None
+    target = None                      # 解析成功后才赋值(FileExistsError 兜底要用)
+    conf = None                        # 配置读出来后才赋值(同上)
     archive_files: list[Path] = []     # 压缩包落点(下载开始前赋值, 分卷多个)
     archive_done = False               # 只有下载完整结束才允许删包
     try:
@@ -512,8 +555,32 @@ def _run_job(job_id: int) -> None:
             s.commit()
             return
         from .. import library_import
-        if library_import.collection_exists(s, target.model_name, title_part,
-                                            str(conf["harvest.unsorted_dir"])):
+        # 候选标题: ① 原样 ② 剥掉源站尾缀(「(60 photos)」不在归档目录名里,
+        # 不剥就永远比不中 —— buondua 的 [LE] 那几本因此白下了一遍)。
+        # 剥尾缀会与「同名不同批次」撞车(泛化标题的 25/121/310 张各一期),
+        # 所以②必须过张数守卫: 上报张数 == 那条写真集的真实张数。
+        reported = photo_count(target.title)
+        cand_titles = [title_part]
+        stripped = sanitize_path_part(strip_counts(target.title))
+        if reported is not None and stripped and stripped != title_part:
+            cand_titles.append(stripped)
+        existing = None
+        for cand in cand_titles:
+            hit_slug = library_import.collection_slug(
+                s, target.model_name, cand, str(conf["harvest.unsorted_dir"]))
+            hit = s.scalar(select(Collection).where(Collection.slug == hit_slug))
+            if hit is None:
+                continue
+            if cand != title_part:
+                n = s.scalar(select(func.count(Photo.id)).where(
+                    Photo.collection_id == hit.id)) or 0
+                if n != reported:
+                    continue
+            existing = hit
+            break
+        if existing is not None:
+            # 序号必须落到那条写真集上, 否则浏览器脚本判不出「已入库」
+            _register_existing_serial(s, job, existing)
             _finish(s, job, "exists", t("→ 已导入过,跳过"))
             s.commit()
             return
@@ -666,6 +733,11 @@ def _run_job(job_id: int) -> None:
                 today=target.published or None)
             if r["skipped"]:
                 job.error = "→ 已导入过,跳过"
+                # 归档目录里的那本是跨站同内容 → 序号同样要登记到既有写真集
+                if r["slug"]:
+                    col = s.scalar(select(Collection).where(Collection.slug == r["slug"]))
+                    if col is not None:
+                        _register_existing_serial(s, job, col)
             else:
                 extra = f",跳过 {r['videos']} 个视频" if r["videos"] else ""
                 job.collection_slug = r["slug"]
@@ -693,6 +765,7 @@ def _run_job(job_id: int) -> None:
         if _run_tokens.get(job_id) == token:  # 僵尸线程不得写终态
             job = s.get(HarvestJob, job_id)
             if job:
+                _register_existing_serial_for_target(s, job, target, conf)
                 _finish(s, job, "exists", t("→ 已导入过,跳过"))
                 s.commit()
     except Exception as e:

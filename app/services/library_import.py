@@ -259,6 +259,7 @@ def import_album(s: Session, album_dir: Path, media_root: Path,
                                 unsorted_dir=unsorted_dir, today=today,
                                 tags=tags, thumbs=thumbs)
         stats["skipped"] = True
+        stats["slug"] = existing.slug if existing is not None else ""
         log.info("skip (already imported): %s / %s", model_name or unsorted_dir, title)
         return stats
 
