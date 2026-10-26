@@ -137,7 +137,9 @@ def test_4kup_parse_title_model_and_links():
     assert target.published == "2026.10.17"
 
 
-def test_4kup_parse_no_model_name_series():
+def test_4kup_parse_publisher_code_title():
+    # [LE] GMS-006A GMS:GMS 曾被当「系列名」判无人名,2026-10-27 用户确认
+    # 它是模特名(假模特 le 那批就是这么来的),现在按名字位抽出。
     html = FOURKUP_HTML.replace("[JP] Toyoda Runa (豊田ルナ) 週刊少年マガジン",
                                 "[LE] GMS-006A GMS")
     html = html.replace(
@@ -145,7 +147,7 @@ def test_4kup_parse_no_model_name_series():
         "[LE] GMS-006A GMS")
     target = net.parse_4kup_detail_page("https://4kup.net/post-53150",
                                         existing_html=html)
-    assert target.model_name == ""  # 系列名,主动判无人名
+    assert target.model_name == "GMS"
 
 
 def test_4kup_serial_fallback_via_page():
@@ -294,7 +296,6 @@ def test_titlemodel_pairs_and_coser():
 
 def test_titlemodel_rejects_series_names():
     f = __import__("app.services.harvest.titlemodel", fromlist=["model_name_from_title"])
-    assert f.model_name_from_title("[LE] GMS-006A GMS") == ("", "")
     assert f.model_name_from_title("[JP] BLT MONSTER Round 8") == ("", "")
     assert f.model_name_from_title("[JP] 別冊SPA! 旬撮GIRL Vol.25") == ("", "")
 

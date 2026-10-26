@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass
 
 from ...config import settings as _settings
+from .titlemodel import (model_name_from_title, native_name_for_model,
+                         norm_name, split_trailing_native)
 
 # 模特名排除词默认值 —— 2026-09 对 buondua 全站采样(1020 个专辑 / 601 个 tag)
 # 统计得出:凡是「总是排在 tag 列表首位」(从不处于模特位)且出现 ≥3 次的 tag,
@@ -82,6 +84,70 @@ def pick_model_name(tags: list[str] | None, exclude: str | None = None) -> str:
         if not matches_any(label, raw):
             return label
     return ""
+
+
+# ---- 模特名判定:标题规则 × tag 交叉验证 ---------------------------------------
+#
+# 标题规则优先、tag 兜底,但两路都算出来再交叉验证 —— 只走任何一路都有
+# 实测过的坑:
+#   只信 tag:出品方 tag 总排在 tag 列表前面(misskon 的 `[LE] GMS-006A: GMS`
+#     模特名被抽成 `LE`,还建出一个假模特 le,14 本写真集挂错),每冒出一个
+#     新出品方就得手工往排除词里补一条;
+#   只信标题:`Coser@水淼Aqua: …` 这类账号写法、`[MAXIM] Green` 这类带出品方
+#     前缀的标题会抽歪,标题里真没人名的帖子还只能落「未分类」。
+
+_BRACKET_RE = re.compile(r"^\[([^\[\]]{1,20})\]\s*")
+
+
+def _bracket_tokens(title: str) -> list[str]:
+    """标题开头连续的方括号块(`[LE] [AI Enhanced] …`)里的内容 —— 出品方/分类标记位。"""
+    out: list[str] = []
+    rest = (title or "").lstrip()
+    while True:
+        m = _BRACKET_RE.match(rest)
+        if not m:
+            return out
+        out.append(m.group(1))
+        rest = rest[m.end():]
+
+
+def _is_title_marker(title: str, name: str) -> bool:
+    """name 是不是只是标题里的出品方/分类标记(而不是人名)。"""
+    key = norm_name(name)
+    return bool(key) and any(norm_name(tok) == key for tok in _bracket_tokens(title))
+
+
+def resolve_model(title: str, tags: list[str] | None,
+                  exclude: str | None = None) -> tuple[str, str]:
+    """模特名判定 → (模特名, 原生名)。
+
+    1) tag 全被排除 → 用标题规则抽到的名字(以前一律落「未分类」);
+    2) 两路指向同一个人 → 同一写法用 tag 名,写法不同(tag `U Hwa` /
+       标题 `U.Hwa`)取标题写法,与库里既有模特和媒体目录 slug 对齐;
+    3) tag 命中的正是标题里的出品方方括号(如 `[LE] …`) → 用标题里的名字;
+    4) 其余不一致 → 保持 tag 名,不拿标题规则去覆盖可靠的 tag。
+    """
+    tag_name = pick_model_name(tags, exclude)
+    tag_native = ""
+    if tag_name:
+        tag_name, tag_native = split_trailing_native(tag_name)
+        if not tag_native:
+            tag_native = native_name_for_model(title, tag_name)
+
+    title_name, title_native = model_name_from_title(title or "")
+    if not title_name:
+        return tag_name, tag_native
+    if not tag_name:
+        return title_name, title_native
+    if norm_name(tag_name) == norm_name(title_name):
+        # 只差大小写 → 保留 tag 写法(库里既有模特常是全大写/小写,别造第二条);
+        # 差在标点/空格(tag `U Hwa` / 标题 `U.Hwa`)→ 取标题写法
+        same_case = tag_name.lower() == title_name.lower()
+        return ((tag_name if same_case else title_name),
+                tag_native or title_native)
+    if _is_title_marker(title, tag_name):
+        return title_name, title_native
+    return tag_name, tag_native
 
 
 # ---- 黑/白名单(标题 + 标签) -------------------------------------------------

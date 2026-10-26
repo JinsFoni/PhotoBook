@@ -15,8 +15,9 @@ import re
 from collections import Counter
 
 # 不是人名的「名字位」占位符 / 系列名
+# (曾有 "gms" —— 当时按「系列名」判;2026-10-27 用户确认 GMS 是模特名,已移出)
 _STOP = {
-    "gms", "model collection", "model", "collection", "unknown",
+    "model collection", "model", "collection", "unknown",
     "ai enhanced", "ai", "photoset", "photobook", "gravure",
 }
 
@@ -31,6 +32,9 @@ _CODE_RE = re.compile(r"^[A-Z]{2,6}[._-]?\d{2,4}[A-Z]?$")
 
 
 def _clean(s: str) -> str:
+    # 名字位前残留的方括号块是出品方/分类标记([MAXIM] Green → Green),
+    # 名字位后的尾冒号是账号写法(Coser@水淼Aqua: … → 水淼Aqua)
+    s = re.sub(r"^(?:\s*\[[^\[\]]{1,20}\])+", "", s)
     s = s.strip(" -–—|:：")
     s = re.sub(r"\s+", " ", s)
     s = re.sub(r"^(?:DJAWA\s+Photo|Photo)\s+", "", s, flags=re.I)
@@ -71,8 +75,16 @@ def model_name_from_title(title: str,
     """标题 → (模特名, 原生名)。无人名/低置信返回 ("", "")。
 
     规则按信号强度级联(强规则先跑),顺序敏感 —— 与原型实测 95%+
-    命中的级联一致。
+    命中的级联一致。各条规则只管「切哪一段」,收尾统一过 `_clean`
+    (尾冒号 / 名字位前的出品方方括号 / 多余空白)。
     """
+    name, native = _model_name_from_title(title, coser_bigrams)
+    name = _clean(name)
+    return (_clean(name), native)
+
+
+def _model_name_from_title(title: str,
+                           coser_bigrams: Counter | None = None) -> tuple[str, str]:
     t = re.sub(r"\s+", " ", title or "").strip()
     if not t:
         return "", ""
@@ -88,6 +100,7 @@ def model_name_from_title(title: str,
                     and re.fullmatch(r"[A-Z][A-Za-z.'\-]*", toks[1])
                     and coser_bigrams[f"{toks[0]} {toks[1]}"] >= 2):
                 cand = f"{toks[0]} {toks[1]}"
+            cand = _clean(cand)   # 账号写法尾巴带冒号:Coser@水淼Aqua: …
             if _valid(cand):
                 return cand, ""
 
@@ -149,10 +162,22 @@ def model_name_from_title(title: str,
         if p:
             return p
 
-    # 8) [LE] CODE 名字(名字位紧随番号后)
-    m = re.match(r"^\[LE\]\s*[A-Z]{2,6}[._-]?\d{2,4}[A-Z]?\s+([^\s(]+)", t)
-    if m and _valid(m.group(1)):
-        return m.group(1), ""
+    # 8) [出品方] 番号[: / -] 名字(名字位紧随番号后)
+    #    站点标题的番号与名字之间常有冒号或破折号:`[LE] LEHF-209B: Xiu`、
+    #    `[LE] LEDG-237 - Ming`;方括号里是出品方(LE / MAXIM / XE-NO …),
+    #    所以这条不写死 LE —— 新出品方不用再改代码。
+    m = re.match(
+        r"^\[[^\[\]]{1,20}\]\s*[A-Z]{2,6}[._-]?\d{2,4}[A-Z]?[\s:：\-–—]+(.+)$", t)
+    if m:
+        rest = m.group(1).strip()
+        p = _pair(rest)          # 「拉丁名 (原生名)」两段式,原生名一并带走
+        if p:
+            return p
+        cand = rest.split()[0] if rest.split() else ""
+        cand = _clean(cand)
+        if _valid(cand):
+            return cand, ""
+        return "", ""
 
     # 9) [BLUECAKE] 名字 ...
     m = re.match(r"^\[BLUECAKE\]\s+(.+)$", t, re.I)
@@ -233,6 +258,10 @@ def _norm_name(s: str) -> str:
     """比对用归一化:压掉大小写、空格、标点,只留字母/数字/CJK。"""
     return re.sub(r"[^0-9a-z\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]+",
                   "", (s or "").lower())
+
+
+# 同一个人的两次抽法比对用(filters.resolve_model 交叉验证模特名)
+norm_name = _norm_name
 
 
 def native_name_for_model(title: str, model_name: str) -> str:

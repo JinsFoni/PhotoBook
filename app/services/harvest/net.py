@@ -19,7 +19,8 @@ from urllib.parse import unquote, urljoin, urlparse
 from curl_cffi import requests as cr
 
 # 标题 → 模特名/原生名的规则级联。titlemodel 只依赖标准库,不会有循环引用,
-# 放在模块级:四个站点解析器都要用(4kup 用全部规则,其余三家补原生名)。
+# 放在模块级:4kup 解析器全靠它抽名;nicesss 从标题正则拿到名字位后用它
+# 拆「Latin (原名)」并补原生名。(buondua / misskon 走 filters.resolve_model。)
 from .titlemodel import (model_name_from_title, native_name_for_model,
                          split_trailing_native)
 
@@ -390,10 +391,12 @@ def parse_detail_page(url: str, existing_html: str | None = None,
 def _parse_buondua_detail_page(url: str, existing_html: str | None = None,                               model_exclude: str | None = None) -> HarvestTarget:
     """解析详情页:标题/标签/模特名/密码/短链。
 
-    模特名 = article-tags 里第一个未被 model_exclude(模特名排除词)命中的 tag,
-    因为出品方/分类 tag 总排在前面(如 [Cosplay, 麻花麻花酱] → 麻花麻花酱)。
+    模特名由 filters.resolve_model 判定:tag 打底(第一个未被 model_exclude
+    命中的 tag,出品方/分类 tag 总排在前面),标题规则优先/交叉验证。
+    原生名(日文/中文名)一般只在标题里,抽到就带上,由 import_album 写
+    models.stage_name(前台「又名 …」+ 搜索命中)。
     """
-    from .filters import pick_model_name
+    from .filters import resolve_model
 
     html = existing_html if existing_html is not None else fetch_html(url)
     serial = _serial_from_url(url)
@@ -404,13 +407,7 @@ def _parse_buondua_detail_page(url: str, existing_html: str | None = None,      
     title = re.sub(r"\s*\(\s*Page \d+ / \d+\s*\)\s*$", "", title)
 
     tags = _article_tags(html)
-    model_name = pick_model_name(tags, model_exclude)
-    # tag 里偶尔也带「Latin (原名)」,先拆开;原生名(日文/中文名)一般只在
-    # 标题里 —— 抽到就带上,由 import_album 写 models.stage_name
-    # (前台「又名 …」+ 搜索命中)
-    model_name, model_native = split_trailing_native(model_name)
-    if not model_native:
-        model_native = native_name_for_model(title, model_name)
+    model_name, model_native = resolve_model(title, tags, model_exclude)
 
     pm = PASSWORD_RE.search(html)
     password = pm.group(1).strip() if pm else ""
@@ -650,8 +647,8 @@ def _misskon_title(html: str) -> str:
 def parse_misskon_detail_page(url: str, existing_html: str | None = None,
                               model_exclude: str | None = None) -> HarvestTarget:
     """解析 misskon 详情页:结构语义与 buondua 一致(标题/tag/密码/ouo 短链),
-    选择器不同;模特名同样从 tag 里按排除词挑。"""
-    from .filters import pick_model_name
+    选择器不同;模特名同样交给 filters.resolve_model(tag 打底 + 标题交叉验证)。"""
+    from .filters import resolve_model
 
     html = existing_html if existing_html is not None else fetch_html(url)
     try:
@@ -673,11 +670,7 @@ def parse_misskon_detail_page(url: str, existing_html: str | None = None,
             if label and label.lower() not in seen:
                 seen.add(label.lower())
                 tags.append(label)
-    model_name = pick_model_name(tags, model_exclude)
-    # 同上:tag 带的「Latin (原名)」先拆,原生名再从标题里挨着名字的括号取
-    model_name, model_native = split_trailing_native(model_name)
-    if not model_native:
-        model_native = native_name_for_model(title, model_name)
+    model_name, model_native = resolve_model(title, tags, model_exclude)
 
     pm = MISSKON_PASSWORD_RE.search(html)
     password = (pm.group(1) or pm.group(2)).strip() if pm else ""
