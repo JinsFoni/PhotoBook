@@ -147,7 +147,8 @@ def test_group_uploads_concurrently(monkeypatch):
 
 
 def test_group_fails_when_remote_verify_mismatch(monkeypatch):
-    """远端列表说文件都没了 → 重传一次仍不符, 任务必须 failed 而不是 done。"""
+    """远端列表说文件都没了 → 几轮重传仍不符, 任务必须 failed 而不是 done。"""
+    monkeypatch.setattr(upload_worker, "_VERIFY_PAUSES", (0.0, 0.0))
     _VerifyFailBackend.reset()
     storage_base.BACKENDS["zzvfail"] = _VerifyFailBackend
     try:
@@ -170,8 +171,9 @@ def test_group_fails_when_remote_verify_mismatch(monkeypatch):
             assert s.query(PhotoUpload).filter_by(storage_id=sid).count() == 0
         finally:
             s.close()
-        # 重传发生在校验之后: 4 张首传 + 4 张重传
-        assert len(_VerifyFailBackend.done) == 8
+        # 重传发生在校验之后: 4 张首传 + 每轮 4 张重传
+        rounds = len(upload_worker._VERIFY_PAUSES)
+        assert len(_VerifyFailBackend.done) == 4 * (1 + rounds)
         # 失败的任务不能删本地原图(还要留着重传)
         assert media.abs_path(f"{SLUG}/000.jpg").is_file()
     finally:

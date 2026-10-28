@@ -377,6 +377,11 @@ def _run_group(job_ids: list[int]) -> None:
         s.close()
 
 
+# 校验不过的重传间隔(秒): 轮数 = len(), 第一次失败后按顺序取。
+# 云端「回 200 不落地」是概率事件, 间隔重传比连续重传有效。
+_VERIFY_PAUSES = (0.0, 5.0, 15.0)
+
+
 def _verify_job(s, st: Storage, backend, job: UploadJob,
                 files: dict[str, tuple[str, int]], remote_root: str) -> None:
     """校验本次上传的远端文件大小;不符的重传一次,仍不符则判任务失败。
@@ -386,28 +391,40 @@ def _verify_job(s, st: Storage, backend, job: UploadJob,
     """
     if not isinstance(backend, TreeBackend) or not files:
         return
-    bad = verify_uploads(backend, st, {rp: size for rp, (_rel, size) in files.items()})
+
+    def _pending() -> list[str]:
+        return verify_uploads(backend, st,
+                              {rp: size for rp, (_rel, size) in files.items()})
+
+    bad = _pending()
     if not bad:
         return
-    log.warning("upload verify: %d/%d files mismatched on %s, retrying",
-                len(bad), len(files), st.name)
-    for rp in list(bad):
-        rel, _size = files[rp]
-        local = media.abs_path(rel)
-        if not local.is_file():
-            continue
-        try:
-            got = backend.upload(st, local.read_bytes(), local.name, remote_root)
-        except Exception:
-            log.exception("re-upload after verify failed: %s -> %s", rel, st.name)
-            continue
-        if got != rp:  # 理论上不会(两家都不改名), 保守地把 DB 记录也跟着改
-            s.query(PhotoUpload).filter(
-                PhotoUpload.storage_id == st.id,
-                PhotoUpload.remote_path == rp).update(
-                {"remote_path": got}, synchronize_session=False)
-            files[got] = files.pop(rp)
-    bad = verify_uploads(backend, st, {rp: size for rp, (_rel, size) in files.items()})
+    # 123 盘实测「fs/put 回 200 但文件不落地」是随机丢的(负载高时更容易),
+    # 只重传一次常常还是丢 —— 线上 879 那 3 张(17-24MB)两轮都没落地,
+    # 隔一阵单张重传一次就上去了。所以多给几轮,轮间留间隔让服务端歇口气。
+    for rnd, pause in enumerate(_VERIFY_PAUSES, 1):
+        log.warning("upload verify: %d/%d files mismatched on %s, retry %d",
+                    len(bad), len(files), st.name, rnd)
+        time.sleep(pause)
+        for rp in list(bad):
+            rel, _size = files[rp]
+            local = media.abs_path(rel)
+            if not local.is_file():
+                continue
+            try:
+                got = backend.upload(st, local.read_bytes(), local.name, remote_root)
+            except Exception:
+                log.exception("re-upload after verify failed: %s -> %s", rel, st.name)
+                continue
+            if got != rp:  # 理论上不会(两家都不改名), 保守地把 DB 记录也跟着改
+                s.query(PhotoUpload).filter(
+                    PhotoUpload.storage_id == st.id,
+                    PhotoUpload.remote_path == rp).update(
+                    {"remote_path": got}, synchronize_session=False)
+                files[got] = files.pop(rp)
+        bad = _pending()
+        if not bad:
+            return
     if bad:
         # 校验没过的文件把 photo_uploads 行撤掉: 上传时按 200 就记了行, 但远端
         # 没落地。留着行会让「重试」把它当成已上传直接跳过, 任务变绿而文件仍
@@ -434,8 +451,18 @@ def _originals_needed(s, job: UploadJob) -> str | None:
     others = s.scalars(select(UploadJob).where(
         UploadJob.collection_id == job.collection_id,
         UploadJob.id != job.id,
-        UploadJob.storage_id.in_(enabled))).all()
-    for o in others:
+        UploadJob.storage_id.in_(enabled)).order_by(UploadJob.id)).all()
+    # 每个存储只看最新那条任务(含自己): 重试 = 新建一条任务, 成功之后早先那条
+    # failed 只是历史记录, 不该继续把本地原图钉住 —— 线上 879 重试成功后仍报
+    # 「其他存储上传失败」, 3GB 原图白留着。
+    latest: dict[int, UploadJob] = {}
+    for o in list(others) + [job]:
+        cur = latest.get(o.storage_id)
+        if cur is None or o.id > cur.id:
+            latest[o.storage_id] = o
+    for sid, o in latest.items():
+        if sid == job.storage_id and o is job:
+            continue
         if o.status == "failed":
             return "其他存储上传失败"
         if o.status in ("queued", "running"):
