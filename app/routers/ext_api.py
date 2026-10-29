@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hmac
 import json
 import secrets
@@ -17,7 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import __version__
@@ -26,7 +25,8 @@ from ..db import Collection, HarvestHistory, HarvestJob, Photo
 from ..i18n import t
 from ..services import settings_store
 from ..services.harvest import net
-from ..services.harvest.titlematch import title_matches_collection
+from ..services.harvest.titlematch import (PreparedTitle, prepare_title,
+                                           title_matches_collection)
 from ..services.harvest.worker import enqueue, ACTIVE_JOB_STATES
 from ..services.pikpak import worker as pikpak_worker
 
@@ -108,27 +108,74 @@ def collection_exists(s: Session, serial: int) -> bool:
 
 
 def state_for_serial(s: Session, serial: int) -> str:
-    """单个序号 → 联动状态。脚本只认这几个词:
+    """单个序号 → 联动状态(批量版 states_for_serials 的单条门面, 判态规则同源)。"""
+    return states_for_serials(s, [serial])[serial]
 
+
+def states_for_serials(s: Session, serials: list[int]) -> dict[int, str]:
+    """批量判态 — 一页卡片一条 SQL 序列问完, 判态规则与 state_for_serial 一致。
+
+    脚本只认这几个词:
     new      无任何记录, 可下载
     queued   任务排队/进行中
     done     已入库(collections 存在, 含 done/exists 历史)
     failed   上次失败, 可重推
     skipped  被黑白名单过滤, 可重推
+
+    逐条版每个序号要 3~4 条 SQL(活跃任务 / source_serial / source_serials
+    JSON 粗筛 / 历史行), 一页 24 张就是 70+ 次扫表, 实测 35ms; 而这条
+    路径是油猴脚本每 5s 一次的常驻轮询, 徽标要等它算完才画得出来
+    (2026-10-29「角标隔一会儿才显示」)。这里把三类记录各用一条批量
+    SQL 取回, 再在内存里按同一优先级 queued → done → 历史 定态。
     """
-    if s.scalar(select(HarvestJob.id).where(
-            HarvestJob.serial == serial,
-            HarvestJob.status.in_(ACTIVE_JOB_STATES)).limit(1)):
-        return "queued"
-    if collection_exists(s, serial):
-        return "done"
-    hist = s.get(HarvestHistory, serial)
-    if hist is not None:
-        if hist.status in ("done", "exists"):
-            # 处理过但写真已删 → 视为可重新下载
-            return "new"
-        return hist.status if hist.status in ("failed", "skipped") else "new"
-    return "new"
+    uniq = list(dict.fromkeys(serials))
+    out = {n: "new" for n in uniq}
+    if not uniq:
+        return out
+
+    for (n,) in s.execute(
+            select(HarvestJob.serial).where(
+                HarvestJob.serial.in_(uniq),
+                HarvestJob.status.in_(ACTIVE_JOB_STATES)).distinct()):
+        if n in out:
+            out[n] = "queued"
+
+    # 在库: 本站序号精确匹配
+    pending = [n for n in uniq if out[n] == "new"]
+    if pending:
+        for (n,) in s.execute(
+                select(Collection.source_serial).where(
+                    Collection.source_serial.in_(pending)).distinct()):
+            if n in out:
+                out[n] = "done"
+
+    # 在库: 跨站序号藏在 source_serials(JSON 数组文本)里。LIKE 只当粗筛
+    # (按数值子串, 会命中 21234 里的 1234 之类), 命中后必须解析 JSON 确认;
+    # 全部 miss 时用一个 or_ 合成单条 SQL, 不再逐序号扫表。
+    miss = [n for n in uniq if out[n] == "new"]
+    if miss:
+        rows = s.execute(
+            select(Collection.source_serials).where(or_(
+                *[Collection.source_serials.like(f"%{n}%") for n in miss]))).all()
+        if rows:
+            want = set(miss)
+            for (raw,) in rows:
+                try:
+                    got = want.intersection(json.loads(raw or "[]"))
+                except (ValueError, TypeError):
+                    continue
+                for n in got:
+                    out[n] = "done"
+
+    # 历史行: 处理过但写真已删(done/exists) → 视为可重新下载
+    rest = [n for n in uniq if out[n] == "new"]
+    if rest:
+        for serial, status in s.execute(
+                select(HarvestHistory.serial, HarvestHistory.status).where(
+                    HarvestHistory.serial.in_(rest))).all():
+            if serial in out and status in ("failed", "skipped"):
+                out[serial] = status
+    return out
 
 
 # ---- 端点 --------------------------------------------------------------------
@@ -199,7 +246,7 @@ def _push_one(s: Session, url: str, force: bool) -> dict[str, Any]:
 
 
 @router.post("/harvest")
-async def push_harvest(body: PushBody, s: Session = Depends(require_key)):
+def push_harvest(body: PushBody, s: Session = Depends(require_key)):
     urls = list(body.urls or ([] if not body.url else [body.url]))
     if not urls:
         raise HTTPException(422, "url or urls required")
@@ -210,7 +257,8 @@ async def push_harvest(body: PushBody, s: Session = Depends(require_key)):
     return {"ok": ok, "items": items}
 
 
-def _register_serial_title(s: Session, serial: int, title: str) -> bool:
+def _register_serial_title(s: Session, serial: int, title: str,
+                           title_prep: PreparedTitle | None = None) -> bool:
     """按标题等价比对,把 serial 登记进命中的 collection.source_serials。
 
     同一本写真三站序号各自独立,序号只在「本站采集过」时才进得了
@@ -219,33 +267,37 @@ def _register_serial_title(s: Session, serial: int, title: str) -> bool:
     通道)。已登记(序号已在)返回 False,避免每 5s 轮询重复写库。
 
     性能: 全量候选快照缓存在进程内(TTL 60s), 避免每个未知标题都全表
-    加载 289 个合集 ORM(连带 photos 时代实测单标题 0.4s, 一页 24 卡
-    就是 10s)。快照是标量列, 比对纯内存, 写库只在命中时发生一次。
+    加载合集 ORM(连带 photos 时代实测单标题 0.4s, 一页 24 卡就是 10s)。
     快照带各合集的真实照片数(GROUP BY 一条)—— 入库 title 不带
     「(N photos)」尾缀, 标题等价必须以真实张数守卫, 否则泛化系列标题
     ([AI Generated] 诛仙-陆雪琪)的不同批次全会误登记(44755 实录)。
+
+    2026-10-29 二次加速(徽标要 1s 才出来的根因): 快照里预编译好每个
+    合集的标题 tokens, 并建 token→候选 的倒排索引。以前每个上报标题都
+    把 835 本重算一遍 tokens(8ms)+子序列比对, 一页 24~48 张卡片就是
+    0.5~1.3s, 徽标只能等这一串算完才画得出来。子序列匹配要求「短的一
+    方的全部 token 都出现在长的一方」, 所以真命中必然与上报标题至少
+    共用一个 token —— 按倒排取候选是等价剪枝, 不是近似。
     """
     import json as _json
 
     if not (title or "").strip():
         return False
+    prep = title_prep or prepare_title(title)
+    # 上报标题不足 2 个 token 时, 两侧谁当「短的一方」都过不了辨识度门槛
+    if len(prep[0]) < 2:
+        return False
 
-    # ---- 内存缓存: (id, title, source_serial, source_serials 原文, 张数) ----
-    global _title_cache_data, _title_cache_at
-    now = time.monotonic()
-    with _title_cache_lock:
-        if now - _title_cache_at > 60 or _title_cache_data is None:
-            counts = dict(s.execute(
-                select(Photo.collection_id, func.count(Photo.id))
-                .group_by(Photo.collection_id)).all())
-            _title_cache_data = [
-                (cid, col_title, col_serial, raw_serials, counts.get(cid))
-                for cid, col_title, col_serial, raw_serials in s.execute(
-                    select(Collection.id, Collection.title,
-                           Collection.source_serial, Collection.source_serials)
-                    .where(Collection.source_serial.is_not(None))).all()]
-            _title_cache_at = now
-        snapshot = _title_cache_data
+    snapshot, index = _title_snapshot(s)
+
+    # 候选 = 与上报标题共享任一 token 的合集(命中者必在其中)
+    cand: set[int] = set()
+    for tok in prep[0]:
+        hit = index.get(tok)
+        if hit:
+            cand.update(hit)
+    if not cand:
+        return False
 
     def _load(json_raw: str | None) -> list:
         try:
@@ -253,8 +305,10 @@ def _register_serial_title(s: Session, serial: int, title: str) -> bool:
         except (ValueError, TypeError):
             return []
 
-    for cid, col_title, col_serial, raw_serials, col_photos in snapshot:
-        if not title_matches_collection(title, col_title, col_photos):
+    for i in sorted(cand):
+        cid, col_title, col_serial, raw_serials, col_photos, col_prep = snapshot[i]
+        if not title_matches_collection(title, col_title, col_photos,
+                                        title_prep=prep, col_prep=col_prep):
             continue
         known = {col_serial, *_load(raw_serials)}
         known.discard(None)
@@ -273,25 +327,63 @@ def _register_serial_title(s: Session, serial: int, title: str) -> bool:
         col = s.get(Collection, cid)
         col.source_serials = _json.dumps(sorted(known))
         s.commit()
-        _invalidate_title_cache()
+        # 就地更新快照里这条的 source_serials: 只改序号、不动 tokens/张数,
+        # 所以不必整表重建(重建要 GROUP BY 8 万行 photos 再编译 835 个标题,
+        # 一页连中几本就会连着重build几次)。下个标题再比到时直接判「已登记」。
+        with _title_cache_lock:
+            if _title_cache_data is not None and _title_cache_data[i][0] == cid:
+                _title_cache_data[i] = (cid, col_title, col_serial,
+                                        col.source_serials, col_photos, col_prep)
         return True
     return False
 
 
 _title_cache_data: list | None = None
+_title_cache_index: dict[str, list[int]] | None = None
 _title_cache_at: float = 0.0
 _title_cache_lock = threading.Lock()
 
 
+def _title_snapshot(s: Session) -> tuple[list, dict[str, list[int]]]:
+    """进程内候选快照(TTL 60s): [(id, title, serial, serials, 张数, prep)] + 倒排索引。"""
+    global _title_cache_data, _title_cache_index, _title_cache_at
+    now = time.monotonic()
+    with _title_cache_lock:
+        if now - _title_cache_at > 60 or _title_cache_data is None:
+            counts = dict(s.execute(
+                select(Photo.collection_id, func.count(Photo.id))
+                .group_by(Photo.collection_id)).all())
+            data = []
+            index: dict[str, list[int]] = {}
+            for cid, col_title, col_serial, raw_serials in s.execute(
+                    select(Collection.id, Collection.title,
+                           Collection.source_serial, Collection.source_serials)
+                    .where(Collection.source_serial.is_not(None))).all():
+                col_prep = prepare_title(col_title)
+                for tok in col_prep[0]:
+                    bucket = index.get(tok)
+                    if bucket is None:
+                        index[tok] = [len(data)]
+                    else:
+                        bucket.append(len(data))
+                data.append((cid, col_title, col_serial, raw_serials,
+                             counts.get(cid), col_prep))
+            _title_cache_data = data
+            _title_cache_index = index
+            _title_cache_at = now
+        return _title_cache_data, _title_cache_index or {}
+
+
 def _invalidate_title_cache() -> None:
-    global _title_cache_data, _title_cache_at
+    global _title_cache_data, _title_cache_index, _title_cache_at
     with _title_cache_lock:
         _title_cache_data = None
+        _title_cache_index = None
         _title_cache_at = 0.0
 
 
 @router.get("/status")
-async def status_api(serials: str, s: Session = Depends(require_key)):
+def status_api(serials: str, s: Session = Depends(require_key)):
     """批量查询入库状态。serials=逗号分隔的源站序号。
 
     旧入口(不带标题): 只按序号判态。新脚本走 POST /status。
@@ -302,7 +394,8 @@ async def status_api(serials: str, s: Session = Depends(require_key)):
         raise HTTPException(422, "serials must be integers")
     if not ids:
         raise HTTPException(422, "serials required")
-    return {"items": [{"serial": i, "state": state_for_serial(s, i)} for i in ids]}
+    states = states_for_serials(s, ids)
+    return {"items": [{"serial": i, "state": states[i]} for i in ids]}
 
 
 class StatusItem(BaseModel):
@@ -315,7 +408,7 @@ class StatusBody(BaseModel):
 
 
 @router.post("/status")
-async def status_api_v2(body: StatusBody, s: Session = Depends(require_key)):
+def status_api_v2(body: StatusBody, s: Session = Depends(require_key)):
     """批量查询入库状态 + 标题登记。
 
     items 每项 = (序号, 页面标题)。序号命中即返回状态;未命中但标题与
@@ -326,9 +419,10 @@ async def status_api_v2(body: StatusBody, s: Session = Depends(require_key)):
     items = body.items[:MAX_SERIALS]
     if not items:
         raise HTTPException(422, "items required")
+    states = states_for_serials(s, [it.serial for it in items])
     out = []
     for it in items:
-        state = state_for_serial(s, it.serial)
+        state = states[it.serial]
         if state == "new" and it.title.strip():
             # 登记成功 → 本写真确认已在库(标题等价)
             if _register_serial_title(s, it.serial, it.title):
@@ -373,7 +467,7 @@ class PikPakPushBody(BaseModel):
 
 
 @router.post("/pikpak")
-async def push_pikpak(body: PikPakPushBody, s: Session = Depends(require_key)):
+def push_pikpak(body: PikPakPushBody, s: Session = Depends(require_key)):
     """推送 PikPak 勾选项入队。返回 {ok, queued, skipped, batchId}。
 
     一个勾选项 = 一个任务: 文件夹由脚本在本地递归展开成 files[](直链),
@@ -396,7 +490,7 @@ async def push_pikpak(body: PikPakPushBody, s: Session = Depends(require_key)):
 
 
 @router.post("/status-by-url")
-async def status_by_url(body: StatusByUrlBody, s: Session = Depends(require_key)):
+def status_by_url(body: StatusByUrlBody, s: Session = Depends(require_key)):
     """按详情 URL 查入库状态(服务端解析序号)。
 
     misskon 老帖的 slug 没有 <序号>- 前缀,油猴脚本本地取不到序号,
@@ -410,8 +504,12 @@ async def status_by_url(body: StatusByUrlBody, s: Session = Depends(require_key)
 
     序号解析可能回源拉 misskon 详情页(单条 1s+, 冷缓存整页几十条
     串行会超过脚本超时), 放线程池并发做; 池内不碰 DB, 判态与标题
-    登记回到协程用请求级 Session 串行做(SQLAlchemy Session 非线
-    程安全)。整个解析走 to_thread, 避免 fetch 的同步 IO 卡住事件循环。
+    登记回到本线程用请求级 Session 串行做(SQLAlchemy Session 非线
+    程安全)。
+
+    端点是同步 def(FastAPI 丢线程池执行): 判态/标题比对是同步 sqlite
+    活, 一页 24~48 条最坏上百毫秒, 写成 async 会直接卡住整个事件循环
+    (常驻轮询每 5s 一次, 前台页面与采集 worker 都会被拖慢)。
     """
 
     def resolve(url: str) -> int | None:
@@ -431,14 +529,15 @@ async def status_by_url(body: StatusByUrlBody, s: Session = Depends(require_key)
     def _resolve_all() -> list[int | None]:
         return list(_url_resolve_pool.map(resolve, urls))
 
-    serials = await asyncio.to_thread(_resolve_all)
+    serials = _resolve_all()   # 同步端点已在线程池线程里, 直接阻塞即可
 
+    states = states_for_serials(s, [x for x in serials if x is not None])
     items = []
     for url, serial in zip(urls, serials):
         if serial is None:
             items.append({"url": url, "serial": None, "state": "new"})
             continue
-        state = state_for_serial(s, serial)
+        state = states[serial]
         if state == "new" and (body.titles.get(url) or "").strip():
             # 登记成功 → 本写真确认已在库(标题等价)
             if _register_serial_title(s, serial, body.titles[url]):

@@ -98,6 +98,36 @@ def photo_count(title: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+# 预编译标题: (归一化 tokens, 标题里解析出的张数)。批量比对(一页 24~48
+# 张卡片都要跟全库 800+ 本比)时, 候选侧只算一次, 不要每个上报标题都比
+# 一遍 —— title_tokens 是纯正则/unicode 活, 835 本全扫一次 8ms, 24 个
+# 上报标题就是 200ms 起步(2026-10-29 徽标慢 1s 的根因)。
+PreparedTitle = tuple[list[str], "int | None"]
+
+
+def prepare_title(title: str | None) -> PreparedTitle:
+    """标题 → (tokens, 张数), 供 titles_match_prep 批量复用。"""
+    return title_tokens(title), photo_count(title)
+
+
+def _titles_match_prep(a: PreparedTitle, b: PreparedTitle) -> bool:
+    ca, cb = a[1], b[1]
+    if ca is not None and cb is not None and ca != cb:
+        return False
+    short, long = a[0], b[0]
+    if len(short) > len(long):
+        short, long = long, short
+    if len(short) < 2:
+        return False
+    # 短的一方必须按序是长的一方的子序列
+    it = iter(long)
+    if not all(tok in it for tok in short):
+        return False
+    if max(len(t) for t in short) < 6:
+        return False
+    return sum(len(t) for t in short) >= 8
+
+
 def titles_match(a: str | None, b: str | None) -> bool:
     """两标题是否指向同一本写真(跨站等价)。
 
@@ -112,25 +142,13 @@ def titles_match(a: str | None, b: str | None) -> bool:
     全部命中 —— 张数是唯一可靠区分(47799 ↔ 44755 误判实录)。
     张数解析不出(归档目录名、老帖标题)时退回纯文本判定,行为同旧版。
     """
-    ca, cb = photo_count(a), photo_count(b)
-    if ca is not None and cb is not None and ca != cb:
-        return False
-    short, long = title_tokens(a), title_tokens(b)
-    if len(short) > len(long):
-        short, long = long, short
-    if len(short) < 2:
-        return False
-    # 短的一方必须按序是长的一方的子序列
-    it = iter(long)
-    if not all(tok in it for tok in short):
-        return False
-    if max(len(t) for t in short) < 6:
-        return False
-    return sum(len(t) for t in short) >= 8
+    return _titles_match_prep(prepare_title(a), prepare_title(b))
 
 
 def title_matches_collection(title: str | None, col_title: str | None,
-                             col_photos: int | None) -> bool:
+                             col_photos: int | None, *,
+                             title_prep: PreparedTitle | None = None,
+                             col_prep: PreparedTitle | None = None) -> bool:
     """源站标题 ↔ 已入库写真集的等价判定(带真实张数守卫)。
 
     入库写真集的 title 是解压产物目录名/源站标题去尾缀后的形态,不带
@@ -141,9 +159,10 @@ def title_matches_collection(title: str | None, col_title: str | None,
     100 张那本)。col_photos 为 None/0(尚未入库/无照片行,张数未知)
     时退回纯文本判定。
     """
-    if not titles_match(title, col_title):
+    if not _titles_match_prep(title_prep or prepare_title(title),
+                              col_prep or prepare_title(col_title)):
         return False
-    reported = photo_count(title)
+    reported = photo_count(title) if title_prep is None else title_prep[1]
     if reported is not None and col_photos and reported != col_photos:
         return False
     return True

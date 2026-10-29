@@ -553,3 +553,130 @@ def _cleanup_serial(serial: int):
         s.commit()
     finally:
         s.close()
+
+
+# ---- 标题比对性能(徽标要 1s 才出来) -------------------------------------------
+
+def test_status_post_does_not_recompile_candidate_titles(ext_key, client,
+                                                        monkeypatch):
+    """一页 24 卡片的标题比对, 候选侧 tokens 只编译一次(不是每卡一次)。
+
+    2026-10-29 实录: 脚本一次上报 24~48 个标题, 服务端对每个标题都把
+    全库 835 本重算一遍 title_tokens + 子序列比对(单标题 19ms), 24 张
+    0.5s / 48 张 1.3s —— 徽标必须等这批算完才画得出来, 用户看到的就是
+    「隔一会儿(约 1s)才显示」。修法是快照里预编译候选 tokens + token
+    倒排索引只取候选。这里锁住调用次数: 编译次数应 ≈ 候选数 + 上报数,
+    而不是两者相乘。
+    """
+    from app.routers import ext_api
+    from app.services.harvest import titlematch
+
+    cand_n, item_n = 60, 24
+    for i in range(cand_n):
+        _mk_collection_with_title(700000 + i, f"ext-perf-{i}",
+                                  f"Perf Model {i} - Album Number {i}")
+    calls = {"n": 0}
+    real = titlematch.title_tokens
+
+    def counting(title):
+        calls["n"] += 1
+        return real(title)
+
+    monkeypatch.setattr(titlematch, "title_tokens", counting)
+    try:
+        ext_api._invalidate_title_cache()
+        items = [{"serial": 800000 + i,
+                  "title": f"Nobody Here {i} - Unrelated Batch {i} (12 photos)"}
+                 for i in range(item_n)]
+        r = client.post("/api/ext/status", headers=H(ext_key),
+                        json={"items": items})
+        assert r.status_code == 200
+        assert all(i["state"] == "new" for i in r.json()["items"])
+        # 每卡一次 = 旧行为(cand_n * item_n = 1440 次); 现在的预编译
+        # 上限是「候选一次 + 每卡一次」。
+        assert calls["n"] <= cand_n + item_n, calls["n"]
+    finally:
+        for i in range(cand_n):
+            _rm_collection(f"ext-perf-{i}")
+        ext_api._invalidate_title_cache()
+
+
+def test_status_post_registers_multiple_titles_in_one_batch(ext_key, client):
+    """一批里两本各自命中不同合集 → 都登记成功。
+
+    登记后不再整表清缓存(改成就地更新快照那条的 source_serials), 所以
+    第二条标题仍要能比到它自己那本 —— 这条守住就地更新没有把候选弄脏。
+    """
+    # 标题里都要有一个 >=6 字符的 token(辨识度门槛), 否则不构成写真级匹配
+    _mk_collection_with_title(710001, "ext-batch-a",
+                              "Batch Model Charlotte - First Album")
+    _mk_collection_with_title(710002, "ext-batch-b",
+                              "Batch Model Danielle - Second Album")
+    try:
+        r = client.post("/api/ext/status", headers=H(ext_key), json={"items": [
+            {"serial": 810001,
+             "title": "Batch Model Charlotte: First Album (30 photos)"},
+            {"serial": 810002,
+             "title": "Batch Model Danielle: Second Album (41 photos)"},
+        ]})
+        assert r.json()["items"] == [
+            {"serial": 810001, "state": "done"},
+            {"serial": 810002, "state": "done"},
+        ], r.json()
+        # 同一批再来一次: 序号已登记, 不该重复写过(但仍是 done)
+        r2 = client.post("/api/ext/status", headers=H(ext_key), json={"items": [
+            {"serial": 810001,
+             "title": "Batch Model Charlotte: First Album (30 photos)"},
+        ]})
+        assert r2.json()["items"][0]["state"] == "done"
+    finally:
+        _rm_collection("ext-batch-a")
+        _rm_collection("ext-batch-b")
+
+
+def test_states_for_serials_batch_matches_single(ext_key, client):
+    """批量判态与逐条判态必须逐项一致(批量版把 3~4 条 SQL/序号 合成 3 条)。
+
+    徽标要等判态算完才画得出来, 一页 24~48 个序号逐条扫表实测 35ms,
+    所以 /status 的两个入口改走 states_for_serials 批量版; 判态优先级
+    queued → done → 历史(failed/skipped) → new 不能有任何漂移。
+    """
+    import json as _json
+
+    from app.database import SessionLocal
+    from app.db import Collection, HarvestHistory, HarvestJob
+    from app.routers import ext_api
+
+    _mk_collection_with_title(720001, "ext-batchstate-own", "Batch State Own")
+    _mk_collection_with_title(720002, "ext-batchstate-cross", "Batch State Cross")
+    s = SessionLocal()
+    try:
+        # 跨站序号: 库里这本收录了 720002 + 720009
+        c = s.query(Collection).filter(
+            Collection.slug == "ext-batchstate-cross").one()
+        c.source_serials = _json.dumps([720002, 720009])
+        s.add(HarvestJob(serial=720003, url="https://buondua.com/x-720003",
+                         status="downloading"))
+        s.merge(HarvestHistory(serial=720004, status="failed", title="t4"))
+        s.merge(HarvestHistory(serial=720005, status="skipped", title="t5"))
+        s.merge(HarvestHistory(serial=720006, status="done", title="t6"))
+        s.commit()
+
+        ids = [720001, 720002, 720003, 720004, 720005, 720006, 720009, 720099]
+        batch = ext_api.states_for_serials(s, ids)
+        single = {i: ext_api.state_for_serial(s, i) for i in ids}
+        assert batch == single, (batch, single)
+        assert batch[720001] == "done" and batch[720009] == "done"
+        assert batch[720003] == "queued"
+        assert batch[720004] == "failed" and batch[720005] == "skipped"
+        assert batch[720006] == "new" and batch[720099] == "new"
+        # 端点侧同样走批量版: 一批查回来与逐条一致
+        r = client.post("/api/ext/status", headers=H(ext_key),
+                        json={"items": [{"serial": i} for i in ids]})
+        assert [x["state"] for x in r.json()["items"]] == \
+            [single[i] for i in ids]
+    finally:
+        for slug in ("ext-batchstate-own", "ext-batchstate-cross"):
+            _rm_collection(slug)
+        for serial in (720003, 720004, 720005, 720006):
+            _cleanup_serial(serial)

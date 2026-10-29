@@ -948,6 +948,51 @@ slug 幂等上命中 misskon 那批同内容(888≡396、889≡398、890≡402�
 测试:`tests/test_harvest_serial_link.py` 5 条(跳过登记后脚本判得出 / 幂等 /
 FileExistsError 兜底 / 幂等跳过回传既有 slug / 剥尾缀必须过张数守卫)。
 
+### 角标要隔一会儿(约 1s)才出现: 一页卡片的标题比对是全库重算(2026-10-29)
+
+用户报「写真站点的下载/已入库角标会隔一会儿才显示, 大概 1s」。角标是油猴脚本
+(1.8.2)画的: 卡片先由源站渲染, 脚本 `boot()` → `POST /api/ext/status`(带
+24~48 个 `{serial, title}`)→ 回调里 `setBadge()`。所以**角标出现的时刻 = 这一次
+请求返回的时刻**, 慢一秒就是服务端一秒。线上实测(`curl` 计 `time_total`):
+
+| 请求 | 修前 | 修后 |
+|---|---|---|
+| `GET /api/ext/ping` | 6ms | 8ms |
+| `POST /api/ext/status` 24 条带标题 | **0.50s** | **0.02–0.03s** |
+| `POST /api/ext/status` 48 条带标题 | **1.02–1.35s** | **0.04–0.05s** |
+
+两处全库重算叠在一起:
+
+1. **标题登记 `_register_serial_title` 每张卡片把 835 本重比一遍**。快照(TTL 60s)
+   只缓存了标量列, 每个上报标题都要对全部候选现算 `title_tokens`(835 本 8ms)
+   + 子序列比对, 单标题 19ms → 24 张 470ms、48 张 940ms。改成快照里**预编译
+   候选 tokens + 建 token→候选 倒排索引**: 子序列匹配要求「短的一方全部 token
+   都出现在长的一方」, 真命中必然与上报标题共用一个 token, 按倒排取候选是
+   等价剪枝而不是近似。24 张 470ms → 13ms。
+2. **判态 `state_for_serial` 每序号 3~4 条 SQL**。`source_serial` 精确匹配一条、
+   `source_serials` JSON 三个 LIKE 粗筛一条(逐序号扫 875 行)、活跃任务、历史行
+   —— 24 条 35ms, 而且是**每 5s 一次的常驻轮询**。新增批量版
+   `states_for_serials`: 活跃任务 / `source_serial` / `source_serials`(miss 的
+   序号合成一条 `or_(...)` LIKE, 命中后解析 JSON 精确确认)/ 历史行 各一条 SQL,
+   内存里按同一优先级 queued → done → failed/skipped → new 定态。
+   `state_for_serial` 变成它的单条门面, 判态规则只剩一份。
+
+顺带把 `/api/ext/status`(GET/POST)、`/status-by-url`、`/harvest`、`/pikpak`
+从 `async def` 改成同步 `def`: 判态与比对是同步 sqlite 活, 写成 async 会直接
+卡住整个事件循环(常驻轮询每 5s 一次, 前台页面和采集 worker 一起被拖慢)。
+`status_by_url` 里原来的 `await asyncio.to_thread(...)` 随之去掉(端点本身已
+在线程池线程里)。
+
+还有一个隐性成本也顺手去掉: 登记成功后以前是 `_invalidate_title_cache()`
+(整表重建, 含 `GROUP BY` 8 万行 photos + 编译 835 个标题, 实测 44ms), 一页
+连中几本就连着重建几次; 现在**就地更新快照那条的 `source_serials`**(只改序号,
+tokens/张数不变), 下个标题比到时直接判「已登记」。
+
+测试: `tests/test_ext_api.py::test_status_post_does_not_recompile_candidate_titles`
+锁住「候选侧 tokens 编译次数 ≈ 候选数 + 上报数」(旧行为是两者相乘)、
+`::test_status_post_registers_multiple_titles_in_one_batch`(就地更新不会弄脏候选)、
+`::test_states_for_serials_batch_matches_single`(批量判态与逐条判态逐项一致)。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,
