@@ -279,6 +279,30 @@ def test_download_stream_gives_up_after_retries(tmp_path, monkeypatch):
     assert "HTTP 403" in str(ei.value) and calls["n"] == 3
 
 
+def test_download_stream_gives_conn_failures_a_wider_budget(tmp_path, monkeypatch):
+    """零进展的连接失败给 6 次(不是 3 次):CDN 按频率抽断新连接,隔几秒就通。"""
+    from curl_cffi.requests.exceptions import ConnectionError as CrConnError
+
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    pl._EGRESS.clear()
+    calls = {"n": 0}
+
+    def fake_get(url, **kw):
+        calls["n"] += 1
+        raise CrConnError("Failed to perform, curl: (56) Connection closed abruptly")
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    with pytest.raises(RuntimeError) as ei:
+        pl.download_stream("https://download2303.mediafire.com/z",
+                           tmp_path / "e.rar", retries=3)
+    assert "curl: (56)" in str(ei.value)
+    assert calls["n"] == pl.CONN_STALL_BUDGET
+
+
 def test_egress_default_by_host():
     """harvest.proxy 是给页面/短链过盾的;MediaFire CDN 默认直连(经代理会断流)。"""
     from app.services.harvest import pipeline as pl

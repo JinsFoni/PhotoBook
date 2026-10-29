@@ -70,6 +70,10 @@ SOFT_BLOCK_BACKOFF = (5.0, 20.0)
 # 接着下 —— 所以「有进展」的连接失败不消耗重试预算,一直滚到下完为止。
 PROGRESS_BACKOFF_MAX = 10.0
 PROGRESS_RETRIES = 120   # 有进展时的额外重试轮数上限(120×25MB ≈ 3GB)
+# 「零进展」的连接失败(连上就被掐, 一个字节都没写)也要给够次数: 2026-10-29
+# 任务 931(2.15GB)下到 960MB 时连续几次 0.0MB 就被判死, 而同一 dlink 隔几秒
+# 再连是通的 —— MediaFire CDN 会按频率抽断新建连接, 不是这个出口真的不通。
+CONN_STALL_BUDGET = 6
 
 
 class _Retryable(RuntimeError):
@@ -189,7 +193,8 @@ def download_stream(url: str, dest: Path, *,
                 time.sleep(min(2.0 * min(progress_rounds, 5), PROGRESS_BACKOFF_MAX))
                 continue
             stalls += 1
-            if stalls >= attempts:
+            limit = CONN_STALL_BUDGET if getattr(exc, "conn", False) else attempts
+            if stalls >= limit:
                 if getattr(exc, "soft", False):
                     raise RuntimeError(
                         f"{last}(已重试 {attempts} 次;MediaFire 这类拦是临时的,"

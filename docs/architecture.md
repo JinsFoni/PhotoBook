@@ -461,10 +461,16 @@ TeraBox 卷同样受益(直链抖动能续上),代价是 dlink 真过期时多�
 一半的段被迫走代理, 实测平均 1.2 MB/s;改完后 2.0 MB/s(直链裸测 33 MB/s,
 掐流是 CDN 侧行为, 靠 Range 续传吃掉)。
 
+再补一条(同日 931 实录):零进展的连接失败也要给够次数。931 下到 960MB 时
+连着几次「已续 0.0MB」就被判死(旧预算 3 次),而同一 dlink 隔几秒再连是通的 ——
+MediaFire CDN 会按频率抽断新建连接。现在 `CONN_STALL_BUDGET = 6` 只管
+「零进展 + 连接层失败」,403/软拒绝仍按 `retries` 判;重排后从 960MB 续到 1.6GB+。
+
 回归用例:`test_fetch_html_retries_cf_403`、`test_fetch_html_cf_challenge_page_is_retried`、
 `test_fetch_html_403_exhausted_reports_reason`、`test_resolve_ouo_flips_to_direct_when_proxy_challenged`、
 `test_resolve_ouo_keeps_remembered_egress`、`test_resolve_ouo_both_egress_challenged_returns_none`、
-`test_download_stream_does_not_flip_when_partial_data_arrived`;`test_fetch_html_does_not_retry_http_error`
+`test_download_stream_does_not_flip_when_partial_data_arrived`、
+`test_download_stream_gives_conn_failures_a_wider_budget`;`test_fetch_html_does_not_retry_http_error`
 保留(404 仍不重试)。
 
 ### MediaFire 「软拒绝」:200 + 一页 HTML 冒充文件(2026-10-22)
