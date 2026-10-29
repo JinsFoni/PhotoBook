@@ -676,9 +676,10 @@ def test_dead_shortener_dedupes_by_service():
 # ---- fetch_html:连接层抖动重试(2026-10-25 任务 869) ----------------------
 
 class _FakeResp:
-    def __init__(self, status_code=200, text="<html>ok</html>"):
+    def __init__(self, status_code=200, text="<html>ok</html>", headers=None):
         self.status_code = status_code
         self.text = text
+        self.headers = headers or {}
 
 
 def _conn_reset():
@@ -721,8 +722,61 @@ def test_fetch_html_retry_exhausted_keeps_original_reason(monkeypatch):
     assert len(calls) == net.FETCH_RETRIES
 
 
+def test_fetch_html_retries_cf_403(monkeypatch):
+    """403 是 CF 按出口 IP 声誉抽的拦页: 隔一会儿再请求常常就 200。
+
+    2026-10-29 用户换代理节点后 buondua 整批 failed: 冷请求 1/6 撞 403
+    「Attention Required!」, 老实现把 403 当确定答复, 一次就判死整任务。
+    """
+    calls = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        if len(calls) == 1:
+            return _FakeResp(status_code=403,
+                             text="<title>Attention Required! | Cloudflare</title>")
+        return _FakeResp(text="<html>page</html>")
+
+    monkeypatch.setattr(net.cr, "get", fake_get)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    assert net.fetch_html("https://buondua.com/x-57302") == "<html>page</html>"
+    assert len(calls) == 2
+
+
+def test_fetch_html_cf_challenge_page_is_retried(monkeypatch):
+    """200 的盾页也算拦截(正文带 Just a moment), 不能当正文返回。"""
+    calls = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        if len(calls) < 3:
+            return _FakeResp(status_code=200, text="<html>Just a moment...</html>")
+        return _FakeResp(text="<html>page</html>")
+
+    monkeypatch.setattr(net.cr, "get", fake_get)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    assert net.fetch_html("https://buondua.com/x-57302") == "<html>page</html>"
+    assert len(calls) == 3
+
+
+def test_fetch_html_403_exhausted_reports_reason(monkeypatch):
+    """一直 403: 报错要带状态码与重试次数, 方便看出是出口被拦。"""
+    calls = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        return _FakeResp(status_code=403, text="denied")
+
+    monkeypatch.setattr(net.cr, "get", fake_get)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    with pytest.raises(RuntimeError) as ei:
+        net.fetch_html("https://buondua.com/x-57302")
+    assert "HTTP 403" in str(ei.value) and "已重试 3 次" in str(ei.value)
+    assert len(calls) == net.FETCH_RETRIES
+
+
 def test_fetch_html_does_not_retry_http_error(monkeypatch):
-    """404/403 是站点的确定答复:一次就报,不浪费重试预算。"""
+    """404/410 是站点的确定答复:一次就报,不浪费重试预算。"""
     calls = []
 
     def fake_get(url, **kw):

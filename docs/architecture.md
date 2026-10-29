@@ -416,6 +416,32 @@ TeraBox 卷同样受益(直链抖动能续上),代价是 dlink 真过期时多�
 `test_download_stream_resumes_on_retry`、`test_download_stream_does_not_retry_404`、
 `test_download_stream_gives_up_after_retries`。
 
+### 换代理节点后整批 failed —— 页面 403 也是抽检, 不是确定答复(2026-10-29)
+
+用户换了代理节点(`harvest.proxy` 地址不变, Clash 上游换线), `/admin/harvest?status=failed`
+上堆了 4 条:`932/935` 报 `HTTP 403 for https://buondua.com/…`,`931/933` 报
+`短链解析失败: https://ouo.io/…`。**同一个 URL 几分钟后在容器里是 200**
+(五个 200 / 一个 403), 403 的正文是 Cloudflare 的「Attention Required!」拦页 ——
+按**出口 IP 声誉**抽检, 新节点的 IP 更容易被抽中。
+
+两处「只试一次」把概率事件变成了终态失败:
+
+1. `net.fetch_html` 把 403 当「站点确定答复」, 一次就抛 —— 于是十来次抓页里
+   只要撞上一次拦页, 整个任务就死。现在 `RETRY_STATUS = {403, 408, 425, 429,
+   5xx}` 与 CF 盾页(含 200 的盾页)都按 `FETCH_RETRY_BACKOFF`(1s/3s)重试,
+   **404/410 仍是一次就报**。实测同一 URL 冷请求 1/6 撞 403、隔一秒即 200。
+2. `net.resolve_ouo` 的 3 轮换会话之间**没有退避** —— 被盾时三个会话 3 秒内
+   三连 403 白试(931 的短链就这么 `None` 的, 而 933 的短链 24s 正常落地)。
+   现在换成 `OUO_RETRY_PAUSES = (2.0, 6.0)`。
+
+顺带把 `is_cf_challenge` 的响应头读取包进 try:打桩/非常规响应拿不到
+`.headers` 时以前直接 `return False`, 连正文里的 `Just a moment` 都不看。
+
+回归用例:`test_fetch_html_retries_cf_403`、`test_fetch_html_cf_challenge_page_is_retried`、
+`test_fetch_html_403_exhausted_reports_reason`;`test_fetch_html_does_not_retry_http_error`
+保留(404 仍不重试)。复核:931 重排后从 0 字节一路下到 55MB/2.15GB,
+932/933/935 依次出队。
+
 ### MediaFire 「软拒绝」:200 + 一页 HTML 冒充文件(2026-10-22)
 
 热补丁上线后 598/600/601/602/603 五个任务全挂在 SHA256 不匹配,且同一份

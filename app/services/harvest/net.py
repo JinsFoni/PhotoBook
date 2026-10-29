@@ -96,6 +96,7 @@ def mediafire_error_reason(url: str) -> str:
 # 按「出口 IP + TLS 指纹」联合概率拦截:机房代理出口 + chrome 指纹实测 100% 403,
 # safari17_0 实测 6/6 过盾且完整两段式跳转 3/3 落地 MediaFire。chrome 留作重试
 # 兕底(住宅出口/换代理场景 chrome 是通的)。
+OUO_RETRY_PAUSES = (2.0, 6.0)   # 换会话前的退避(见 resolve_ouo)
 OUO_IMPERSONATE = "chrome"  # 2026-09-30 实测: safari17_0 被 ouo CF 盾全拦(0/3), chrome 全过(3/3)
 
 
@@ -145,6 +146,10 @@ class HarvestTarget:
 FETCH_RETRIES = 3
 FETCH_RETRY_BACKOFF = (1.0, 3.0, 6.0)
 
+# 值得重试的 HTTP 状态:403 是 Cloudflare 的 IP 声誉拦截(概率性, 隔一秒常就过)、
+# 408/425/429 与 5xx 是限流/抖动。404/410 是「页面真没了」, 不在此列。
+RETRY_STATUS = frozenset({403, 408, 425, 429, 500, 502, 503, 504})
+
 
 def _is_conn_error(exc: BaseException) -> bool:
     """该异常是连接层抖动(值得重试),还是站点/参数的语义回答(重试无意义)。"""
@@ -160,8 +165,12 @@ def fetch_html(url: str, *, timeout: float = 30.0,
                retries: int = FETCH_RETRIES) -> str:
     """GET 页面,返回 HTML 文本。失败抛 RuntimeError。
 
-    连接层异常按 FETCH_RETRY_BACKOFF 退避重试;HTTP 非 200 **不**重试 ——
-    404/403 是站点给出的确定答复,重试只会把一次失败拖成三次。
+    连接层异常按 FETCH_RETRY_BACKOFF 退避重试。
+
+    HTTP 层面分两类(2026-10-29 换节点后实测):**404/410 是确定答复**,一次就报;
+    而 **403 常常只是 Cloudflare 按出口 IP 声誉抽的「Attention Required!」拦页** ——
+    同一 URL 隔一秒再请求就 200(新节点冷请求实测 1/6 撞 403,老实现一次就判死,
+    整批任务连环 failed)。所以 403/429/5xx 与 CF 盾页也按退避重试。
     """
     attempts = max(1, int(retries))
     for attempt in range(1, attempts + 1):
@@ -181,9 +190,19 @@ def fetch_html(url: str, *, timeout: float = 30.0,
                         attempt, attempts, delay, exc, url[:140])
             time.sleep(delay)
             continue
-        if r.status_code != 200:
+        challenge = is_cf_challenge(r)
+        if r.status_code == 200 and not challenge:
+            return r.text
+        if r.status_code not in RETRY_STATUS and not challenge:
             raise RuntimeError(f"HTTP {r.status_code} for {url}")
-        return r.text
+        what = f"HTTP {r.status_code}" + ("(CF 拦页)" if challenge else "")
+        if attempt >= attempts:
+            raise RuntimeError(f"{what}(已重试 {attempt} 次) for {url}")
+        delay = FETCH_RETRY_BACKOFF[min(attempt - 1,
+                                        len(FETCH_RETRY_BACKOFF) - 1)]
+        log.warning("取页第 %d/%d 次被拦(%s),%.1fs 后重试: %s",
+                    attempt, attempts, what, delay, url[:140])
+        time.sleep(delay)
     raise RuntimeError(f"取页失败: {url}")   # 循环必然 return/raise,兜底不可达
 
 
@@ -1057,6 +1076,10 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
     proxy = _proxy()
     for attempt in range(3):
         imp = OUO_IMPERSONATE if attempt < 2 else "safari17_0"  # 末轮换 safari 兑底(出口指纹多样性)
+        if attempt:
+            # 会话之间必须退避: ouo 的 CF 盾按出口 IP 概率拦, 连着重开三个会话
+            # 三连 403 就白试了(2026-10-29 实测 931 的短链 3 秒内全灭)。
+            time.sleep(OUO_RETRY_PAUSES[min(attempt - 1, len(OUO_RETRY_PAUSES) - 1)])
         s = cr.Session(impersonate=imp, proxy=proxy)
         try:
             url = link
@@ -1112,10 +1135,11 @@ CF_CHALLENGE_MARKERS = ("Just a moment", "cf-challenge", "__cf_chl_", "cf_chl_op
 def is_cf_challenge(r) -> bool:
     """响应是否 Cloudflare 人机盾拦截页(200 也可能是盾页,故正文也要查)。"""
     try:
-        if str(r.headers.get("cf-mitigated") or "").lower() == "challenge":
-            return True
+        hdr = str(r.headers.get("cf-mitigated") or "").lower()
     except Exception:
-        return False
+        hdr = ""          # 拿不到响应头(打桩/非常规响应)不该跳过正文判定
+    if hdr == "challenge":
+        return True
     try:
         body = (r.text or "")[:4096]
     except Exception:
