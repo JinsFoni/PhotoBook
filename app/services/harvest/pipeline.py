@@ -174,7 +174,10 @@ def download_stream(url: str, dest: Path, *,
                         attempt, "代理" if eff_proxy else "直连",
                         f"已续 {gained/1048576:.1f}MB" if gained > 0 else "无进展",
                         last, url[:160])
-            if auto_egress and getattr(exc, "conn", False):
+            # 只有「一点都没下下来」才算这个出口不通。MediaFire CDN 会按连接
+            # 掐流(每 ~35MB 一次 curl 56), 那是限速不是出口坏 —— 2026-10-29 实录:
+            # 旧逻辑每次都翻面, 于是一半的段走了代理(慢), 而且两边来回翻。
+            if auto_egress and getattr(exc, "conn", False) and gained == 0:
                 _EGRESS[host] = not eff_proxy
                 log.warning("下载 host %s 经%s连接失败,后续该 host 改走%s",
                             host, "代理" if eff_proxy else "直连",

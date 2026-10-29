@@ -868,3 +868,61 @@ def test_tag_name_with_parenthesised_native_is_split():
     t = net.parse_detail_page(REAL_URL, existing_html=html)
     assert t.model_name == "Asano Kokoro"
     assert t.model_native == "浅野こころ"
+
+
+# ---- resolve_ouo:出口翻面(2026-10-29 换节点后 ouo 主链全被盾) --------------
+
+class _FakeOuoSession:
+    def __init__(self, impersonate="", proxy=None):
+        self.impersonate = impersonate
+        self.proxy = proxy
+
+    def close(self):
+        pass
+
+
+def _ouo_stub(monkeypatch, *, blocked_when_proxy, blocked_when_direct=False,
+              final="https://www.mediafire.com/file/abc123/x.rar"):
+    """把 cr.Session 换成打桩会话, 并按「出口」决定是否被盾。"""
+    seen = []
+
+    def fake_step(s, link, *, wait=3.0):
+        seen.append(s.proxy)
+        if s.proxy and blocked_when_proxy:
+            return None, True
+        if not s.proxy and blocked_when_direct:
+            return None, True
+        return final, False
+
+    monkeypatch.setattr(net.cr, "Session", _FakeOuoSession)
+    monkeypatch.setattr(net, "_ouo_step", fake_step)
+    monkeypatch.setattr(net, "_proxy", lambda: "http://192.168.0.102:7890")
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    net._OUO_EGRESS.clear()
+    return seen
+
+
+def test_resolve_ouo_flips_to_direct_when_proxy_challenged(monkeypatch):
+    """代理出口被 ouo 的 CF 盾挡 → 立即翻面直连并记住(实测直连能过盾)。"""
+    seen = _ouo_stub(monkeypatch, blocked_when_proxy=True)
+    url = net.resolve_ouo("https://ouo.io/SsLlC8")
+    assert url == "https://www.mediafire.com/file/abc123/x.rar"
+    assert seen[0] == "http://192.168.0.102:7890"   # 先按默认(跟随 harvest.proxy)
+    assert seen[1] is None                          # 撞盾后同一轮就翻面直连
+    assert net._OUO_EGRESS["ouo"] is False          # 记住: 以后短链优先直连
+
+
+def test_resolve_ouo_keeps_remembered_egress(monkeypatch):
+    """记住过「直连能过」后, 下一次直接从直连开始, 不再白撞一次盾。"""
+    seen = _ouo_stub(monkeypatch, blocked_when_proxy=True)
+    net.resolve_ouo("https://ouo.io/SsLlC8")
+    seen.clear()
+    net.resolve_ouo("https://ouo.io/HZ3QneC")
+    assert seen[0] is None
+
+
+def test_resolve_ouo_both_egress_challenged_returns_none(monkeypatch):
+    """两边都被盾: 老老实实返回 None(worker 据此改走 TeraBox 备份)。"""
+    seen = _ouo_stub(monkeypatch, blocked_when_proxy=True, blocked_when_direct=True)
+    assert net.resolve_ouo("https://ouo.io/SsLlC8") is None
+    assert len(seen) >= 2

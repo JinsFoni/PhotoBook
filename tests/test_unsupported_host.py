@@ -32,7 +32,8 @@ def _cleanup(serials: list[int]) -> None:
 def test_resolve_ouo_raises_on_known_host(monkeypatch):
     """落地 terabox → 抛 UnsupportedHostError(带平台名)。"""
     monkeypatch.setattr(net, "_ouo_step",
-                        lambda s, url, **kw: "https://www.terabox.app/sharing/link?surl=abc")
+                        lambda s, url, **kw: ("https://www.terabox.app/sharing/link?surl=abc",
+                                              False))
     with pytest.raises(net.UnsupportedHostError) as ei:
         net.resolve_ouo("https://ouo.io/oHW468")
     assert ei.value.host == "TeraBox"
@@ -42,7 +43,7 @@ def test_resolve_ouo_raises_on_known_host(monkeypatch):
 def test_resolve_ouo_unknown_host_returns_none(monkeypatch):
     """完全未知的域 → 维持原行为返回 None(判短链坏)。"""
     monkeypatch.setattr(net, "_ouo_step",
-                        lambda s, url, **kw: "https://some-random.example.com/x")
+                        lambda s, url, **kw: ("https://some-random.example.com/x", False))
     assert net.resolve_ouo("https://ouo.io/oHW468") is None
 
 
@@ -75,7 +76,7 @@ def test_terabox_sibling_domains(monkeypatch):
     for url in ("https://www.1024tera.com/sharing/link?surl=abc",
                 "https://terasharelink.com/s/abc",
                 "https://teraboxapp.com/s/abc"):
-        monkeypatch.setattr(net, "_ouo_step", lambda s, u, **kw: url)
+        monkeypatch.setattr(net, "_ouo_step", lambda s, u, **kw: (url, False))
         with pytest.raises(net.UnsupportedHostError) as ei:
             net.resolve_ouo("https://ouo.io/x")
         assert ei.value.host == "TeraBox", url
@@ -85,7 +86,7 @@ def test_resolve_ouo_mediafire_error_page_raises(monkeypatch):
     """落地 MediaFire 错误页(errno=378 文件已下架)→ MediaFireDeadError。"""
     landing = ("https://www.mediafire.com/error.php?errno=378"
                "&quickkey=9jl0q201vahwb25&origin=download")
-    monkeypatch.setattr(net, "_ouo_step", lambda s, url, **kw: landing)
+    monkeypatch.setattr(net, "_ouo_step", lambda s, url, **kw: (landing, False))
     with pytest.raises(net.MediaFireDeadError) as ei:
         net.resolve_ouo("https://ouo.io/omuODmK")
     assert "下架" in ei.value.reason
@@ -105,7 +106,7 @@ def test_mediafire_error_reason_only_for_error_pages():
 def test_unsupported_host_error_carries_landing_url(monkeypatch):
     """UnsupportedHostError 带上落地 URL —— 调用方要拿 surl 兜底 TeraBox。"""
     landing = "https://www.terabox.app/sharing/link?surl=PbnyWjeMu5R3QvEEVVemAg"
-    monkeypatch.setattr(net, "_ouo_step", lambda s, url, **kw: landing)
+    monkeypatch.setattr(net, "_ouo_step", lambda s, url, **kw: (landing, False))
     with pytest.raises(net.UnsupportedHostError) as ei:
         net.resolve_ouo("https://ouo.io/RFzVQAV")
     assert ei.value.host == "TeraBox"

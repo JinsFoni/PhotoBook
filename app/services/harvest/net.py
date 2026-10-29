@@ -97,6 +97,11 @@ def mediafire_error_reason(url: str) -> str:
 # safari17_0 实测 6/6 过盾且完整两段式跳转 3/3 落地 MediaFire。chrome 留作重试
 # 兕底(住宅出口/换代理场景 chrome 是通的)。
 OUO_RETRY_PAUSES = (2.0, 6.0)   # 换会话前的退避(见 resolve_ouo)
+# ouo 该走哪个出口是**按出口 IP 声誉**定的, 与「页面该走哪边」可能相反:
+# 2026-10-29 实测同一短链家宽直连 200 带 _token、经代理 403「Just a moment…」,
+# 而同一时刻 buondua 页面直连超时、必须走代理。所以短链解析单独记一份偏好,
+# 撞盾就翻面并记住(进程内, 重启清空)。
+_OUO_EGRESS: dict[str, bool] = {}   # "ouo" -> 是否优先走代理
 OUO_IMPERSONATE = "chrome"  # 2026-09-30 实测: safari17_0 被 ouo CF 盾全拦(0/3), chrome 全过(3/3)
 
 
@@ -1014,20 +1019,24 @@ def parse_4kup_detail_page(url: str, existing_html: str | None = None,
 
 # ---- ouo.io 跳转链(已验证;2026-09 起为两段式) -------------------------------
 
-def _ouo_step(s, link: str, *, wait: float = 3.0) -> str | None:
-    """走一轮 ouo 短码页 → 返回落地 URL(可能是 MediaFire,也可能是下一段 ouo.io 短码)。
+def _ouo_step(s, link: str, *, wait: float = 3.0) -> tuple[str | None, bool]:
+    """走一轮 ouo 短码页 → `(落地 URL, 是否被 CF 盾挡)`。
+
+    落地可能是 MediaFire,也可能是下一段 ouo.io 短码。第二个返回值单列出来,
+    是因为**盾挡与流程断掉的处理方式不同**: 被盾说明「这个出口不行」, 该换出口
+    (见 resolve_ouo); 而流程断掉(页面结构变了)换出口没用。
 
     流程:GET 短码页取 _token/v-token → POST ouo.press/go/<code>
     → 解析 form-go 的 action/_token → POST action → 302 落地。
     """
     code = link.rstrip("/").split("/")[-1]
     r1 = s.get(link, timeout=30)
-    if r1.status_code != 200:
-        return None
+    if r1.status_code != 200 or is_cf_challenge(r1):
+        return None, True      # 403「Just a moment…」= Cloudflare 盾, 按出口 IP 判
     tok = re.search(r'name="_token"\s+type="hidden"\s+value="([^"]+)"', r1.text)
     vtok = re.search(r'id="v-token"\s+name="v-token"\s+type="hidden"\s+value="([^"]+)"', r1.text)
     if not tok:
-        return None
+        return None, False
     time.sleep(wait)
 
     r2 = s.post("https://ouo.press/go/" + code,
@@ -1035,20 +1044,21 @@ def _ouo_step(s, link: str, *, wait: float = 3.0) -> str | None:
                       "v-token": vtok.group(1) if vtok else "bx"},
                 timeout=30)
     if r2.status_code != 200 or "form-go" not in r2.text:
-        return None
+        return None, False
     m_action = re.search(r'action="([^"]*)"[^>]*id="form-go"', r2.text)
     m_tok2 = re.search(r'id="form-go">.*?name="_token"\s+type="hidden"\s+value="([^"]+)"', r2.text, re.S)
     if not m_action or not m_tok2:
-        return None
+        return None, False
     time.sleep(wait + 1.0)
 
     r3 = s.post(m_action.group(1), data={"_token": m_tok2.group(1), "x-token": ""},
                 timeout=30, allow_redirects=True)
     final = str(r3.url)
     if "mediafire.com/file/" in final:
-        return final
+        return final, False
     if "mediafire.com/folder/" in final:
-        return final  # 分卷包发布方把所有卷放一个文件夹, 由调用方 API 展开
+        # 分卷包发布方把所有卷放一个文件夹, 由调用方 API 展开
+        return final, False
     # 落地到其他网盘(terabox 等): 短链活着, 只是托管不在 MediaFire。
     # 分类由 resolve_ouo 统一处理(抛 UnsupportedHostError / 记日志)。
     if "ouo.io/" not in final and "ouo.press/" not in final:
@@ -1058,7 +1068,7 @@ def _ouo_step(s, link: str, *, wait: float = 3.0) -> str | None:
             log.warning("ouo %s landed on non-mediafire host: %s", code, final[:120])
     # 落地 URL 可能缺尾部路径(如 .../file/<key>),完整链接在响应体里
     m = re.search(r'(https?://www\.mediafire\.com/file/[^"\'\s]+)', r3.text)
-    return m.group(1) if m else final
+    return (m.group(1) if m else final), False
 
 
 def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | None:
@@ -1067,26 +1077,45 @@ def resolve_ouo(link: str, *, wait: float = 3.0, max_hops: int = 3) -> str | Non
     2026-09 起 ouo 常见两段式:第三步落地 ouo.io/<新短码>(还是短链页),
     需把同样流程再走一遍(最多 max_hops 轮)才到达 MediaFire。
 
-    CF 盾是概率拦截:单会话被盾/流程断掉 → 换新会话重试(safari17_0 优先,
-    末轮 chrome 兕底, 兼容住宅出口场景)。落地到其他网盘(terabox 等)
+    CF 盾按**出口 IP 声誉**判, 与「页面该走哪边」可能正好相反(直连能过、代理被挡,
+    或反之), 所以尝试表是「出口 × 指纹」:主力指纹先把两个出口各试一遍(撞盾立即
+    翻面), 再换 safari17_0 兜底;哪个出口过了盾就记下来(`_OUO_EGRESS`)。
+    落地到其他网盘(terabox 等)
     抛 UnsupportedHostError(带落地 URL,重试无意义);落地 MediaFire
     错误页(errno=378 文件已下架)抛 MediaFireDeadError;完全未知的域
     返回 None。三种「失败」要分开:前者有救(换源),后者无救(内容没了)。
     """
     proxy = _proxy()
-    for attempt in range(3):
-        imp = OUO_IMPERSONATE if attempt < 2 else "safari17_0"  # 末轮换 safari 兑底(出口指纹多样性)
+    # 出口 × 指纹的尝试表: 先把两个出口都用主力指纹试一遍(撞盾就翻面),
+    # 再换 safari17_0 兜底。harvest.proxy 为空时只剩直连一侧。
+    prefer_proxy = _OUO_EGRESS.get("ouo", True)
+    sides = [True, False] if prefer_proxy else [False, True]
+    if not proxy:
+        sides = [False]      # 没配代理: 只有直连这一侧可试
+    plan = [(side, OUO_IMPERSONATE) for side in sides] + \
+           [(side, "safari17_0") for side in sides]
+    for attempt, (use_proxy, imp) in enumerate(plan):
         if attempt:
             # 会话之间必须退避: ouo 的 CF 盾按出口 IP 概率拦, 连着重开三个会话
             # 三连 403 就白试了(2026-10-29 实测 931 的短链 3 秒内全灭)。
             time.sleep(OUO_RETRY_PAUSES[min(attempt - 1, len(OUO_RETRY_PAUSES) - 1)])
-        s = cr.Session(impersonate=imp, proxy=proxy)
+        s = cr.Session(impersonate=imp, proxy=(proxy if use_proxy else None))
         try:
             url = link
             for _ in range(max_hops):
-                final = _ouo_step(s, url, wait=wait)
+                final, blocked = _ouo_step(s, url, wait=wait)
+                if blocked:
+                    # 这个出口被 ouo 的 CF 盾挡死了: 记住翻面, 换另一侧重试。
+                    # 2026-10-29 实测: 同一链接家宽直连 200 带 _token、经代理
+                    # 403「Just a moment…」; 而 buondua 页面正好相反(直连超时)。
+                    _OUO_EGRESS["ouo"] = not use_proxy
+                    log.warning("ouo 短链被 CF 盾挡(出口%s), 后续改走%s",
+                                "代理" if use_proxy else "直连",
+                                "代理" if not use_proxy else "直连")
+                    break
+                _OUO_EGRESS["ouo"] = use_proxy   # 这个出口没被盾 → 记住它
                 if not final:
-                    break  # 被盾/页面异常 → 换新会话重试
+                    break  # 页面异常/流程断掉 → 换新会话重试
                 if "mediafire.com/file/" in final and "mediafire.com/download" not in final:
                     return final
                 if "mediafire.com/folder/" in final:

@@ -323,6 +323,52 @@ def test_download_stream_prefers_direct_for_mediafire_and_learns(tmp_path, monke
     pl._EGRESS.clear()
 
 
+def test_download_stream_does_not_flip_when_partial_data_arrived(tmp_path, monkeypatch):
+    """被对端掐流但已下了一部分 → 是限速不是出口坏, 不翻面(翻面只会让下一段变慢)。"""
+    from curl_cffi.requests.exceptions import ConnectionError as CrConnError
+
+    from app.services.harvest import net
+    from app.services.harvest import pipeline as pl
+
+    monkeypatch.setattr(net, "_proxy", lambda: "http://192.168.0.102:7890")
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    pl._EGRESS.clear()
+    seen = []
+    state = {"n": 0}
+
+    class _CutStream:
+        """先给 3 字节再抛 curl 56 —— MediaFire CDN 每 ~35MB 掐一次的真实形态。"""
+
+        status_code = 200
+        url = ""
+
+        def __init__(self):
+            self.headers = {"content-length": "5"}
+
+        def iter_content(self, chunk_size=0):
+            from curl_cffi.requests.exceptions import ConnectionError as CrConnError
+            yield b"abc"
+            raise CrConnError("Failed to perform, curl: (56) Connection closed abruptly")
+
+        def close(self):
+            pass
+
+    def fake_get(url, **kw):
+        seen.append(kw.get("proxy"))
+        seen.append("RANGE" if "Range" in (kw.get("headers") or {}) else "-")
+        state["n"] += 1
+        if state["n"] == 1:
+            return _CutStream()
+        return _Stream(206, [b"de"], {"content-length": "2"})
+
+    monkeypatch.setattr(pl.cr, "get", fake_get)
+    dest = tmp_path / "p.rar"
+    pl.download_stream("https://download2330.mediafire.com/abc/z.rar", dest)
+    assert seen == [None, "-", None, "RANGE"]   # 两段都直连(带 Range 续传), 没有翻面
+    assert "download2330.mediafire.com" not in pl._EGRESS
+    pl._EGRESS.clear()
+
+
 def test_download_stream_flips_to_direct_for_non_mediafire_host(tmp_path, monkeypatch):
     """非 MediaFire host 默认跟随 harvest.proxy;代理断流则翻面直连。"""
     from curl_cffi.requests.exceptions import ConnectionError as CrConnError

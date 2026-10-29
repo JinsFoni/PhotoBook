@@ -437,10 +437,35 @@ TeraBox 卷同样受益(直链抖动能续上),代价是 dlink 真过期时多�
 顺带把 `is_cf_challenge` 的响应头读取包进 try:打桩/非常规响应拿不到
 `.headers` 时以前直接 `return False`, 连正文里的 `Just a moment` 都不看。
 
+### 同一个链接, 页面要代理、短链要直连 —— 出口偏好分开记(2026-10-29)
+
+上一修上线后仍 failed:`ouo.io` 的三个短链 `resolve_ouo` 全返回 None。逐跳取证:
+
+| 请求 | 直连(家宽出口) | 经 `harvest.proxy`(新节点) |
+|---|---|---|
+| `ouo.io/SsLlC8` | **200**, 有 `_token`, 无盾页 | 403 + `cf-mitigated: challenge`(「Just a moment…」) |
+| `buondua.com/` | 超时(curl 28) | **200** |
+| `download2341.mediafire.com`(签名直链) | **33 MB/s** | 对端不回完整 body |
+
+也就是说 **ouo 的 CF 盾按出口 IP 声誉判, 与页面正好相反**:页面必须走代理,短链
+必须直连。旧实现短链只走 `harvest.proxy`, 于是主链全灭 → worker 回落 TeraBox
+备份 → TeraBox dlink 绑定解析出口, 只能走代理 → 82 KB/s 爬 2GB(实际要 7 小时)。
+
+修法:短链解析也记一份出口偏好 `_OUO_EGRESS`, 尝试表是「出口 × 指纹」——
+主力指纹先把两个出口各试一遍(`_ouo_step` 现在返回 `(落地, 是否被盾)` 以便撞盾
+立即翻面, 而不是傻等整条流程走完), 再换 `safari17_0` 兜底;哪个出口过了盾就
+记住。实测翻到直连后三条链 24s/21s 出 MediaFire 页(23 秒里 20 秒是 `wait` 间隔)。
+
+顺带一条:`download_stream` 的出口翻面只在**一点都没下下来**时做。MediaFire CDN
+会按连接掐流(每 ~35MB 一次 `curl 56`), 那是限速不是出口坏 —— 旧逻辑每次都翻面,
+一半的段被迫走代理, 实测平均 1.2 MB/s;改完后 2.0 MB/s(直链裸测 33 MB/s,
+掐流是 CDN 侧行为, 靠 Range 续传吃掉)。
+
 回归用例:`test_fetch_html_retries_cf_403`、`test_fetch_html_cf_challenge_page_is_retried`、
-`test_fetch_html_403_exhausted_reports_reason`;`test_fetch_html_does_not_retry_http_error`
-保留(404 仍不重试)。复核:931 重排后从 0 字节一路下到 55MB/2.15GB,
-932/933/935 依次出队。
+`test_fetch_html_403_exhausted_reports_reason`、`test_resolve_ouo_flips_to_direct_when_proxy_challenged`、
+`test_resolve_ouo_keeps_remembered_egress`、`test_resolve_ouo_both_egress_challenged_returns_none`、
+`test_download_stream_does_not_flip_when_partial_data_arrived`;`test_fetch_html_does_not_retry_http_error`
+保留(404 仍不重试)。
 
 ### MediaFire 「软拒绝」:200 + 一页 HTML 冒充文件(2026-10-22)
 
