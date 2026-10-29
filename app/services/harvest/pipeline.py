@@ -70,10 +70,13 @@ SOFT_BLOCK_BACKOFF = (5.0, 20.0)
 # 接着下 —— 所以「有进展」的连接失败不消耗重试预算,一直滚到下完为止。
 PROGRESS_BACKOFF_MAX = 10.0
 PROGRESS_RETRIES = 120   # 有进展时的额外重试轮数上限(120×25MB ≈ 3GB)
-# 「零进展」的连接失败(连上就被掐, 一个字节都没写)也要给够次数: 2026-10-29
-# 任务 931(2.15GB)下到 960MB 时连续几次 0.0MB 就被判死, 而同一 dlink 隔几秒
-# 再连是通的 —— MediaFire CDN 会按频率抽断新建连接, 不是这个出口真的不通。
-CONN_STALL_BUDGET = 6
+# 「零进展」的连接失败(连上就被掐, 一个字节都没写)按**整卷累计**给预算, 而且
+# 退避要长: 2026-10-29 任务 931(2.15GB)实测是这样的曲线 —— CDN 每 ~35MB 掐一次
+# (有进展, 走 PROGRESS_RETRIES 不计), 但每隔几次就夹一个「连上即死」的, 攒到
+# 3 次(旧预算)或 6 次就判死, 而重排后总能从 .part 续下去(960MB → 1.81GB)。
+# 这明显是对新连接的频率限制, 不是出口不通: 给 30 次累计 + 最长 30s 退避。
+CONN_STALL_BUDGET = 30
+STALL_BACKOFF = (5.0, 10.0, 20.0, 30.0)
 
 
 class _Retryable(RuntimeError):
@@ -200,8 +203,12 @@ def download_stream(url: str, dest: Path, *,
                         f"{last}(已重试 {attempts} 次;MediaFire 这类拦是临时的,"
                         f"过一会儿重排即可)") from exc
                 raise RuntimeError(last) from exc
-            backoff = (SOFT_BLOCK_BACKOFF if getattr(exc, "soft", False)
-                       else RETRY_BACKOFF)
+            if getattr(exc, "soft", False):
+                backoff = SOFT_BLOCK_BACKOFF
+            elif getattr(exc, "conn", False):
+                backoff = STALL_BACKOFF      # 连上即死: 越试越久(被限频)
+            else:
+                backoff = RETRY_BACKOFF
             time.sleep(backoff[min(stalls - 1, len(backoff) - 1)])
             continue
         return dest

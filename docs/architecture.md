@@ -461,10 +461,13 @@ TeraBox 卷同样受益(直链抖动能续上),代价是 dlink 真过期时多�
 一半的段被迫走代理, 实测平均 1.2 MB/s;改完后 2.0 MB/s(直链裸测 33 MB/s,
 掐流是 CDN 侧行为, 靠 Range 续传吃掉)。
 
-再补一条(同日 931 实录):零进展的连接失败也要给够次数。931 下到 960MB 时
-连着几次「已续 0.0MB」就被判死(旧预算 3 次),而同一 dlink 隔几秒再连是通的 ——
-MediaFire CDN 会按频率抽断新建连接。现在 `CONN_STALL_BUDGET = 6` 只管
-「零进展 + 连接层失败」,403/软拒绝仍按 `retries` 判;重排后从 960MB 续到 1.6GB+。
+再补一条(同日 931 实录):零进展的连接失败要按**整卷累计**给预算。931(2.15GB)
+的曲线是「每 ~35MB 被掐一次(有进展, 走 PROGRESS_RETRIES 不计) + 每隔几次夹一个
+连上即死」;旧预算 3 次、6 次都在这条曲线上被判死(960MB、1.81GB 两处),而每次
+重排都能从 `.part` 续下去 —— 这明显是对新连接的频率限制,不是出口不通。现在
+`CONN_STALL_BUDGET = 30`(整卷累计,只管「零进展 + 连接层失败」,403/软拒绝仍按
+`retries` 判)配 `STALL_BACKOFF = (5, 10, 20, 30)s`。931 第三次重排后从 1.81GB
+续到 2,150,986,350 字节校验通过,四本全部入库。
 
 回归用例:`test_fetch_html_retries_cf_403`、`test_fetch_html_cf_challenge_page_is_retried`、
 `test_fetch_html_403_exhausted_reports_reason`、`test_resolve_ouo_flips_to_direct_when_proxy_challenged`、
