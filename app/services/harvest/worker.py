@@ -52,6 +52,16 @@ def _now():
 # 未落终态的任务状态(浏览器联动判定「下载中」也用它)
 ACTIVE_JOB_STATES = ("queued", "parsing", "downloading", "extracting")
 
+# 「有线程正在跑」的状态 —— 停滞判定(看门狗/启动恢复)**只认这三个**, 不含 queued。
+# 2026-10-30 事故: 看门狗拿 ACTIVE_JOB_STATES 扫, queued 也被当成「进行中」。
+# 消费循环是串行的, 一个任务要跑几分钟, 19 个排队任务等下去就是几小时, 而
+# updated_at 只在开跑那一刻写过 —— 于是每分钟整批「还在排队」的任务都被判
+# 「进度停滞」重排: 错误列全被覆写成「进度停滞/上次运行中断, 自动重新排队」,
+# 日志每分钟几十行; 更糟的是它还会 _run_tokens.pop() 撤掉运行令牌 —— 万一消费
+# 线程刚好把该任务取起来, 这一轮跑的终态就再也写不进库(白下一遍再重排)。
+# 排队 = 在等轮次, 不是卡死: 排多久都不该动它。
+RUNNING_JOB_STATES = ("parsing", "downloading", "extracting")
+
 
 def enqueue(s, serial: int, url: str, source: str = "auto") -> HarvestJob | None:
     """入队(历史去重 + 排队去重)。返回新任务或 None。"""
@@ -520,6 +530,9 @@ def _run_job(job_id: int) -> None:
         job.status = "parsing"
         job.started_at = _now()
         job.updated_at = job.started_at
+        # 开跑了: 上一轮的提示语(「进度停滞, 已重新排队」之类)不再适用于本轮,
+        # 留着只会让「运行中」的任务挂着一条过期错误(2026-10-30 排队误报的副作用)
+        job.error = None
         s.commit()
 
         conf = settings_store.harvest_conf(s)
@@ -861,13 +874,16 @@ def _recover_and_watchdog(*, at_startup: bool = False) -> None:
     at_startup=True 时不看 updated_at: 上次进程的下载线程已随进程消失,
     活动任务必然都是孤儿。若仍按 30 分钟阈值筛, 重启前刚更新过的任务会被
     误判「健康」, 一直卡到阈值到期才恢复(2026-10-20 #585 重启后卡了 30 分钟)。
+
+    只扫 RUNNING_JOB_STATES(不含 queued): 排队是等轮次, 不是卡死 —— 混进来
+    会把整批排队任务每分钟「重排」一次, 见该常量处的注释。
     """
     s = SessionLocal()
     try:
         stale = sys.modules[__name__].STALE_SECONDS  # 运行时可调(测试缩短)
         cutoff = datetime.now(timezone.utc).timestamp() - stale
         rows = s.scalars(select(HarvestJob).where(
-            HarvestJob.status.in_(ACTIVE_JOB_STATES))).all()
+            HarvestJob.status.in_(RUNNING_JOB_STATES))).all()
         reset: list[int] = []
         for job in rows:
             if at_startup:
@@ -884,6 +900,7 @@ def _recover_and_watchdog(*, at_startup: bool = False) -> None:
                 continue
             job.status = "queued"
             job.error = "进度停滞/上次运行中断, 自动重新排队(已下载部分续传)"
+            job.updated_at = _now()   # 重排也要留痕, 否则界面上时间停在开跑那一刻
             s.commit()
             # 解堵: close 卡死线程阻塞中的下载流(实测能立刻抛异常退出)
             pipeline.close_stream(job_id)

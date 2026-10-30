@@ -75,6 +75,13 @@ def test_watchdog_keeps_fresh_job_running(clean):
     assert _get(job_id).status == "downloading"
 
 
+def test_stall_scan_excludes_queued():
+    """停滞判定不能把 queued 算成「进行中」—— 与 harvest 侧同一个坑(2026-10-30)。"""
+    assert "queued" not in pk_worker.RUNNING_JOB_STATES
+    assert set(pk_worker.RUNNING_JOB_STATES) < set(pk_worker.ACTIVE_JOB_STATES)
+    assert "downloading" in pk_worker.RUNNING_JOB_STATES
+
+
 def test_resume_does_not_skip_partial_album(clean, tmp_path, monkeypatch):
     job_id = _job()
     album = tmp_path / "album"

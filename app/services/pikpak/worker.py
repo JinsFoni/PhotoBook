@@ -40,6 +40,12 @@ _watchdog: threading.Thread | None = None
 # 未落终态的任务状态(浏览器联动判定「下载中」也用它)
 ACTIVE_JOB_STATES = ("queued", "downloading", "extracting")
 
+# 「有线程正在跑」的状态 —— 停滞判定(看门狗/启动恢复)**只认这两个**, 不含 queued。
+# 与 harvest 侧同款缺陷(见 harvest/worker.py 的 RUNNING_JOB_STATES 注释):
+# 排队只是等轮次, 把 queued 算作「进行中」会让整批排队任务每分钟被「重排」一遍,
+# 错误列被覆写成「进度停滞」, 还会撤掉运行令牌打断真正在跑的那一轮。
+RUNNING_JOB_STATES = ("downloading", "extracting")
+
 # 看门狗停滞阈值(秒): 超过则重置回 queued 重跑。断点续传不白费。
 STALE_SECONDS = 30 * 60
 
@@ -254,6 +260,8 @@ def _run_job(job_id: int) -> None:
         # 否则多轮重试后 files_done 会累积到 files_total 的几倍。
         job.files_done = 0
         job.updated_at = job.started_at
+        # 开跑了: 上一轮的提示语不再适用于本轮, 留着会让「下载中」挂着过期错误
+        job.error = None
         s.commit()
 
         conf = settings_store.harvest_conf(s)
@@ -720,12 +728,14 @@ def _recover_and_watchdog(*, at_startup: bool = False) -> None:
     at_startup=True 时不看 updated_at: 上次进程的下载线程已随进程消失,
     活动任务必然都是孤儿。若仍按 30 分钟阈值筛, 重启前刚更新过的任务会被
     误判「健康」, 要一直卡到阈值到期才恢复(实测 P20 卡了 30 分钟)。
+
+    只扫 RUNNING_JOB_STATES(不含 queued): 排队是等轮次, 不是卡死。
     """
     s = SessionLocal()
     try:
         cutoff = datetime.now(timezone.utc).timestamp() - STALE_SECONDS
         rows = s.scalars(select(PikPakJob).where(
-            PikPakJob.status.in_(ACTIVE_JOB_STATES))).all()
+            PikPakJob.status.in_(RUNNING_JOB_STATES))).all()
         reset: list[int] = []
         for job in rows:
             if at_startup:

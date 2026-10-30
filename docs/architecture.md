@@ -993,6 +993,37 @@ tokens/张数不变), 下个标题比到时直接判「已登记」。
 `::test_status_post_registers_multiple_titles_in_one_batch`(就地更新不会弄脏候选)、
 `::test_states_for_serials_batch_matches_single`(批量判态与逐条判态逐项一致)。
 
+### 「进度停滞/上次运行中断, 自动重新排队」盖在还在排队的任务上(2026-10-30)
+
+换代理节点后一批任务 failed,重排之后 19 个任务全部显示
+「进度停滞/上次运行中断, 自动重新排队(已下载部分续传)」,日志里每分钟刷几十行
+`watchdog reset job #… -> queued`,而它们其实**一张图都还没开始下**。
+
+根因在看门狗的扫描集合: `ACTIVE_JOB_STATES`(queued/parsing/downloading/
+extracting)被复用成「进行中」判据,`queued` 也在里面。但消费循环是串行的,
+一个任务要跑几分钟,19 个排队任务等下去就是几小时;`updated_at` 又只在**开跑
+那一刻**写过(重排接口、看门狗自己都不碰它)—— 于是每个排队任务一过 30 分钟
+阈值就被判「卡死」, 每分钟重置一次:
+
+- 错误列被覆写成那条「进度停滞」,真实失败原因(如 TeraBox `error/302`)被冲掉;
+- 日志每分钟几十行,把真正的告警埋掉;
+- 最要命: 重置时会 `_run_tokens.pop(job_id)` 撤掉运行令牌 —— 万一消费线程
+  刚好把这个任务取起来, 这一轮跑的终态(`_finish`)就永远写不进库,白下一遍
+  再重排,理论上还能与下一轮抢同一批 `.part`。
+
+修法: 停滞判定只认「有线程在跑」的 `RUNNING_JOB_STATES`
+(采集侧 `parsing/downloading/extracting`,PikPak 侧 `downloading/extracting`),
+`ACTIVE_JOB_STATES` 保留给「未落终态」的语义用途(`enqueue` 去重、浏览器联动
+判定「下载中」)。顺带两处: 重置时也更新 `updated_at`(否则界面时间停在开跑
+那一刻);`_run_job` 开跑时清空 `error`(上一轮的提示语不该挂在本轮身上)。
+
+**排队 = 等轮次, 不是卡死**: 排多久都不该动它。
+
+测试: `test_harvest_recovery.py::test_stall_scan_excludes_queued`(契约: 运行态
+不含 queued 且是活动态的子集)、`::test_watchdog_leaves_stale_queued_job_alone`
+(排了 2 小时的任务被看门狗碰过后仍是 `queued` 且 `error` 为空)、
+`test_pikpak_recovery.py::test_stall_scan_excludes_queued`。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,
