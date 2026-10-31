@@ -40,6 +40,14 @@ GitHub Release **published** 时自动构建(见 `.github/workflows/android-rele
 等 Secrets 解出)签名** → APK(`PhotoBook-<tag>.apk`)上传到该 Release 资产。
 Secrets 未配置时回落 debug 签名(会打 warning,那种产物不能覆盖安装正式版)。
 
+**签名方案必须 v1+v2+v3 全开**(`signingConfigs` 里显式 `enableV1Signing/V2/V3`),
+不能靠 AGP 默认值。2026-11-01 实机事故:AGP 在 `minSdk >= 24` 时默认只做 v2 签名,
+APK 里没有 `META-INF/MANIFEST.MF + CERT.SF + CERT.RSA`,v1.9.10 装到 OPPO PKT110
+(ColorOS / API 36)直接报「解析失败:安装包没有签名文件」,装不进去。显式全开后
+`apksigner verify -v --min-sdk-version 21` 才能看到 `v1/v2/v3: true`
+(注意:带 v3 的包在默认参数下 apksigner 只校验最高一档,v1/v2 会显示 false,
+那是「跳过校验」不是「签名坏了」)。
+
 ## 测试账号
 
 `demo / demo123`(服务端种子数据)。

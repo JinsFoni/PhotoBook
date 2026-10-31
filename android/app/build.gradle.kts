@@ -33,7 +33,20 @@ android {
                 keyAlias = System.getenv("KEY_ALIAS")
                 keyPassword = System.getenv("KEY_PASSWORD")
             }
+            // 2026-11-01 实机事故:v1.9.10 装不上,安装器报「解析失败:安装包
+            // 没有签名文件」。AGP 在 minSdk >= 24 时默认只做 v2 签名,APK 里没有
+            // META-INF/*.SF,而部分国产 ROM 的安装器 / 文件管理器 / 第三方安装
+            // 工具只认 v1(JAR)签名,于是直接判定「没签名」。三种方案全开最保险。
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
+    }
+    // debug 包同理(v2-only 的调试包在个别安装器上也会被拒)
+    signingConfigs.getByName("debug").apply {
+        enableV1Signing = true
+        enableV2Signing = true
+        enableV3Signing = true
     }
 
     buildTypes {
