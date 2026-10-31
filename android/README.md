@@ -22,6 +22,13 @@ cd android
 
 注意:工程启用 `android.builtInKotlin=false` + `android.newDsl=false`(Gradle 9.6 + AGP 兼容配置),buildscript classpath 钉 KGP 2.4.20;不要在 android{} 块外配 testOptions。
 
+**debug 包名带 `.debug` 后缀**(`dev.jinsfoni.photobook.debug`,release 不变)。2026-10-31
+实机事故:手机上先装了本地 build 的 debug 签名包(包名同为 `dev.jinsfoni.photobook`),
+之后官方 release 用的是正式密钥,两种装法都被 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
+挡住(手机提示「已安装签名冲突的应用」),只能卸载重装。加后缀后开发包与正式版可以
+同时存在,互不干扰;本地 `assembleRelease` 在缺 `app/release.keystore` 时仍会回落
+debug 签名 —— 那种包**不要**装到已装正式版的机器上。
+
 ## 服务端地址
 
 默认 `DEFAULT_BASE_URL`(data/remote/MobileApi.kt)。真机调试:改为局域网地址(如 `http://192.168.x.x:8000/api/mobile/`),或等 M3 S9 多服务器设置页。服务端启动:`uvicorn app.main:app`(见仓库根 README)。
@@ -29,7 +36,9 @@ cd android
 ## 发版
 
 GitHub Release **published** 时自动构建(见 `.github/workflows/android-release.yml`):
-跑单测 → assembleRelease → debug.keystore 签名 → APK(`PhotoBook-<tag>.apk`)上传到该 Release 资产。
+跑单测 → assembleRelease → **`app/release.keystore`(CI 从 `ANDROID_KEYSTORE_BASE64`
+等 Secrets 解出)签名** → APK(`PhotoBook-<tag>.apk`)上传到该 Release 资产。
+Secrets 未配置时回落 debug 签名(会打 warning,那种产物不能覆盖安装正式版)。
 
 ## 测试账号
 

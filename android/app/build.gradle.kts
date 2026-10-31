@@ -37,6 +37,15 @@ android {
     }
 
     buildTypes {
+        debug {
+            // 开发包与正式版包名分开,能同时装在一台手机上。
+            // 2026-10-31 实机事故:手机上先装了本地 build 的 debug 签名包
+            // (包名同为 dev.jinsfoni.photobook),官方 release 签名不同,两种
+            // 装法都被 INSTALL_FAILED_UPDATE_INCOMPATIBLE 挡住("已安装签名
+            // 冲突的应用"),只能卸载重装 —— 加后缀后不会再互相踩。
+            // release 包名不变(仍是 dev.jinsfoni.photobook),升级路径照旧。
+            applicationIdSuffix = ".debug"
+        }
         release {
             // V1 不配 proguard 规则(计划中的记录在案偏差)
             isMinifyEnabled = false
