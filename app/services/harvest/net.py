@@ -1187,6 +1187,24 @@ def _mf_prime_url(url: str) -> str:
     return f"https://www.mediafire.com/file/{m.group(1)}/" if m else ""
 
 
+# MediaFire 文件页最近按**出口 IP 声誉**整片挡(2026-10-31 实录):同一台机器
+# 同一秒, 家宽直连 + chrome/safari 指纹 = 200, 代理出口 8 个指纹全 403
+# 「Just a moment…」;而 get_info.php API 两个出口都 200 —— 所以只有文件页这一处
+# 需要翻面。换节点后 proxy 出口被 CF 标记, 19 个任务全卡在这一步(TeraBox 备份
+# 又是坏链), 正是这条的代价。
+# 默认先直连(mediafire.com 家宽可达, 被标记的通常是机房出口), 撞盾立刻翻面并把
+# 选择记在进程内;worker 常驻, 重启清空。
+_MF_EGRESS = {"page": False}      # False = 先直连, True = 先走代理
+
+
+def _mf_page_sides() -> list[bool]:
+    """文件页该按什么顺序试出口。返回 [先试的, 备用的](没配代理只剩直连)。"""
+    if not _proxy():
+        return [False]
+    prefer = _MF_EGRESS.get("page", False)
+    return [prefer, not prefer]
+
+
 def mediafire_page_session(page_url: str, *, timeout: float = 30.0):
     """取文件页并**把这次的 Session 一起返回**:`(html, session)`。
 
@@ -1197,13 +1215,21 @@ def mediafire_page_session(page_url: str, *, timeout: float = 30.0):
     页面和下载都直连(同一出口)也 4/4 正常。所以下载必须带上这个 Session。
 
     每轮:新 Session → 裸页预热(拿 __cf_bm/ukey,失败也继续)→ 目标页;
-    被盾则换 Session 退避重试。失败抛 RuntimeError。
+    被盾则按 `_mf_page_sides()` 换出口(撞盾翻面并记住),再换 safari17_0 兜底
+    —— 指纹也影响判定(2026-10-31 直连 chrome 200 / chrome124 403)。
+    失败抛 RuntimeError。
     """
     proxy = _proxy()
     prime = _mf_prime_url(page_url)
     last = "未尝试"
-    for attempt in range(CF_RETRY_TRIES):
-        s = cr.Session(impersonate=UA_IMPERSONATE, proxy=proxy)
+    sides = _mf_page_sides()
+    plan = [(side, UA_IMPERSONATE) for side in sides]
+    plan.append((sides[0], "safari17_0"))
+    for attempt, (use_proxy, imp) in enumerate(plan):
+        if attempt:
+            time.sleep(_cf_backoff(attempt - 1))
+        s = cr.Session(impersonate=imp,
+                       proxy=(proxy if use_proxy and proxy else None))
         try:
             if prime and prime != page_url:
                 try:
@@ -1212,22 +1238,27 @@ def mediafire_page_session(page_url: str, *, timeout: float = 30.0):
                     log.debug("mediafire 预热失败(忽略): %s", exc)
             r = s.get(page_url, timeout=timeout, allow_redirects=True)
             if r.status_code == 200 and not is_cf_challenge(r):
+                _MF_EGRESS["page"] = use_proxy      # 这个出口没被挡 → 记住它
                 return r.text, s
             last = f"HTTP {r.status_code}"
             if is_cf_challenge(r):
                 last += " (cf challenge)"
+                if _MF_EGRESS.get("page", False) != (not use_proxy):
+                    # 撞盾: 记住下次换另一侧, 别让整批任务都白试这一边
+                    _MF_EGRESS["page"] = not use_proxy
+                    log.warning("mediafire 文件页被 CF 盾挡(出口%s), 后续改走%s",
+                                "代理" if use_proxy else "直连",
+                                "代理" if not use_proxy else "直连")
             log.warning("mediafire 页面第 %d/%d 次失败: %s %s",
-                        attempt + 1, CF_RETRY_TRIES, last, page_url)
+                        attempt + 1, len(plan), last, page_url)
         except Exception as exc:
             last = f"{type(exc).__name__}: {exc}"
             log.warning("mediafire 页面第 %d/%d 次异常: %s %s",
-                        attempt + 1, CF_RETRY_TRIES, last, page_url)
+                        attempt + 1, len(plan), last, page_url)
         try:
             s.close()
         except Exception:
             pass
-        if attempt < CF_RETRY_TRIES - 1:
-            time.sleep(_cf_backoff(attempt))
     raise RuntimeError(f"MediaFire 页面取不到({last}): {page_url}")
 
 

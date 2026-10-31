@@ -1024,6 +1024,38 @@ extracting)被复用成「进行中」判据,`queued` 也在里面。但消费�
 (排了 2 小时的任务被看门狗碰过后仍是 `queued` 且 `error` 为空)、
 `test_pikpak_recovery.py::test_stall_scan_excludes_queued`。
 
+### MediaFire 文件页按出口整片挡 → 取页也要会翻面(2026-10-31)
+
+换节点后又有两个任务 failed,错误是「无法从链接解析 surl:
+`1024terabox.com/error/302.html`」—— 这是兜底链,**真凶在它前面**:MediaFire
+文件页 `mediafire 页面第 1..3 次失败: HTTP 403 (cf challenge)`,三次都在同一个
+出口(跟随 `harvest.proxy`)上换会话重试,而这一侧被 Cloudflare 整片标记了。
+
+同一台机器同一秒的实测(容器内,`curl_cffi` + 不同指纹):
+
+| 出口 | chrome | chrome124 | chrome131 | safari | safari17_0 | firefox133 |
+|---|---|---|---|---|---|---|
+| 家宽直连 | **200** | 403 | **200** | **200** | **200** | 403 |
+| 代理出口 | 403盾 | 403盾 | 403盾 | 403盾 | 403盾 | 403盾 |
+
+而 `api/1.5/file/get_info.php` **两个出口都 200** —— 所以只需翻文件页这一处,
+不是整个 mediafire.com 被封,也不是 manifest 里那些链接坏了(两条 TeraBox 备份
+确实是坏的,但它们只是没被用上的兜底)。
+
+修法: `mediafire_page_session` 的尝试表从「同一出口换 3 个会话」改成
+「出口 × 指纹」——`_mf_page_sides()` 给出 [先试的, 备用的] 两个出口,先各用主力
+指纹试一遍(撞盾立刻翻面),再补一次 `safari17_0` 兜底;哪个出口过了盾就把选择
+记进 `_MF_EGRESS["page"]`,后续任务不再白试被标记的那一侧(worker 常驻,重启清空)。
+**默认先直连**: 被 CF 标记的通常是机房/代理出口,`mediafire.com` 家宽本来可达。
+下载端不受影响 —— 它复用取页面的那个 Session(dkey 绑客户端),出口随之走同一边。
+
+验证: 三个卡住的包改后逐个 2.3s 拿到直链(`download1349/1323/848.mediafire.com`),
+线上 1064 已开始下载(2.3GB),失败数归零。
+
+测试: `test_net.py::test_mediafire_page_falls_back_to_proxy_when_direct_challenged`
+(直连撞盾同一轮翻面并记住)、`::test_mediafire_page_prefers_direct_by_default`、
+`::test_mediafire_page_without_proxy_only_tries_direct`(没配代理只换指纹,不碰代理)。
+
 ### 测试
 
 - `test_harvest_scan_route` 会真实扫 buondua.com 列表页并把当前首页写真入队,

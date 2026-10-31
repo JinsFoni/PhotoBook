@@ -926,3 +926,81 @@ def test_resolve_ouo_both_egress_challenged_returns_none(monkeypatch):
     seen = _ouo_stub(monkeypatch, blocked_when_proxy=True, blocked_when_direct=True)
     assert net.resolve_ouo("https://ouo.io/SsLlC8") is None
     assert len(seen) >= 2
+
+
+# ---- MediaFire 文件页按出口翻面(2026-10-31) --------------------------------
+# 换代理节点后 19 个任务全卡在取 MediaFire 文件页: 同一台机器同一秒, 家宽直连
+# 200、代理出口 403「Just a moment…」(get_info.php API 两个出口都 200)。旧的
+# 实现对文件页只会「同一个出口换会话重试」, 出口被整片标记就永远过不去。
+class _FakeMfSession:
+    def __init__(self, impersonate="", proxy=None):
+        self.impersonate = impersonate
+        self.proxy = proxy
+
+    def close(self):
+        pass
+
+
+class _MfResp:
+    def __init__(self, status, text=""):
+        self.status_code = status
+        self.headers: dict = {}
+        self.text = text
+
+
+def _mf_stub(monkeypatch, *, blocked_when_proxy=False, blocked_when_direct=False,
+             proxy="http://192.168.0.102:7890"):
+    """把 cr.Session 换成按出口回「盾页/正常页」的打桩会话。"""
+    seen = []
+
+    def fake_session(impersonate="", proxy=None):
+        s = _FakeMfSession(impersonate, proxy)
+
+        def get(url, **kw):
+            if "/file/" in url and url.endswith("/"):     # 裸页预热
+                return _MfResp(200, "<html>prime</html>")
+            seen.append(proxy)
+            if proxy and blocked_when_proxy:
+                return _MfResp(403, "<html>Just a moment...</html>")
+            if not proxy and blocked_when_direct:
+                return _MfResp(403, "<html>Just a moment...</html>")
+            return _MfResp(200, '<a href="https://download1475.mediafire.com/x">')
+        s.get = get
+        return s
+
+    monkeypatch.setattr(net.cr, "Session", fake_session)
+    monkeypatch.setattr(net, "_proxy", lambda: proxy)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    net._MF_EGRESS["page"] = False          # 默认先直连
+    return seen
+
+
+def test_mediafire_page_falls_back_to_proxy_when_direct_challenged(monkeypatch):
+    """直连撞盾 → 同一轮就翻面走代理, 并记住「页面走代理」。"""
+    seen = _mf_stub(monkeypatch, blocked_when_direct=True)
+    html, sess = net.mediafire_page_session(
+        "https://www.mediafire.com/file/abc123/x.rar/file")
+    assert "download1475" in html
+    assert seen[0] is None                                  # 先试直连(默认)
+    assert seen[1] == "http://192.168.0.102:7890"           # 撞盾后翻面
+    assert net._MF_EGRESS["page"] is True                   # 记住: 以后先走代理
+    sess.close()
+
+
+def test_mediafire_page_prefers_direct_by_default(monkeypatch):
+    """默认先直连 —— 机房出口被 CF 整片标记时, 家宽直连才是能过的那一侧。"""
+    seen = _mf_stub(monkeypatch)
+    html, _ = net.mediafire_page_session(
+        "https://www.mediafire.com/file/abc123/x.rar/file")
+    assert "download1475" in html
+    assert seen == [None]
+    assert net._MF_EGRESS["page"] is False
+
+
+def test_mediafire_page_without_proxy_only_tries_direct(monkeypatch):
+    """没配代理: 只有直连一侧, 换指纹(含 safari17_0)再试, 不会去碰代理。"""
+    seen = _mf_stub(monkeypatch, blocked_when_direct=True, proxy=None)
+    with pytest.raises(RuntimeError):
+        net.mediafire_page_session("https://www.mediafire.com/file/abc123/x.rar/file")
+    assert seen and all(p is None for p in seen)
+    assert len(seen) >= 2          # 主力指纹 + safari17_0 兜底
