@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BuonDua/misskon/nicesss/4kup → PhotoBook 助手
 // @namespace    photobook.bridge
-// @version      1.8.2
+// @version      1.8.3
 // @description  在 buondua.com / misskon.com / nicesss.com / 4kup.net 卡片右下角与详情页标题行右侧显示「下载/已入库」状态,点击推送到 PhotoBook 任务队列(同一本写真跨站转载也判已入库)
 // @author       PhotoBook
 // @match        https://buondua.com/*
@@ -412,8 +412,13 @@
       const map = {};
       data.items.forEach(i => { map[i.serial] = i.state; });
       cards.forEach(c => {
-        const host = ensureHost(c);
         const serial = cardSerial(c);
+        // 本地取不到序号的卡片归 URL 通道管(applyUnknown 负责画), 这里跳过:
+        // map[""] 永远是 undefined, 硬画只会把 URL 通道刚判好的「已入库」
+        // 抹成「⬇ 下载」。两路请求并发, 谁后回来谁说话 ——
+        // 2026-10-31 /tag/inah 刷新后「部分卡片不显示已入库」。
+        if (!serial) return;
+        const host = ensureHost(c);
         if (host) setBadge(host, serial, map[serial] || "new",
           pending.has(serial) ? "pending" : null);
       });
@@ -511,11 +516,16 @@
       const item = byUrl[a.href];
       const host = ensureHost(c);
       if (!host) return;
+      // 本批根本没问这张卡(URL 里带序号的新帖走 /status 通道): 跳过, 别重画。
+      // 下面那条兜底原本对 item 缺失也画「⬇ 下载」, 于是同一张卡上两条通道
+      // 互相覆盖, 后回来的赢 —— 混排页(新帖 /<序号>-slug/ + 老帖纯 slug)
+      // 刷新后带序号的那批全变「下载」。
+      if (!item) return;
       // state 为空 = resolveUnknown 对「本次没查状态、只补序号」的 known URL 的兜底项:
       // 不能重画(会把已有徽标抹成空白), 跳过等下一轮主通道/查询回调来画
-      if (item && item.state == null) return;
-      if (!item || item.serial == null) {
-        setBadge(host, "", item && item.state ? item.state : "new", null);
+      if (item.state == null) return;
+      if (item.serial == null) {
+        setBadge(host, "", item.state, null);
         return;
       }
       setBadge(host, String(item.serial), item.state,
@@ -523,11 +533,11 @@
     });
     if (isDetailPage() && !serialFromLocation()) {
       const item = byUrl[location.href];
+      if (!item || item.state == null) return;
       const host = ensureDetailHost();
       if (!host) return;
-      if (item && item.state == null) return;
-      if (!item || item.serial == null) {
-        setBadge(host, "", item && item.state ? item.state : "new", null);
+      if (item.serial == null) {
+        setBadge(host, "", item.state, null);
       } else {
         setBadge(host, String(item.serial), item.state,
           pending.has(String(item.serial)) ? "pending" : null);
