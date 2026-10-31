@@ -48,6 +48,29 @@ APK 里没有 `META-INF/MANIFEST.MF + CERT.SF + CERT.RSA`,v1.9.10 装到 OPPO PK
 (注意:带 v3 的包在默认参数下 apksigner 只校验最高一档,v1/v2 会显示 false,
 那是「跳过校验」不是「签名坏了」)。
 
+## 本地网络权限(Android 17 / API 37,必须)
+
+2026-11-01 实机事故:v1.9.11 装到 OPPO PKT110(Android 17 / API 37)后,所有页面
+一律「无法连接服务器」,而同一台机器用 Chrome 打开 `http://192.168.0.100:8777/` 完全正常,
+`ping` 也通。原因是 Android 17 的**本地网络保护(Local Network Protection)**:
+targetSdk >= 37 的 App 访问 `192.168.x.x` / `10.x` / `172.16-31.x` / `.local`
+必须持有 dangerous 权限 `android.permission.ACCESS_LOCAL_NETWORK`,
+否则 socket connect 在 netd 层被拦(EACCES),服务端**一条请求都收不到**
+(`docker logs` 里只有 Chrome 的访问)。当时该包 `appops get ACCESS_LOCAL_NETWORK`
+是 `Uid mode: ... ignore`;`pm grant` 之后立刻恢复,服务端开始出现
+`192.168.0.103 - "POST /api/mobile/auth/login" 200`。
+
+做法:
+
+- `AndroidManifest.xml` 声明 `<uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />`
+  (低版本系统没有这个权限,声明与请求都会被忽略)。
+- `core/net/LocalNetworkAccess.kt`:启动时 `RequestLocalNetworkAccess()` 请求一次,
+  未授权期间在 App 根上挂说明对话框(「授权」重新请求 / 「去系统设置」跳应用详情),
+  回到前台(`ON_RESUME`)自动重判;登录页另有一条可点的提示横幅。
+- 权限名只在 API 37 的 `Manifest.permission` 里,代码里用字符串字面量,避免编译期报错。
+- 真机自测:`adb shell dumpsys package <pkg> | grep ACCESS_LOCAL_NETWORK` 看 `granted=`,
+  `adb shell appops get <pkg> ACCESS_LOCAL_NETWORK` 看 uid 模式。
+
 ## 测试账号
 
 `demo / demo123`(服务端种子数据)。

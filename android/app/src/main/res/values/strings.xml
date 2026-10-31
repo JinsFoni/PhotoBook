@@ -33,6 +33,7 @@
     <string name="load_failed">加载失败</string>
     <string name="retry">重试</string>
     <string name="network_unreachable">网络不可达</string>
+    <string name="local_network_permission_hint">需要「本地网络」权限才能连接局域网服务器 · 点此授权</string>
     <string name="cannot_connect">无法连接服务器</string>
     <string name="cannot_connect_pull">无法连接服务器,下拉重试</string>
     <string name="invalid_link">链接无效</string>

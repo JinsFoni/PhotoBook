@@ -33,6 +33,7 @@
     <string name="load_failed">載入失敗</string>
     <string name="retry">重試</string>
     <string name="network_unreachable">網路不可達</string>
+    <string name="local_network_permission_hint">需要「本機網路」權限才能連線區網伺服器 · 點此授權</string>
     <string name="cannot_connect">無法連線伺服器</string>
     <string name="cannot_connect_pull">無法連線伺服器,下拉重試</string>
     <string name="invalid_link">連結無效</string>

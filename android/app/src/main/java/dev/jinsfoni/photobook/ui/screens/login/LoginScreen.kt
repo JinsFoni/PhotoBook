@@ -22,16 +22,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import dev.jinsfoni.photobook.core.net.LocalNetworkAccess
 import dev.jinsfoni.photobook.ui.components.photoClickable
 import dev.jinsfoni.photobook.core.design.PhotoType
 
@@ -48,6 +57,16 @@ fun LoginScreen(
 ) {
     val colors = LocalPhotoColors.current
     val state by vm.state.collectAsState()
+    // Android 17「本地网络」权限(API 37):没给到就一律「无法连接服务器」
+    val context = LocalContext.current
+    var localNetGranted by remember { mutableStateOf(LocalNetworkAccess.isGranted(context)) }
+    val localNetLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> localNetGranted = granted }
+    // 用户去系统设置里开完权限回来,横幅要自动消失
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        localNetGranted = LocalNetworkAccess.isGranted(context)
+    }
     // 首次登录(带地址输入但从设置页进入的不算):文案仍用「登录」
     val firstRunMode = state.addServerMode && onBack == null
 
@@ -122,6 +141,20 @@ fun LoginScreen(
                         color = colors.accent,
                     )
                 }
+            }
+
+            if (!localNetGranted && LocalNetworkAccess.isRelevant(context)) {
+                Text(
+                    stringResource(R.string.local_network_permission_hint),
+                    style = PhotoType.micro,
+                    color = colors.accent,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .padding(start = 28.dp, end = 28.dp)
+                        .photoClickable {
+                            runCatching { localNetLauncher.launch(LocalNetworkAccess.PERMISSION) }
+                        },
+                )
             }
 
             Button(

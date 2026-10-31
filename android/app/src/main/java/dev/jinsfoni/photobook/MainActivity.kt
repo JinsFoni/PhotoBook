@@ -8,6 +8,7 @@ import javax.inject.Inject
 import androidx.compose.runtime.Composable
 import dagger.hilt.android.AndroidEntryPoint
 import dev.jinsfoni.photobook.core.design.PhotoTheme
+import dev.jinsfoni.photobook.core.net.RequestLocalNetworkAccess
 import dev.jinsfoni.photobook.core.design.ThemeState
 import dev.jinsfoni.photobook.ui.nav.AppRoot
 import dev.jinsfoni.photobook.ui.screens.lightbox.PhotoDownloader
@@ -27,6 +28,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun Bootstrap(downloader: PhotoDownloader) {
     // M1 临时主题状态(内存态,S9 换 DataStore 持久化)
+    // Android 17 起访问局域网要先拿到「本地网络」权限(否则一律「无法连接服务器」)
+    RequestLocalNetworkAccess()
     PhotoTheme(mode = ThemeState.mode) {
         AppRoot(downloader = downloader)
     }

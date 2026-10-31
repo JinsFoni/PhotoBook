@@ -2,6 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+      Android 17(API 37)本地网络保护:targetSdk >= 37 访问 192.168.x.x / 10.x / .local
+      必须持有该权限,否则 socket connect 在 netd 层被拦(EACCES),
+      App 侧只看到「无法连接服务器」,服务端一条请求都收不到。
+      低版本系统没有这个权限,声明与请求都会被忽略。
+    -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <application
         android:name=".PhotoBookApp"
