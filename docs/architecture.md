@@ -941,6 +941,60 @@ tag 都是出品方」这条统计结论得靠标题交叉验证兜底,而不是
 时标题兜底 / 同一人保留 tag 名与原生名 / 写法不同取标题写法 / 不一致时保持 tag /
 GMS 是模特名 / 账号尾冒号与出品方方括号清洗 / 两路都没名字仍归未分类)。
 
+### 出品方不带方括号 → LEEHEE EXPRESS 整批落「未分类」(2026-10-31)
+
+用户报「最近下载的 LEEHEE EXPRESS 系列的写真集的模特名没有识别到」。库里 4kup
+这批标题长这样,`model_id` 全空、slug 全是 `未分类-leehee-express-…`:
+
+```
+LEEHEE EXPRESS – LERB-033 G.su            (名字在番号之后)
+LEEHEE EXPRESS – LEHF-027A – Son.J         (番号后还有一道破折号)
+LEEHEE EXPRESS – LERB-022B No.04 Min.E (민이)   (分卷号 + 原生名)
+LEEHEE EXPRESS – LEDG-039 + LEDG-016 Woo   (合集两个番号)
+LEEHEE EXPRESS – LEBE-023A+B S.O           (连卷 A+B)
+LEEHEE EXPRESS – LEHC-Dec20 Woo            (月份编号)
+```
+
+**根因**:规则 8 的前提是出品方带方括号(`[LE] LEHF-209B: Xiu`),而 4kup 的标题
+把出品方当普通前缀写、不带括号;`10b` 那条又要求前缀不含 `EXPRESS` 之类的多词。
+更要紧的是 **4kup 的 tag 只有分类,模特名根本不进 tag**,`resolve_model` 只能走
+标题规则 → 抽不出名字 → 整批未分类。名字位还固定在番号**之后**,番号本人带
+`+ LEDG-016` / `A+B` / `No.04` / `Dec20` 这些花样,不先吃掉就会把 `+B S.O` 当成名字。
+
+**修法**(`titlemodel` 新增规则 8b,位置紧跟规则 8):前缀限定「大写开头的 1~3 个
+词」+ 可选破折号 + 番号(含上述花样)+ 可选 `No.04` + 分隔符 + 名字位,名字位仍
+走既有 `_pair` / `_clean` / `_valid`,原生名与多词名(`Kim Woo Hyeon (김우현)`)
+照旧带出。前缀限定成「大写开头的少数几个词」而不是任意文本,是为了不把
+`… Photo Book Vol.8 - Adorable Sia` 这类作品名尾巴当名字位;破折号可省,是因为
+线上真有一条标题把破折号丢了(collection 1107)。
+
+**影响面实测**:库里 2,262 条历史标题(old vs new 全量对比)结果变化 **155 条,
+全是 LEEHEE EXPRESS;非 LEE 的变化 0 条**。
+
+**历史数据修复**(同日一次性,不重下):80 本改挂模特 —— 7 个新建(`Merry` /
+`S.O` / `J.A` / `LEEHEEEUN` / `Kim Woo Hyeon` / `Ran.G` / `LeeHee`)、8 个并入既有
+(`G.su` / `Woo` / `Min.E` / `Son.J` / `GMS` / `U.Hwa` / `Sir.Bean` / `Ray`);
+有本地文件的 12 本把媒体目录与各档缩略图缓存搬到 `<模特slug>/` 下,
+`photos.filename` 前缀 / `collections.slug` / `harvest_jobs.collection_slug` 一起改,
+`photo_uploads.remote_path` **不动**(远端按老路径存着,改了反而断链 —— 68 本已传
+网盘并清掉本地文件的合集只有 DB 侧变动)。**跳过 2 本**:847 `Dongeuran (동그란) - Party`
+(抽出来的 `Dongeuran` 命中排除词,是出品方不是人)、495 `[LE] GMS-006A GMS`
+(与合集 396 同一本,4kup 那 40 张是重复)。仍留「未分类」3 本:`LEBE-013` /
+`LEBE-026A` / `LEBE-033` —— 这些帖子标题里只有番号,本来就没写人名。
+改前快照 `photobook.db.bak-lemodel-20261031`。
+
+**踩坑**:`_thumb_queue` 里存的是 slug,改 slug 会让正在排队的那几本生成完找不到
+合集(`_publish_ready` 按 slug 查)而永远卡 `processing`。这次正好被
+`recover_stuck_processing()`(重启自愈)按**新** slug 重新入队,一本没漏;改 slug 的
+脚本本身不该假设队列是空的。
+
+验证:`/models/{merry,g-su,kim-woo-hyeon}` 200;搬过的合集 `/media/g-su/…-001.jpg`
+200(1,593,830B)、`/t/s900/…` 200(57,560B);修复后新入库的 1181 直接落
+`gms-leehee-express-lebe-010-gms`(规则在采集链路上真生效,不只是扫描脚本)。
+
+测试:`tests/test_model_resolve.py` 新增 2 条(6 种番号写法的抽取 + 作品名尾巴不被
+当成名字位)。
+
 ### 「已入库」判定:跳过时没有登记本站序号(2026-10-27)
 
 用户报 buondua `/tag/le` 里 **888-891** 四本没显示「已入库」,可它们其实在库里。

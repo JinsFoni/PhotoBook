@@ -179,6 +179,36 @@ def _model_name_from_title(title: str,
             return cand, ""
         return "", ""
 
+    # 8b) 出品方不带方括号、用破折号隔开的写法(4kup 的 LEEHEE EXPRESS 系列):
+    #     `LEEHEE EXPRESS – LERB-033 G.su`
+    #     `LEEHEE EXPRESS – LEHF-027A – Son.J`(番号后还有一道破折号)
+    #     `LEEHEE EXPRESS – LERB-022B No.04 Min.E (민이)`(分卷号)
+    #     `LEEHEE EXPRESS – LEDG-039 + LEDG-016 Woo`(合集两个番号)
+    #     `LEEHEE EXPRESS – LEHC-Dec20 Woo`(月份编号)
+    #     `LEEHEE EXPRESS – LEBE-023A+B S.O`(连卷 A+B)
+    #     名字位固定在番号之后;番号里的 `+B` / `+ LEDG-016` / `No.04` /
+    #     `Dec20` 都得先吃掉,否则会被当成名字的一部分抽成 `+B S.O`。
+    #     规则 8 只管方括号出品方,而 4kup 这批标题没有方括号 → 80 本整批
+    #     落「未分类」(2026-10-31 用户报「LEEHEE EXPRESS 系列模特名没识别」)。
+    #     前缀限定「大写开头的 1~3 个词」而不是任意文本:避免把
+    #     `… Vol.8 - Adorable Sia` 这类作品名尾巴当出品方。
+    _code = (r"[A-Z]{2,6}[._-]?(?:\d{2,4}|[A-Za-z]{3}\d{2})[A-Z]?"
+             r"(?:\s*\+\s*[A-Z]{2,6}[._-]?\d{2,4}[A-Z]?"   # 合集: + LEDG-016
+             r"|\s*\+\s*[A-Z])?")                           # 连卷: LEBE-023A+B
+    m = re.match(
+        r"^[A-Z][A-Za-z0-9&.'’]{1,20}(?:\s+[A-Z][A-Za-z0-9&.'’]{1,20}){0,2}"
+        r"\s+(?:[-–—]\s*)?" + _code +
+        r"(?:\s+No\.?\s*\d{1,3})?"                          # 分卷号: No.04
+        r"\s*(?:[-–—:：]\s*|\s+)(.+)$", t)
+    if m:
+        rest = m.group(1).strip()
+        p = _pair(rest)
+        if p:
+            return p
+        cand = _clean(rest.split()[0]) if rest.split() else ""
+        if _valid(cand):
+            return cand, ""
+
     # 9) [BLUECAKE] 名字 ...
     m = re.match(r"^\[BLUECAKE\]\s+(.+)$", t, re.I)
     if m:
