@@ -680,3 +680,111 @@ def test_states_for_serials_batch_matches_single(ext_key, client):
             _rm_collection(slug)
         for serial in (720003, 720004, 720005, 720006):
             _cleanup_serial(serial)
+
+
+def test_status_post_revokes_crossed_registration(ext_key, client):
+    """跨站登记的序号被证伪 → 撤销, 且当场判 new(15445 实录)。
+
+    生产实况: 4kup 的「LEEHEE EXPRESS LEBE-011 GMS」(post 15445)被登记进
+    了「MiStar Vol.265 Mu Fei Fei (穆菲菲)」那本的 source_serials(当初那次
+    上报把标题和序号串了台)。用户在 4kup 打开 LEBE-011 时看到「已入库」,
+    库里却没有这本、点下载也没反应。真标题与合集标题毫无交集 → 撤销登记。
+    """
+    import json as _json
+
+    from app.database import SessionLocal
+    from app.db import Collection
+    from app.routers import ext_api
+
+    _mk_collection_with_title(8796, "ext-crossed-826",
+                              "MiStar Vol.265 Mu Fei Fei (穆菲菲)")
+    s = SessionLocal()
+    try:
+        c = s.query(Collection).filter(
+            Collection.slug == "ext-crossed-826").one()
+        c.source_serials = _json.dumps([8796, 15445])
+        s.commit()
+
+        r = client.post("/api/ext/status", headers=H(ext_key), json={"items": [
+            {"serial": 15445, "title": "LEEHEE EXPRESS – LEBE-011 GMS"},
+        ]})
+        assert r.json()["items"][0] == {"serial": 15445, "state": "new"}
+        s.expire_all()
+        left = _json.loads(s.query(Collection).filter(
+            Collection.slug == "ext-crossed-826").one().source_serials)
+        assert left == [8796], left
+        # 自家序号不受影响
+        assert ext_api.state_for_serial(s, 8796) == "done"
+    finally:
+        _rm_collection("ext-crossed-826")
+
+
+def test_status_post_keeps_registration_sharing_tokens(ext_key, client):
+    """跨站写法差异(共有模特/番号 token)→ 不撤销, 仍判已入库。"""
+    import json as _json
+
+    from app.database import SessionLocal
+    from app.db import Collection
+
+    _mk_collection_with_title(56556, "ext-crossed-keep",
+                              "[LE] LEHF-144A Inah (이나)")
+    s = SessionLocal()
+    try:
+        c = s.query(Collection).filter(
+            Collection.slug == "ext-crossed-keep").one()
+        c.source_serials = _json.dumps([56556, 117839])
+        s.commit()
+
+        r = client.post("/api/ext/status", headers=H(ext_key), json={"items": [
+            {"serial": 117839,
+             "title": "[LE] LEHF-144A: Inah (이나) (64 photos)  -"},
+        ]})
+        assert r.json()["items"][0] == {"serial": 117839, "state": "done"}
+        s.expire_all()
+        assert 117839 in _json.loads(s.query(Collection).filter(
+            Collection.slug == "ext-crossed-keep").one().source_serials)
+    finally:
+        _rm_collection("ext-crossed-keep")
+
+
+def test_status_post_never_revokes_own_source_serial(ext_key, client):
+    """自家 source_serial 是「按这个序号采过」的铁证, 标题对不上也不撤。"""
+    _mk_collection_with_title(15445, "ext-own-serial",
+                              "LEEHEE EXPRESS – LEBE-011 GMS")
+    try:
+        r = client.post("/api/ext/status", headers=H(ext_key), json={"items": [
+            {"serial": 15445, "title": "完全不相关的另一本写真标题"},
+        ]})
+        assert r.json()["items"][0] == {"serial": 15445, "state": "done"}
+    finally:
+        _rm_collection("ext-own-serial")
+
+
+def test_status_by_url_revokes_crossed_registration(ext_key, client,
+                                                    monkeypatch):
+    """老帖通道同样自查撤销(_revoke_stale_registration 同源)。"""
+    import json as _json
+
+    from app.database import SessionLocal
+    from app.db import Collection
+
+    _mock_misskon_postid(monkeypatch)
+    _mk_collection_with_title(43940, "ext-crossed-url",
+                              "[JP] Sena Natsuki (奈月セナ) - Senaism")
+    s = SessionLocal()
+    try:
+        c = s.query(Collection).filter(
+            Collection.slug == "ext-crossed-url").one()
+        c.source_serials = _json.dumps([43940, 85932])
+        s.commit()
+
+        r = client.post("/api/ext/status-by-url", headers=H(ext_key),
+                        json={"urls": [MISSKON_OLD_URL],
+                              "titles": {MISSKON_OLD_URL:
+                                         "LEEHEE EXPRESS – LEBE-011 GMS"}})
+        assert r.json()["items"][0]["state"] == "new"
+        s.expire_all()
+        assert _json.loads(s.query(Collection).filter(
+            Collection.slug == "ext-crossed-url").one().source_serials) == [43940]
+    finally:
+        _rm_collection("ext-crossed-url")

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 import secrets
 import threading
 import time
@@ -31,6 +32,7 @@ from ..services.harvest.worker import enqueue, ACTIVE_JOB_STATES
 from ..services.pikpak import worker as pikpak_worker
 
 router = APIRouter(prefix="/api/ext")
+log = logging.getLogger("photobook.ext")
 
 API_KEY_SETTING = "ext.api_key"
 # 单次状态查询/推送的 serial 数上限(一页卡片 24~48 个, 留余量)
@@ -257,6 +259,59 @@ def push_harvest(body: PushBody, s: Session = Depends(require_key)):
     return {"ok": ok, "items": items}
 
 
+def _revoke_stale_registration(s: Session, serial: int, title: str) -> bool:
+    """上报标题与登记所在合集标题毫无交集 → 撤销该跨站登记(撤销过返回 True)。
+
+    source_serials 只在「上报标题与合集标题等价」时写入(_register_serial_title),
+    但写进去的是**当时**那个标题。若后来同一序号上报的标题与该合集标题连一个
+    token 都不共有, 说明当初那笔登记本身就是错的 —— 脚本把某张卡片的标题配到了
+    另一张卡片的序号上(15445 实录: 4kup 的「LEEHEE EXPRESS LEBE-011 GMS」被
+    登记进「MiStar Vol.265 Mu Fei Fei (穆菲菲)」那本, 于是用户在 4kup 上看到
+    LEBE-011「已入库」, 库里却没有, 点下载也没反应)。
+
+    只撤销「零交集」这一种:跨站转载的标题写法差异(站点尾缀/冒号连字符/
+    张数尾缀)都过不了 token 化 —— 真同一本写真必定共有模特名或番号 token,
+    所以这条判据不会误伤(反过来重名系列的不同批次本来就不会共 token)。
+
+    collections.source_serial(自家序号)永远不动 —— 那是「本服务确实按这个
+    序号采过」的铁证, 与跨站登记无关。
+    """
+    prep = prepare_title(title)
+    toks = set(prep[0])
+    # 无信号:标题太短/取不出 token 时不做任何判断(交回原状态)
+    if len(prep[0]) < 2 or max(len(x) for x in prep[0]) < 6:
+        return False
+
+    revoked = False
+    for cid, col_title, col_serial, raw in s.execute(
+            select(Collection.id, Collection.title, Collection.source_serial,
+                   Collection.source_serials).where(or_(
+                       Collection.source_serials.like(f"%{serial},%"),
+                       Collection.source_serials.like(f"%{serial}]%"),
+                       Collection.source_serials.like(f"%[{serial}%")))).all():
+        if col_serial == serial:
+            continue          # 自家序号, 不走跨站登记判据
+        try:
+            known = json.loads(raw or "[]")
+        except (ValueError, TypeError):
+            continue
+        if serial not in known:
+            continue
+        if toks & set(prepare_title(col_title)[0]):
+            continue          # 有共 token → 是同一本的跨站写法差异, 保留
+        known = [n for n in known if n != serial]
+        col = s.get(Collection, cid)
+        col.source_serials = json.dumps(sorted(known))
+        s.commit()
+        log.warning("revoke stale cross-site serial %s from #%s %r "
+                    "(reported title %r shares no token)",
+                    serial, cid, col_title, title)
+        revoked = True
+    if revoked:
+        _invalidate_title_cache()   # 快照里的 source_serials 已过期
+    return revoked
+
+
 def _register_serial_title(s: Session, serial: int, title: str,
                            title_prep: PreparedTitle | None = None) -> bool:
     """按标题等价比对,把 serial 登记进命中的 collection.source_serials。
@@ -414,7 +469,8 @@ def status_api_v2(body: StatusBody, s: Session = Depends(require_key)):
     items 每项 = (序号, 页面标题)。序号命中即返回状态;未命中但标题与
     已入库写真等价 → 登记进该写真的 source_serials 并返回 done(下次
     查询序号直接命中,不再做比对)。标题可比对不出(未入库/非同本)按
-    普通判态返回。
+    普通判态返回。反过来:标题与该序号登记所在合集毫无交集 → 判为当初
+    登记串了台, 撤销登记并按 new 返回(_revoke_stale_registration)。
     """
     items = body.items[:MAX_SERIALS]
     if not items:
@@ -423,6 +479,10 @@ def status_api_v2(body: StatusBody, s: Session = Depends(require_key)):
     out = []
     for it in items:
         state = states[it.serial]
+        if state == "done" and it.title.strip():
+            # 跨站登记自查: 上报标题与合集标题连一个 token 都不共有 → 撤销
+            if _revoke_stale_registration(s, it.serial, it.title):
+                state = states_for_serials(s, [it.serial])[it.serial]
         if state == "new" and it.title.strip():
             # 登记成功 → 本写真确认已在库(标题等价)
             if _register_serial_title(s, it.serial, it.title):
@@ -538,9 +598,14 @@ def status_by_url(body: StatusByUrlBody, s: Session = Depends(require_key)):
             items.append({"url": url, "serial": None, "state": "new"})
             continue
         state = states[serial]
-        if state == "new" and (body.titles.get(url) or "").strip():
+        title = (body.titles.get(url) or "").strip()
+        if state == "done" and title:
+            # 跨站登记自查(与 /status v2 同源): 标题零交集 → 撤销登记
+            if _revoke_stale_registration(s, serial, title):
+                state = states_for_serials(s, [serial])[serial]
+        if state == "new" and title:
             # 登记成功 → 本写真确认已在库(标题等价)
-            if _register_serial_title(s, serial, body.titles[url]):
+            if _register_serial_title(s, serial, title):
                 state = "done"
         items.append({"url": url, "serial": serial, "state": state})
     return {"items": items}

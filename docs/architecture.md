@@ -995,6 +995,60 @@ LEEHEE EXPRESS – LEHC-Dec20 Woo            (月份编号)
 测试:`tests/test_model_resolve.py` 新增 2 条(6 种番号写法的抽取 + 作品名尾巴不被
 当成名字位)。
 
+### 跨站序号登记「串台」→ 假的「已入库」(2026-11-01)
+
+用户报 4kup 的 `LEEHEE EXPRESS – LEBE-011 GMS`(post 15445)徽标显示**已入库**,
+但在库里搜不到 —— 因为它根本没下载过。查下来序号 15445 躺在合集 **826**
+`MiStar Vol.265 Mu Fei Fei (穆菲菲)` 的 `source_serials` 里:
+
+```
+826  source_serial=8796(4kup,真)  source_serials=[8796, 28978, 15445]
+```
+
+`collection_exists()` 只看 `source_serial`/`source_serials` 里有没有这个整数,
+于是 4kup 的 LEBE-011 永远判 done,点下载也没反应(`_push_one` 直接判 duplicate)。
+
+**成因**:跨站登记通道(`_register_serial_title`,脚本查状态时带页面标题)写入的是
+「当时那个标题 ↔ 这个序号」;只要有一次上报把 A 卡片的标题配到了 B 卡片的序号上,
+错误就永久留在库里 —— 登记是一次性的,后续纯序号查询不再比对,没人能发现。
+这次是**一批 15 本**同时中招,全是穆菲菲那组(`MiStar`/`YouMi`/`UGirls`/`HuaYang`,
+合集 802/819/822/826–838),每个都被追加了一个 4kup 序号区间(12.4k–15.4k)的数字,
+而它们对应的真实帖子是别的写真:
+
+| 合集 | 被误登记 | 该序号在 4kup 上其实是 |
+| --- | --- | --- |
+| 802 `UGirls_App No.1044` | 13653 | XIUREN No.3884 Wang Xinyi |
+| 819 `UGIRLS … No.865 穆菲菲` | 12242 | XiaoYu Vol.613 Booty (芝芝) |
+| 826 `MiStar Vol.265 穆菲菲` | 15445 | LEEHEE EXPRESS LEBE-011 GMS |
+| 829 `MiStar Vol.234 穆菲菲` | 14611 | LEEHEE EXPRESS LEBE-014 Woo |
+| 838 `HuaYang 2017-09-25 Vol.007` | 12491 | XIUREN No.3666 Ai Jing Xiang |
+| …(共 15 条,逐条 `curl https://4kup.net/?p=<序号>` 核过) | | |
+
+核查时保留 2 条**真**登记:782 ← 14516(XIUREN No.4233 赵惟依coco,标题完全一致)、
+1108 ← 12551(LEEHEE EXPRESS LEHC Woo)。改前 826 快照随清理脚本一起留档。
+
+**修复两层**:
+
+1. **数据**:一次性清理脚本按「回源核过的 15 对」把误登记序号从 `source_serials`
+   摘掉(只删 JSON 数组里那一个数字,`source_serial` 与其余跨站序号不动)。
+2. **机制**:`ext_api._revoke_stale_registration()` —— 状态查询时若某个序号判 done
+   且上报了标题,就拿标题 token 与该序号登记所在合集的标题比:**一个 token 都不共有
+   = 当初那笔登记串了台,撤销登记并按 new 返回**。跨站转载的写法差异(站点尾缀、
+   冒号连字符、张数尾缀)都过不了 token 化,真同一本必共有模特名/番号 token,所以
+   这条判据不会误伤;`source_serial`(自家序号)永远不动 —— 那是「按这个序号采过」
+   的铁证。`/status` 与 `/status-by-url` 两条通道共用它。
+
+**踩坑**:撤销后必须重算状态(`states_for_serials([serial])`),同一个整数有可能既是
+A 本的 `source_serial`(铁证)又在 B 本的 `source_serials` 里 —— 直接写 `new` 会把
+真在库的写真变成「可下载」。
+
+验证:清理后 `GET /api/ext/status?serials=15445,14611` → `new`,`12551,14516,8796` →
+`done`;注入一条假序号到 826 再带 LEBE-011 标题查询 → 返回 `new`,DB 里那条被摘掉,
+日志 `revoke stale cross-site serial 99991 from #826 …`。LEBE-011 已重新入队(任务 1258)。
+
+测试:`tests/test_ext_api.py` 新增 4 条(串台撤销 / 有共 token 不撤销 / 自家序号不撤销 /
+老帖通道撤销)。
+
 ### 「已入库」判定:跳过时没有登记本站序号(2026-10-27)
 
 用户报 buondua `/tag/le` 里 **888-891** 四本没显示「已入库」,可它们其实在库里。
