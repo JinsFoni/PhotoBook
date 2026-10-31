@@ -1,4 +1,4 @@
-# Photo Collection v1.9.10
+# Photo Collection v1.9.11
 
 写真作品管理与展示 Web 应用:FastAPI + Jinja2 SSR + 渐进增强前端,SQLite 存储,
 内嵌采集 / 上传 Worker(自动抓取 → 归档 → 入库 → 可选上传外存)。面向 NAS /
