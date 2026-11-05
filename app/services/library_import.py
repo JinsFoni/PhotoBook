@@ -31,6 +31,9 @@ log = logging.getLogger("library_import")
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif", ".jfif"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".wmv", ".m4v", ".flv", ".ts", ".webm", ".mpg", ".mpeg"}
 JUNK_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini", ".localized"}
+# 下载包里夹带的 4KUP 广告图(1920x1080 推广图) 和同名 .url 快捷方式 ——
+# 不是写真内容。实测 75 本 LEEHEE EXPRESS 全带, 还排在第一位、常被当成封面。
+AD_NAMES = {"4kup.png", "4kup.jpg", "4kup.jpeg", "4kup.webp", "4kup.url"}
 JUNK_DIRS = {"__MACOSX", "_tmp", "_cache", ".git"}
 # 这些目录名视为「没有模特」(与 harvest.unsorted_dir 一起判定)
 NO_MODEL_DIRS = {"未分类", "未分類", "00_Unsorted", "unsorted", "uncategorized", "uncategorised"}
@@ -64,7 +67,7 @@ def _path_key(root: Path, p: Path):
 
 def _is_junk(p: Path, root: Path | None = None) -> bool:
     """系统垃圾/隐藏文件。root 给定时只在 root 之内匹配目录名(避免误伤绝对路径)。"""
-    if p.name in JUNK_NAMES or p.name.startswith("."):
+    if p.name in JUNK_NAMES or p.name.lower() in AD_NAMES or p.name.startswith("."):
         return True
     try:
         parts = p.relative_to(root).parts if root else p.parts

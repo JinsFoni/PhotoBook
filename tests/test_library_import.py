@@ -348,3 +348,24 @@ def test_import_reuses_model_matched_by_key(tmp_path):
         assert c.photos[0].filename.startswith("dedup-import-probe-(ぬ)/")
         assert s.scalar(select(func.count()).select_from(Model)
                         .where(Model.name.like("Dedup Import Probe%"))) == 1
+
+
+def test_import_skips_4kup_ad(tmp_path):
+    """4KUP 推广图(4kup.png)+ 它的 .url 快捷方式不是写真内容, 不入库。
+
+    实测 75 本 LEEHEE EXPRESS 的包里都有, 且是自然序第一位 —— 不拦住就会
+    当成第一张照片、还常被选成封面(2026-11-04)。
+    """
+    lib, media = tmp_path / "library", tmp_path / "media"
+    d = _album(lib, "Yeha", "Ad Album", n=2)
+    (d / "4kup.png").write_bytes(b"ad")
+    (d / "4Kup.url").write_bytes(b"ad shortcut")
+    (d / "4kup.JPG").write_bytes(b"ad jpg")
+
+    with SessionLocal() as s:
+        stats = library_import.import_library(s, lib, media)
+        assert stats["photos"] == 2
+        c = _collection(s, "yeha-ad-album")
+        names = [p.filename.rsplit("/", 1)[1] for p in c.photos]
+        assert names == ["001.jpg", "002.jpg"]
+        assert c.cover_photo_id == c.photos[0].id
