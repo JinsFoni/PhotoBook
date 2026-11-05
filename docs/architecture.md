@@ -134,6 +134,62 @@ partial 里的用户从 `user` 变量取, 没有就回落 `request.state.user`(�
 顶部刷新时看不出位移, 但如果**滚到中间再刷新**, 浏览器恢复的滚动位置会随卡片
 补进而抖动; 那是瀑布流分页/定位的话题, 与顶栏无关。
 
+### 返回列表时「从顶部滚下来」(2026-11-04)
+
+症状: 从写真详情页按返回回到 `/collections`, 页面先停在顶部, 再一路滚到原来
+那张卡片 —— 要求「直接落在原地, 不要这个滚动的动作」。
+
+两个原因叠一起:
+
+1. `html { scroll-behavior: smooth }`(给站内锚点 `#overview` 用的)把**浏览器
+   自带的滚动位置恢复**也演成了平滑滚动;
+2. 虚拟列表首帧网格还没撑高, 文档很短, 浏览器恢复的目标位置被夹小 —— Chrome
+   实测: 滚到 2600 再返回, 落在 1342, 而且中间每帧都在动。
+
+改法(三处, 都在服务端静态资源里, 无构建链):
+
+| 位置 | 做什么 |
+|---|---|
+| `base.html` 首屏内联脚本 | `history.scrollRestoration = "manual"` 关掉浏览器自带恢复; `back_forward`/`reload` 时给 `<html>` 挂 `no-smooth-scroll`, 1.2s 后摘掉 |
+| `app.css` | `html.no-smooth-scroll { scroll-behavior: auto; }` —— 只有恢复那一刻不平滑, 锚点照旧 |
+| `app.js` `scrollRestore()` | 滚动时(150ms 节流)把 `scrollY` 写进当前 history entry 的 `history.state.pcScroll`; 返回时读回来, `pageshow` + `pc:content`(网格渲染完)逐帧重试直到落准 |
+
+踩过的坑: 一开始把位置存在 sessionStorage、在 `pagehide`/`visibilitychange`
+时写 —— **记下来的是错值**。卸载途中虚拟网格先塌回几行, 浏览器补一个 scroll
+事件把 `scrollY` 夹到矮文档上限(2600 → 1342), 顺手把正确值盖掉; 换
+`history.state` 并在「已点链接 / 已隐藏」时拒绝写, 才算稳。
+
+`tests/test_pages.py::test_back_nav_scroll_restore_is_manual` 守住这几段,
+免得哪天被顺手删掉。
+
+### 改完封面, 返回列表还是旧图(2026-11-04)
+
+症状: 详情页灯箱里「设为封面」成功后返回 `/collections`, 卡片还是旧封面,
+必须刷新才更新。库里早就是新值了(`/api/photo-meta` 直接 `s.commit()`, 列表页
+每次请求都是实时读库) —— 问题在**前端复用了旧 DOM**: 返回时整页可能从
+bfcache 原样还原(连 DOM 都不重建、也不重新请求), 也可能命中浏览器缓存,
+两条路都拿不到新封面。
+
+改法: 让接口把「换成哪张」告诉前端, 前端记一笔, 任何页面 `pageshow` 时就地换图。
+
+| 位置 | 做什么 |
+|---|---|
+| `POST /api/photo-meta` | 响应补 `cover`(照片文件名, 如 `inah/leehee-.../x-005.jpg`) —— 与缩略图地址 `/t/<尺寸>/<同一串>` 完全对齐 |
+| `app.js` `rememberCover()` | 成功后把 `cover` (连同时间戳) 写进 `sessionStorage: pc.cover.v1.<目录>` |
+| `app.js` `applyDirtyCovers()` | `pageshow` / `pc:content` 时, 把**卡片封面**(包在指向写真/模特的链接里的图)地址末段换成新文件名; 150ms 一轮连试 10 轮(虚拟列表会重填单元格, 一轮不够) |
+
+两个坑:
+
+- **不能拿 slug 当锚**: 公开地址是 `/collections/<模特slug>-<写真slug>`, 而缩略图
+  目录是 `<模特>/<写真>`, 两者不是同一串(实测命中 0 个)。改用 `cover` 自己的
+  目录部分当锚, 天生一致。
+- **不能碰详情页自己的照片墙**: 那些照片本来就在同一目录下, 一律替换会全变成
+  封面。所以只匹 `a[href*="/collections/"] img, a[href*="/models/"] img`。
+- 标记留 30 分钟过期, 每次换图幂等 —— 不删标记, 这样换个页面(发现页/模特页)
+  进来还能纠正。
+
+`tests/test_photo_meta.py` 锁住响应里的 `cover` 锚点。
+
 ## 四、后端模块划分
 
 ```
@@ -1161,6 +1217,61 @@ extracting)被复用成「进行中」判据,`queued` 也在里面。但消费�
 (排了 2 小时的任务被看门狗碰过后仍是 `queued` 且 `error` 为空)、
 `test_pikpak_recovery.py::test_stall_scan_excludes_queued`。
 
+### 油猴(PikPak)勾散图 → 一张图一个合集(2026-11-03,脚本 1.4.0)
+
+用户在收藏夹里把一个写真目录**点进去全选 106 张图**再推送,结果 PhotoBook 里
+多了 94 个合集,每个合集 1 张图(任务名就是 `楓カレン (N).png`)。根因在脚本
+`matchSelected()` 的这条设计:
+
+```js
+if (!out.folders.length) {
+  // 勾的全是单个文件: 每个文件自成一个勾项(files 就是自己)
+  return { folders: [], files: out.files, ... };
+}
+```
+
+「一个勾项 = 一个写真集」在**勾文件夹**时是对的;勾的是同一目录里的一堆散图时
+就成了灾难 —— 每个文件各自成一个 job,各自成一本书。
+
+修复: 勾到多个散图时合并成 **1 个勾项**,标题取当前目录名(`currentFolderName()`:
+分享页取 `share_name`,`/drive/*/<目录ID>` 取 `files/{id}` 的 `name`,取不到回退
+`PikPak N 张`),`_files` 用文件名做 `rel`;只勾 1 个文件时行为不变。
+
+事故清理: 94 个单图合集全部删除(走正常删除接口,连带本地文件/远端清理/缩略图),
+对应的 94 条 pikpak 任务记录一并删掉。教训: 这类「脚本侧生成一堆任务」的问题
+在服务端看不出来 —— 服务端只会老老实实把每个 item 建成一本书。
+
+### PikPak「已存在,跳过」用目录有没有文件判定 → 视频残留把整本写真永久挡死(2026-11-03,P63)
+
+`Cool Beauty vol.1-9 [181P 7V 1.89GB]`(188 个文件)被跳过了,`error` 只有
+`→ 已存在,跳过`,一张图都没下。真凶是预检的判定口径:
+
+```python
+if not resumed and _album_has_content(album_dir):     # 目录里「有文件」
+    return "→ 已存在,跳过"
+```
+
+上一轮 import 只收图片,**7 个视频留在写真目录里**没动(平台对视频记
+`跳过 N 个视频`)。于是这个目录「永远有内容」,之后每一次更全的推送都被判
+「已存在」—— 用户看到的症状是「重推了没反应」。
+
+修复: 预检改成**文件级**(`_skip_if_imported(..., files=, existing=)`):
+把「写真目录里的残留 + 已入库照片的文件名」拼成 `_known_file_names()`,
+**每个推送文件都在里面**才算已存在,缺一个就继续。缺的那些再走
+`_restore_from_media()` —— 老照片本体早在 `/media`,复制回来即可,
+不必重下(这本 1.89GB,实测省掉 1.6GB)。
+
+顺带两处:
+
+- 更全的推送导入前先 `_drop_stale_collection()` 删掉张数不足的旧合集,
+  否则 `import_album` 会把目录改名 `" (2)"` 另立一本(同系列两本,旧的不全);
+- `is_video_rel()`: 视频不下。平台只收图片,下了白下 —— 这本 7 个视频
+  将近 800MB,还会把队列拖住半天。
+
+`tests/test_pikpak_recovery.py`: `::test_skip_is_file_aware_leftover_videos`、
+`::test_skip_counts_already_imported_photos`、`::test_restore_from_media_copies_back`、
+`::test_video_files_are_not_downloaded`。
+
 ### MediaFire 文件页按出口整片挡 → 取页也要会翻面(2026-10-31)
 
 换节点后又有两个任务 failed,错误是「无法从链接解析 surl:
@@ -1192,6 +1303,58 @@ extracting)被复用成「进行中」判据,`queued` 也在里面。但消费�
 测试: `test_net.py::test_mediafire_page_falls_back_to_proxy_when_direct_challenged`
 (直连撞盾同一轮翻面并记住)、`::test_mediafire_page_prefers_direct_by_default`、
 `::test_mediafire_page_without_proxy_only_tries_direct`(没配代理只换指纹,不碰代理)。
+
+### 4kup 换新分享域 `teraboxapp.com` + TeraBox 接口零重试(2026-11-02,任务 1319-1331)
+
+用户报「任务失败了」,失败列表里 6 个全是 4kup 的 LEEHEE EXPRESS 包,两类错:
+
+| 错误 | 任务 | 真因 |
+|---|---|---|
+| `无法从 URL 提取 quick_key: https://teraboxapp.com/s/1…` | 1327、1328 | 新镜像域没识别 |
+| `Failed to perform, curl: (56) Connection closed abruptly` | 1321、1326、1331 | 接口抖动,零重试 |
+| `curl: (60) SSL: no alternative certificate subject name matches 'dm.terabox.com'` | 1319 | 同上(代理出口证书对不上) |
+
+1. **`teraboxapp.com` 不在 `TERABOX_HOST_FRAGS` 里**。4kup 2026-11 起把下载
+   按钮换成这个新分享域(老帖是 `1024terabox.com` / 直挂 `terabox.com`),
+   `is_terabox_url` 认不出 → 链接落到 MediaFire 分支 → `mediafire_info_from_url`
+   报「无法提取 quick_key」。文件其实完好:容器内实测该 surl 直接
+   `shorturlinfo` 就有 `LEEHEE EXPRESS - LEHF-066A U.Hwa (은유화).rar`
+   (140MB)。修复: 域名片段补 `teraboxapp`(surl 解析本来就通用 `teraboxapp.com/s/<code>`)。
+2. **`terabox._get` 一次失败就判死**。`dm.terabox.com` 的分享页 / `shorturlinfo`
+   / `share/download` 经代理时偶发 56/60(出口轮换,证书与 SNI 对不上),
+   隔几秒同一链接就通 —— 但旧代码单次调用无重试,一个抖动废掉整个写真包
+   (1319/1321/1326/1331 的失败间隔都只有 10 秒,正是快速失败)。修复: `_get`
+   加 3 次重试(1.2s / 3s + 抖动),只重试**连接层**抖动(curl 6/7/16/18/28/
+   35/52/55/56/60/92)与 HTTP 408/429/5xx;**接口 errno 与非网络异常一律不重试**
+   (否则真 bug 会被伪装成网络问题,而且 errno 400141 `need verify` 重试也没用)。
+
+回归用例: `test_terabox_harvest.py::test_is_terabox_url`(含 teraboxapp.com)、
+`::test_parse_surl`、`::test_get_retries_transient_connection_error`、
+`::test_get_retries_ssl_60`、`::test_get_gives_up_after_retries`、
+`::test_get_retries_5xx`、`::test_get_does_not_retry_non_network_error`。
+
+### 4kup 中转短链没走代理(2026-11-03,任务 1327/1328/1331/1332)
+
+同一天网络恢复代理后,这 4 个任务仍全灭在
+`中转短链解析失败: 短链打不开: Failed to perform, curl: (35) BoringSSL
+SSL_connect: Connection closed abruptly in connection to bit.ly:443`。
+实测同一秒:容器内直连 `bit.ly` 超时/`tinyurl` 被 RST,经 `harvest.proxy`
+回 301 —— 也就是**代理是好的,是这条链路自己没用代理**。
+
+`resolve_4kup_gate()` 里那次 `cr.get()`(短链 → `p/go.html` 的第一跳)
+从 824 上线起就写死直连,而 `fetch_html` / `resolve_ouo` / MediaFire 页面
+与 API 都是接 `harvest.proxy` 的(`test_settings.py::test_net_proxy_reads_settings`
+把「接线处数量」钉成 4 处,正好漏数了这一条)。国内直连短链域本来就不可达,
+所以只要代理是唯一通路,老帖整类任务必然失败。
+
+修复: `_gate_get()` 承接这次请求,按「出口翻面」试(上次成功的出口先试,
+失败再试另一侧,结果记进 `_GATE_EGRESS`),与 `resolve_ouo` 同款;
+`harvest.proxy` 为空时只剩直连一侧,行为不变。
+`test_net_proxy_reads_settings` 的期望改为 5 处。
+
+回归用例: `test_4kup_gate.py::test_gate_get_uses_proxy`、
+`::test_gate_get_flips_to_direct_when_proxy_fails`、
+`::test_gate_get_without_proxy_stays_direct`。
 
 ### 测试
 
@@ -1279,6 +1442,27 @@ extracting)被复用成「进行中」判据,`queued` 也在里面。但消费�
   `?status=<组>&page=<n>` 白名单形态(正则校验),防开放重定向
 - 新词条入 i18n STRINGS(上一页/下一页/第 x/y 页/共 n 条/状态名等,zh-CN/zh-TW)
 - 测试:`tests/test_harvest_pagination.py`(分页边界、筛选、API、back 白名单、空态)
+
+### 下载包里的 4KUP 广告图(2026-11-04)
+
+LEEHEE EXPRESS 系列的包里都夹带一张 `4kup.png`(1920×1080,画面上写着
+「4KUP High Quality Photos / https://4kup.blogspot.com」)和同名 `4kup.url`
+快捷方式。它自然序排第一,导入后就成了合集第一张照片,**75 本里有 6 本还被选成了
+封面** —— 列表页看着像封面坏了。
+
+处理:
+
+- 导入侧:`library_import._is_junk` 新增 `AD_NAMES`
+  (`4kup.png/jpg/jpeg/webp` + `4kup.url`,大小写不敏感)直接当垃圾跳过;
+  `list_images` 是所有导入路径(库扫描 / 采集 / PikPak)的唯一入口,一处拦全拦。
+  注意别误伤系列本身的命名 `LEEHEE-EXPRESS-LEHF-098-Eatha-4kUp-001.jpg` ——
+  那串是「-4kUp-NNN」在中间,不是 basename。
+- 存量:75 张照片行删除 + 150 个缩略图缓存删除(照片本体早已不在盘上),
+  空掉的 6 本封面改指向新的第一张,受影响合集的 `sort_order` 重排成 `0..n-1`
+  (否则会留个空档)。删除前的原始行存了一份
+  `/data/db/deleted_4kup_photos.json`,库也备份到 `photobook.db.bak-4kup-20261104`。
+- 归档库:`/data/library` 下 78 个 `4kup.*` 文件一并删掉。
+- 测试:`tests/test_library_import.py::test_import_skips_4kup_ad`。
 
 ## 十二、删除写真集: 远端清理后台化(2026-10-20)
 
