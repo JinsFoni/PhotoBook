@@ -950,24 +950,97 @@ window.PC = (function () {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     }).then(function (r) {
-      return r.json().then(function (j) { done(j.ok ? null : (j.error || "error")); },
-        function () { done(r.ok ? null : "error"); });
-    }, function () { done("network"); });
+      return r.json().then(function (j) { done(j.ok ? null : (j.error || "error"), j); },
+        function () { done(r.ok ? null : "error", null); });
+    }, function () { done("network", null); });
   }
+
+  /* 封面/头像改完, 返回列表页不能还是旧图。
+     浏览器会用 bfcache 把 /collections 整页原样还原(连 DOM 都不重建, 也不
+     重新请求), 所以只改库没用。这里记一条「这本写真的封面换了」, 任何页面
+     pageshow 时按 slug 把它名下的缩略图 src 就地换掉(尺寸前缀不动)。
+     缩略图地址形如 /t/s900/<模特slug>/<写真slug>/<文件名>。 */
+  var COVER_KEY = "pc.cover.v1.";
+  var COVER_TTL = 30 * 60 * 1000;   /* 半小时后自然过期, 免得旧值长期压住新数据 */
+  function coverDir(cover) {
+    var cut = cover.lastIndexOf("/");
+    return cut > 0 ? cover.slice(0, cut) : "";
+  }
+  /* 参数是「照片文件名」= <模特目录>/<写真目录>/<文件名>, 与缩略图地址
+     /t/<尺寸>/<同一串> 一致 —— 所以不用猜 slug, 拿目录当锚。 */
+  function rememberCover(cover) {
+    var dir = coverDir(cover || "");
+    if (!dir) return;
+    try {
+      sessionStorage.setItem(COVER_KEY + dir,
+        JSON.stringify({ c: cover, t: Date.now() }));
+    } catch (e) {}
+  }
+  function coverMarks() {
+    var out = [], drop = [];
+    try {
+      for (var i = 0; i < sessionStorage.length; i++) {
+        var k = sessionStorage.key(i);
+        if (!k || k.indexOf(COVER_KEY) !== 0) continue;
+        var v = null;
+        try { v = JSON.parse(sessionStorage.getItem(k) || "null"); } catch (e) {}
+        if (!v || !v.c || !(Date.now() - (v.t || 0) < COVER_TTL)) { drop.push(k); continue; }
+        out.push({ dir: k.slice(COVER_KEY.length), cover: v.c });
+      }
+      for (var j = 0; j < drop.length; j++) sessionStorage.removeItem(drop[j]);
+    } catch (e2) {}
+    return out;
+  }
+  /* 就地换图: 只换地址最后一段, 尺寸前缀和浏览器缓存都照旧。
+     只动「卡片封面」(包在指向写真/模特的链接里的图), 不碰详情页自己的照片墙
+     —— 那些照片本来就属于同一本写真, 全换成封面就废了。 */
+  var CARD_IMG = 'a[href*="/collections/"] img, a[href*="/models/"] img';
+  function applyDirtyCovers() {
+    var marks = coverMarks(), n = 0;
+    for (var m = 0; m < marks.length; m++) {
+      var need = "/" + marks[m].dir + "/";
+      var imgs = document.querySelectorAll(CARD_IMG);
+      for (var i = 0; i < imgs.length; i++) {
+        var src = imgs[i].getAttribute("src") || "";
+        if (src.indexOf("/t/") < 0) continue;
+        var hit = src.indexOf(need) >= 0;
+        if (!hit) { try { hit = decodeURI(src).indexOf(need) >= 0; } catch (e) {} }
+        if (!hit) continue;
+        var cut = src.lastIndexOf("/");
+        var next = cut > 0 ? src.slice(0, cut + 1) + marks[m].cover.split("/").pop() : src;
+        if (next !== src) { imgs[i].setAttribute("src", next); n++; }
+      }
+    }
+    return n;
+  }
+  /* 返回列表可能是 bfcache 原样还原(连 DOM 都不重建), 也可能重新请求; 而且虚拟
+     列表首帧/滚动后会重填单元格, 把换好的图又写回旧值 —— 所以多试几轮。 */
+  function scheduleCoverFix() {
+    var tries = 10;
+    (function tick() {
+      applyDirtyCovers();
+      if (--tries > 0) setTimeout(tick, 150);
+    })();
+  }
+  window.addEventListener("pageshow", scheduleCoverFix);
+  document.addEventListener("pc:content", applyDirtyCovers);
 
   function setCover() {
     var p = lb.photos[lb.index];
     if (!p) return;
-    pbPost({ photo_id: p.id, target: "cover" }, function (err) {
+    pbPost({ photo_id: p.id, target: "cover" }, function (err, j) {
       toast(err ? t("Failed to set cover") : t("Cover updated"));
+      if (!err && j) rememberCover(j.cover || "");
     });
   }
 
   function setAvatar() {
     var p = lb.photos[lb.index];
     if (!p) return;
-    pbPost({ photo_id: p.id, target: "avatar" }, function (err) {
+    pbPost({ photo_id: p.id, target: "avatar" }, function (err, j) {
       toast(err ? t("Failed to set avatar") : t("Avatar updated"));
+      /* 头像路径就是这张照片的文件名, 同样含写真 slug —— 一并让列表页换图 */
+      if (!err && j) rememberCover(j.cover || "");
     });
   }
 
@@ -1509,6 +1582,69 @@ window.PC = (function () {
     });
     mo.observe(document.body, { childList: true, subtree: true });
   }
+
+  /* ---- 返回时「直接落在原地」(2026-11-04) -------------------------------
+     浏览器自带的滚动恢复对虚拟列表不管用: /collections 首帧网格还没撑高,
+     文档很短, 恢复的位置被夹小(实测滚到 2600 再返回, 落在 1342); 而且
+     html 上的 scroll-behavior:smooth 会把这段恢复也演成滚动动画(已由
+     base.html 的 no-smooth-scroll 标记关掉)。
+
+     所以位置自己记: 滚动时节流写进当前 history entry 的 state
+     (history.state.pcScroll), 返回时从同一份 state 读回来, 等网格渲染完
+     (pc:content)再瞬时跳一次。写 state 而不是 sessionStorage + 卸载时机,
+     是因为卸载那一刻虚拟网格先塌回几行、scrollY 已被夹小 —— 记下来的全是
+     错值(2600 → 1342 实测)。 */
+  (function scrollRestore() {
+    var saveTimer = 0;
+    var leaving = false;   /* 点链接之后 / 页面已隐藏: 卸载途中不记(见下) */
+    function store() {
+      /* 卸载那一刻虚拟网格会先塌回几行, 浏览器补一个 scroll 事件把 scrollY
+         夹到矮文档的上限(实测 2600 → 1342), 顺手把这个错值写进 state 就把
+         正确位置盖掉了。所以「已经要走 / 已经隐藏」时一律不写。 */
+      if (leaving || document.visibilityState === "hidden") return;
+      var y = Math.round(window.pageYOffset || document.documentElement.scrollTop || 0);
+      try {
+        var st = history.state;
+        st = (st && typeof st === "object") ? st : {};
+        st.pcScroll = y;
+        history.replaceState(st, "");
+      } catch (e) {}
+    }
+    window.addEventListener("scroll", function () {
+      if (saveTimer) return;
+      saveTimer = setTimeout(function () { saveTimer = 0; store(); }, 150);
+    }, { passive: true });
+    document.addEventListener("click", function (e) {
+      /* 点链接马上就走: 别等节流 */
+      if (!e.target || !e.target.closest || !e.target.closest("a[href]")) return;
+      store();
+      leaving = true;
+      /* 目标是新标签页/被脚本拦下时不会真的离开, 1.5s 后恢复记录 */
+      setTimeout(function () { leaving = false; }, 1500);
+    }, true);
+    window.addEventListener("pageshow", function () { leaving = false; });
+
+    if (window.__pcNavType !== "back_forward" && window.__pcNavType !== "reload") return;
+    var st2 = history.state;
+    var want = (st2 && typeof st2.pcScroll === "number") ? st2.pcScroll : null;
+    if (want === null || want <= 0) return;
+
+    /* 逐帧重试(≈0.5s): pageshow 时虚拟网格往往还没撑高, 文档太矮会跳不到位;
+       网格渲染完(pc:content)再补一轮。落准了就收手。 */
+    var tries = 30;
+    function apply() {
+      if (want === null || tries <= 0) return;
+      tries--;
+      window.scrollTo(0, want);
+      if (Math.abs((window.pageYOffset || 0) - want) < 2) { want = null; return; }
+      requestAnimationFrame(apply);
+    }
+    window.addEventListener("pageshow", apply);
+    document.addEventListener("pc:content", function () {
+      tries = 30;
+      requestAnimationFrame(apply);
+    });
+  })();
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();

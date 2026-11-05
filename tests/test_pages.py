@@ -106,6 +106,9 @@ def test_profile_page(admin_client):
     r = admin_client.get("/profile")
     assert r.status_code == 200
     assert "admin" in r.text
+    # 个人页不再展示「最近收藏」区块(2026-11-02 需求)
+    assert "data-recent" not in r.text
+    assert "section-aside" not in r.text
 
 
 def test_search_api(admin_client):
@@ -162,3 +165,27 @@ def test_collections_page_vm_payload_has_tags(admin_client):
     if any(c["tags"] for c in d["collections"]):
         names = {t["name"] for t in d["tags"]}
         assert names, "有带标签的写真集时, tags 数据源不应为空"
+
+
+def test_back_nav_scroll_restore_is_manual(admin_client):
+    """返回时位置「直接落在原地」: 关掉浏览器自带恢复 + 首屏前关平滑。
+
+    只留浏览器原生恢复的话, 虚拟网格首帧还没撑高, 恢复位置被夹小, 而且
+    html 上的 scroll-behavior:smooth 会把这段恢复演成从顶部滚下来的动画
+    (2026-11-04 反馈)。这里只是防「悄悄删掉」的守卫。
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    html = admin_client.get("/collections").text
+    assert 'history.scrollRestoration = "manual"' in html
+    assert "no-smooth-scroll" in html
+    assert "window.__pcNavType" in html
+
+    css = (root / "app" / "static" / "app.css").read_text("utf-8")
+    assert "html.no-smooth-scroll { scroll-behavior: auto; }" in css
+
+    js = (root / "app" / "static" / "app.js").read_text("utf-8")
+    assert "function scrollRestore()" in js
+    assert "history.replaceState(st" in js      # 位置写进 history.state
+    assert 'pc:content' in js                   # 网格渲染完再补一次

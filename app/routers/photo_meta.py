@@ -44,4 +44,8 @@ async def set_photo_meta(body: PhotoMetaIn, user: User = Depends(require_admin),
             raise HTTPException(400, "collection has no model")  # 未归属模特,无处可设
         m.avatar_path = ph.filename
     s.commit()
-    return {"ok": True, "target": body.target, "photo_id": body.photo_id}
+    # slug/cover 一起回给前端: 改完封面要能让「返回列表」那一页就地换图
+    # (bfcache 还原的 DOM 是旧的, 见 app.js 的 applyDirtyCovers)。
+    return {"ok": True, "target": body.target, "photo_id": body.photo_id,
+            "slug": c.slug if c is not None else "",
+            "cover": ph.filename}

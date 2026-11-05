@@ -146,6 +146,10 @@ html {
   scroll-behavior: smooth;
 }
 
+/* 返回/前进那一刻关掉平滑: 否则浏览器把「恢复上次滚动位置」也做成动画,
+   表现为从顶部一路滚下来。标记由 base.html 首屏内联脚本打上, 1.2s 后撤掉。 */
+html.no-smooth-scroll { scroll-behavior: auto; }
+
 /* 虚化垫底层(blur 主题): 固定在视口最底层。
    底色由 html[data-theme=blur] 提供(深墨, 点击立即落底可读);
    真实 <img> 承载虚化图(浏览器原生加载/缓存, 无 CSS 变量兼容问题),

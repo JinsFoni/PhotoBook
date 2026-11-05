@@ -12,6 +12,30 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <script>
+/* 返回/前进时先关掉 html 上的 scroll-behavior:smooth。
+   否则浏览器把「恢复上一次的滚动位置」也当成平滑滚动, 从顶部一路滚下来
+   (2026-11-04 反馈: 从写真详情返回 /collections 会滚一段)。
+   首屏前打标记, 位置恢复完(≈1.2s)再撤掉, 站内锚点(#overview 等)的
+   平滑滚动照旧。顺带把导航类型交给 app.js: 虚拟列表要靠它补一次恢复。 */
+(function () {
+  var de = document.documentElement, t = "";
+  try {
+    var e = performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
+    t = (e && e.type) || "";
+  } catch (err) {}
+  window.__pcNavType = t;
+  /* 位置由 app.js 的 scrollRestore 自己恢复: 浏览器自带的恢复会撞上「虚拟网格
+     还没撑高」的短文档被夹小, 还会被卸载时的 scroll 事件反过来污染。 */
+  try { if ("scrollRestoration" in history) history.scrollRestoration = "manual"; } catch (e2) {}
+  /* reload 也算: 刷新后位置不该丢, 同样不该演出滚动动画 */
+  if (t !== "back_forward" && t !== "reload") return;
+  de.className += (de.className ? " " : "") + "no-smooth-scroll";
+  setTimeout(function () {
+    de.className = de.className.replace(/\s*no-smooth-scroll\b/, "");
+  }, 1200);
+})();
+</script>
+<script>
 /* 首屏前同步用户主题(localStorage), 避免整页导航时
    先按默认渲染再被尾部 JS 纠正 → 页面闪一下;
    并在虚化主题下首帧直出垫底背景(同一张图跨页不再重淡入) */
