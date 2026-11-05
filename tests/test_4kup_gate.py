@@ -223,6 +223,50 @@ def test_resolve_gate_rejects_non_url_payload(monkeypatch):
         net.resolve_4kup_gate("https://bit.ly/abc")
 
 
+def test_gate_get_uses_proxy(monkeypatch):
+    """短链要跟着 harvest.proxy 走(国内直连 bit.ly/tinyurl 被 RST)。
+
+    2026-11-03 任务 1327/1328/1331/1332:这条链路以前写死直连,代理明明好的,
+    任务却连环 failed 在「短链打不开 curl (35)」。
+    """
+    token = _token_with_specials({"url": "https://terabox.com/s/abc"})
+    seen: list = []
+    _patch_redirect(monkeypatch, token, seen)
+    monkeypatch.setattr(net, "_proxy", lambda: "http://127.0.0.1:7890")
+    monkeypatch.setattr(net, "_GATE_EGRESS", {"gate": True})
+    net.resolve_4kup_gate("https://bit.ly/abc")
+    assert seen[0][1].get("proxy") == "http://127.0.0.1:7890"
+
+
+def test_gate_get_flips_to_direct_when_proxy_fails(monkeypatch):
+    """代理侧挂了就翻面直连,并把成功的出口记下来(下次先试它)。"""
+    token = _token_with_specials({"url": "https://terabox.com/s/abc"})
+    sides: list = []
+
+    def fake_get(url, **kw):
+        sides.append(kw.get("proxy"))
+        if kw.get("proxy"):
+            raise RuntimeError("SSL_connect: Connection closed abruptly")
+        return _Redirect(token)
+
+    monkeypatch.setattr(net.cr, "get", fake_get)
+    monkeypatch.setattr(net, "_proxy", lambda: "http://127.0.0.1:7890")
+    monkeypatch.setattr(net, "_GATE_EGRESS", {"gate": True})
+    assert net.resolve_4kup_gate("https://bit.ly/abc") == "https://terabox.com/s/abc"
+    assert sides[0] == "http://127.0.0.1:7890"   # 先试代理
+    assert sides[1] is None                      # 再试直连
+    assert net._GATE_EGRESS["gate"] is False     # 记住直连可用
+
+
+def test_gate_get_without_proxy_stays_direct(monkeypatch):
+    seen: list = []
+    token = _token_with_specials({"url": "https://terabox.com/s/abc"})
+    _patch_redirect(monkeypatch, token, seen)
+    monkeypatch.setattr(net, "_proxy", lambda: None)
+    net.resolve_4kup_gate("https://bit.ly/abc")
+    assert seen[0][1].get("proxy") is None
+
+
 # ---- worker 分流 -------------------------------------------------------------
 
 def _target(shortlinks):

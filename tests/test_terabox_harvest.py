@@ -94,14 +94,108 @@ def test_parse_surl():
     assert terabox.parse_surl("https://dm.terabox.com/sharing/link?surl=0Y8ZvbwJrqOO4n35IAOVLQ") \
         == "0Y8ZvbwJrqOO4n35IAOVLQ"
     assert terabox.parse_surl("https://terasharelink.com/s/1abcDEF123") == "1abcDEF123"
+    # 4kup 2026-11 起用的新分享域
+    assert terabox.parse_surl("https://teraboxapp.com/s/1Sy95eSI3JRVP_gIZ-wWSlQ") \
+        == "1Sy95eSI3JRVP_gIZ-wWSlQ"
 
 
 def test_is_terabox_url():
     for url in ("https://1024terabox.com/s/abc", "https://www.terabox.app/s/abc",
-                "https://terasharelink.com/s/abc", "https://mirrobox.com/s/abc"):
+                "https://terasharelink.com/s/abc", "https://mirrobox.com/s/abc",
+                # teraboxapp.com:2026-11-02 任务 1327/1328 实录 —— 不认这个域
+                # 就会把它当 MediaFire 页面解析,报「无法提取 quick_key」
+                "https://teraboxapp.com/s/1Sy95eSI3JRVP_gIZ-wWSlQ"):
         assert terabox.is_terabox_url(url), url
     assert not terabox.is_terabox_url("https://www.mediafire.com/file/abc/x.rar/file")
     assert not terabox.is_terabox_url("")
+
+
+# ---- 瞬时网络错误重试(2026-11-02:dm.terabox.com 偶发 curl(56)/(60)) --------
+
+class _FakeResp:
+    def __init__(self, status_code=200, text="{}"):
+        self.status_code = status_code
+        self.text = text
+
+
+def _no_proxy(monkeypatch):
+    monkeypatch.setattr(terabox, "_proxy", lambda: None)
+    monkeypatch.setattr(terabox.time, "sleep", lambda *_a, **_k: None)
+
+
+def test_get_retries_transient_connection_error(monkeypatch):
+    """连接被掐断(56)/证书不匹配(60)→ 重试,别一次抖动就废掉整个任务。"""
+    _no_proxy(monkeypatch)
+    calls = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        if len(calls) == 1:
+            raise _conn_error()
+        return _FakeResp()
+
+    monkeypatch.setattr(terabox.cr, "get", fake_get)
+    r = terabox._get("ndus=x", terabox.API_HOST + "/api/shorturlinfo")
+    assert r.status_code == 200
+    assert len(calls) == 2
+
+
+def _conn_error():
+    from curl_cffi import requests as cr
+    return cr.exceptions.ConnectionError(
+        "Failed to perform, curl: (56) Connection closed abruptly.", 56, None)
+
+
+def test_get_retries_ssl_60(monkeypatch):
+    _no_proxy(monkeypatch)
+    calls = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        if len(calls) < 3:
+            raise _conn_error()
+        return _FakeResp()
+
+    monkeypatch.setattr(terabox.cr, "get", fake_get)
+    assert terabox._get("ndus=x", "https://dm.terabox.com/x").status_code == 200
+    assert len(calls) == 3
+
+
+def test_get_gives_up_after_retries(monkeypatch):
+    _no_proxy(monkeypatch)
+    calls = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        raise _conn_error()
+
+    monkeypatch.setattr(terabox.cr, "get", fake_get)
+    with pytest.raises(Exception) as ei:
+        terabox._get("ndus=x", "https://dm.terabox.com/x")
+    assert len(calls) == terabox._RETRY_TRIES
+    assert "56" in str(ei.value)
+
+
+def test_get_retries_5xx(monkeypatch):
+    _no_proxy(monkeypatch)
+    seq = [_FakeResp(502), _FakeResp(200)]
+    monkeypatch.setattr(terabox.cr, "get", lambda url, **kw: seq.pop(0))
+    assert terabox._get("ndus=x", "https://dm.terabox.com/x").status_code == 200
+
+
+def test_get_does_not_retry_non_network_error(monkeypatch):
+    """程序性异常不该被吞掉重试(否则真 bug 会被伪装成网络抖动)。"""
+    _no_proxy(monkeypatch)
+    calls = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        raise ValueError("bug")
+
+    monkeypatch.setattr(terabox.cr, "get", fake_get)
+    with pytest.raises(ValueError):
+        terabox._get("ndus=x", "https://dm.terabox.com/x")
+    assert len(calls) == 1
 
 
 # ---- 4kup 详情页解析 ---------------------------------------------------------

@@ -46,8 +46,11 @@ UA = (
 SHARE_URL = API_HOST + "/sharing/link?surl={surl}"
 
 # 已知镜像域(worker 侧识别「这是 terabox 链接」用;大小写不敏感)
+# teraboxapp.com:4kup 2026-11 起换的新分享域。少了它,链接会被当成
+# MediaFire 页面去解析,任务报「无法从 URL 提取 quick_key」(2026-11-02
+# 任务 1327/1328 —— 文件其实好好的,只是域没认出来)。
 TERABOX_HOST_FRAGS = (
-    "terabox.com", "terabox.app", "1024tera", "terasharelink",
+    "terabox.com", "terabox.app", "teraboxapp", "1024tera", "terasharelink",
     "mirrobox", "nephobox", "4funbox", "freeterabox", "teraboxlink",
     "terashare", "dbshare",
 )
@@ -124,6 +127,30 @@ def _headers(referer: str | None) -> dict:
     return h
 
 
+# 瞬时网络错误重试(2026-11-02 实录:dm.terabox.com 偶发 curl(56) 连接被
+# 掐断 / curl(60) 证书对不上 —— 经代理时出口轮换导致,同一任务隔几秒重试
+# 就通。以前单次失败直接判任务死,一次抖动废掉整个写真包)。
+# 6/7 域名解析失败、16/18 传输中断、28 超时、35 TLS 握手、52 空响应、
+# 55/56 连接中断、60 证书不匹配、92 HTTP2 流错误。
+_RETRY_CODES = {6, 7, 16, 18, 28, 35, 52, 55, 56, 60, 92}
+_RETRY_TRIES = 3
+_RETRY_SLEEPS = (1.2, 3.0)
+
+
+def _is_transient_exc(exc: Exception) -> bool:
+    """连接层抖动(可重试)判定;接口层面的 errno 不在此列。"""
+    code = getattr(exc, "code", None)
+    if isinstance(code, int) and code in _RETRY_CODES:
+        return True
+    return isinstance(exc, (cr.exceptions.ConnectionError,
+                            cr.exceptions.Timeout,
+                            cr.exceptions.ProxyError))
+
+
+def _is_transient_status(status: int) -> bool:
+    return status in (408, 429) or status >= 500
+
+
 def _get(cookie_header: str, url: str, *, params: dict | None = None,
          referer: str | None = None, timeout: float = 30.0) -> cr.Response:
     if params:
@@ -131,8 +158,29 @@ def _get(cookie_header: str, url: str, *, params: dict | None = None,
     # curl_cffi 的 cookies 参数只认 dict/CookieJar,字符串头走 headers
     h = _headers(referer)
     h["Cookie"] = cookie_header
-    return cr.get(url, headers=h, impersonate="chrome", timeout=timeout,
-                  proxy=_proxy())
+    last_exc: Exception | None = None
+    last_resp: cr.Response | None = None
+    for attempt in range(_RETRY_TRIES):
+        try:
+            r = cr.get(url, headers=h, impersonate="chrome", timeout=timeout,
+                       proxy=_proxy())
+            if not _is_transient_status(r.status_code):
+                return r
+            last_exc, last_resp = None, r
+            log.warning("TeraBox 接口第 %d/%d 次 HTTP %s: %s",
+                        attempt + 1, _RETRY_TRIES, r.status_code, url[:90])
+        except Exception as exc:
+            if not _is_transient_exc(exc):
+                raise
+            last_exc, last_resp = exc, None
+            log.warning("TeraBox 接口第 %d/%d 次网络抖动: %s %s",
+                        attempt + 1, _RETRY_TRIES, type(exc).__name__, url[:90])
+        if attempt < _RETRY_TRIES - 1:
+            time.sleep(_RETRY_SLEEPS[min(attempt, len(_RETRY_SLEEPS) - 1)]
+                       + random.uniform(0, 0.5))
+    if last_resp is not None:
+        return last_resp
+    raise last_exc if last_exc is not None else TeraboxError("TeraBox 接口请求失败")
 
 
 def _proxy() -> str | None:

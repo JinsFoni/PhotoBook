@@ -928,6 +928,39 @@ def _gate_json(token: str) -> dict:
     raise ValueError("令牌解不开(可能需要口令)")
 
 
+# 中转短链的出口偏好:上次哪个出口成功就用哪个先试(短链域在国内直连基本
+# 不可达 —— 2026-11-03 实测 bit.ly 超时、tinyurl RST)。
+_GATE_EGRESS = {"gate": True}
+
+
+def _gate_get(url: str, *, timeout: float = 30.0):
+    """短链/中转页 GET(自己跟跳转,拿 Location)。
+
+    与 `resolve_ouo` 同理走「出口翻面」,但这条链路以前**完全没走
+    harvest.proxy**:2026-11-03 任务 1327/1328/1331/1332 连环 failed,错误全是
+    `短链打不开: curl (35) Connection closed abruptly` —— 直连 bit.ly 被 RST,
+    而设置里配的代理一直是好的(同一秒经代理 bit.ly 回 301)。
+    """
+    proxy = _proxy()
+    prefer_proxy = _GATE_EGRESS.get("gate", True)
+    sides = [True, False] if prefer_proxy else [False, True]
+    if not proxy:
+        sides = [False]          # 没配代理:只有直连这一侧可试
+    last: Exception | str = "未尝试"
+    for use_proxy in sides:
+        try:
+            r = cr.get(url, impersonate=UA_IMPERSONATE, timeout=timeout,
+                       allow_redirects=False,
+                       proxy=(proxy if use_proxy else None))
+            _GATE_EGRESS["gate"] = use_proxy
+            return r
+        except Exception as e:
+            last = e
+            log.warning("中转短链请求失败(出口%s): %s — %s",
+                        "代理" if use_proxy else "直连", e, url[:80])
+    raise ValueError(f"短链打不开: {last}")
+
+
 def resolve_4kup_gate(url: str, *, timeout: float = 30.0) -> str:
     """中转短链 → 真实网盘 URL(MediaFire 文件页 / TeraBox 分享)。
 
@@ -938,11 +971,7 @@ def resolve_4kup_gate(url: str, *, timeout: float = 30.0) -> str:
     for _ in range(4):
         if FOURKUP_GATE_U_RE.search(cur):
             break
-        try:
-            r = cr.get(cur, impersonate=UA_IMPERSONATE, timeout=timeout,
-                       allow_redirects=False)
-        except Exception as e:
-            raise ValueError(f"短链打不开: {e}") from e
+        r = _gate_get(cur, timeout=timeout)
         loc = (r.headers.get("location") or "").strip()
         if r.status_code in (301, 302, 303, 307, 308) and loc:
             cur = urljoin(cur, loc)

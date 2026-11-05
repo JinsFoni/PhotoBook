@@ -68,7 +68,9 @@ def test_net_proxy_reads_settings(s):
     import inspect
     from app.services.harvest import net, pipeline as pl
 
-    assert net_src_proxies(net) == 4, "net 应有 4 处 proxy 接线(fetch_html/ouo Session/mediafire 页面 Session/mediafire API)"
+    assert net_src_proxies(net) == 5, (
+        "net 应有 5 处 proxy 接线(fetch_html / ouo Session / mediafire 页面 "
+        "Session / mediafire API / 4kup 中转短链)")
     assert "harvest.proxy" in inspect.getsource(pl), "下载流应读取 harvest.proxy"
 
 
