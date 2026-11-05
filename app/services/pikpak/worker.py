@@ -209,15 +209,104 @@ def _album_has_content(album_dir: Path) -> bool:
         if not p.name.startswith(".") and p.name not in ("Thumbs.db", ".DS_Store"))
 
 
+def _known_file_names(album_dir: Path, existing) -> set[str]:
+    """「已经到手」的文件名集合: 写真目录里的残留 + 已入库照片的文件名。
+
+    只比文件名(写真里重名极少), 用于判定某次推送是不是「全都已经下过/入过」。
+    """
+    names: set[str] = set()
+    if album_dir.exists():
+        for p in album_dir.rglob("*"):
+            if p.is_file() and p.suffix != ".part" and not p.name.startswith("."):
+                names.add(p.name)
+    if existing is not None:
+        for p in existing.photos:
+            names.add(Path(p.filename).name)
+    return names
+
+
+def _existing_collection(s, job: PikPakJob, unsorted: str):
+    """同名写真集(模特+标题同 slug), 没有则 None。"""
+    from ...db import Collection
+    slug = library_import.collection_slug(s, job.model_name or "", job.name, unsorted)
+    return s.scalar(select(Collection).where(Collection.slug == slug))
+
+
+def _restore_from_media(files: list[PikPakFile], album_dir: Path, existing) -> int:
+    """把已入库(在 /media)的文件按 rel 复制回写真目录。
+
+    更全的一次推送要重新导出整本时用: 旧照片本体早被 import 移进 /media,
+    写真目录里已经不在了, 不复制回来就得重下几个 G(1.89GB 实测)。
+    """
+    if existing is None:
+        return 0
+    from ...config import settings as app_settings
+    media_root = Path(app_settings.media_dir)
+    by_name: dict[str, str] = {}
+    for p in existing.photos:
+        by_name.setdefault(Path(p.filename).name, p.filename)
+    n = 0
+    for f in files:
+        name = Path(str(f.rel or f.file_id or "")).name
+        src_rel = by_name.get(name)
+        if not src_rel:
+            continue
+        src = media_root / src_rel
+        dest = _safe_join(album_dir, (str(f.rel or name)).strip())
+        if dest is None or dest.exists() or not src.exists():
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        n += 1
+    if n:
+        log.info("pikpak: 复用已入库文件 %d 个(免重下), album=%s", n, album_dir.name)
+    return n
+
+
+def _drop_stale_collection(s, col) -> None:
+    """删掉「张数更少」的旧合集, 让本次导入成为唯一一本。
+
+    import_album 遇到「slug 命中但张数不同」会把目录改名 " (2)" 另立一本,
+    于是同一本写真在库里出现两本(旧的不全、新的全)。这里先删旧的再导入。
+    """
+    from ..storage import collect_remote_paths, purge_remote_async
+    slug = col.slug
+    filenames = [p.filename for p in col.photos]
+    remote = collect_remote_paths(col.id, s)
+    log.info("pikpak: 旧合集张数不足, 删除后重导 %s", slug)
+    s.delete(col)
+    s.commit()
+    try:
+        purge_remote_async(remote, col.id, slug)
+    except Exception:                       # 远端清理失败不影响入库
+        log.warning("pikpak: 旧合集远端清理失败 %s", slug, exc_info=True)
+    try:
+        media.purge_collection_files(slug, filenames)
+    except Exception:
+        log.warning("pikpak: 旧合集本地清理失败 %s", slug, exc_info=True)
+
+
 def _skip_if_imported(s, job: PikPakJob, album_dir: Path,
-                      *, resumed: bool = False) -> str | None:
+                      *, resumed: bool = False, files=None,
+                      existing=None) -> str | None:
     """已归档过 / 已导入过 → 返回跳过理由, 否则 None。
 
     resumed=True 表示上次运行中断后重跑。此时目录里的文件是半成品,
     不能据此判定「整包已存在」—— 否则剩余文件永远补不齐, 任务还会被
     误标 done(容器重启/看门狗重置后实测)。
+
+    ``files`` 给了就按**文件级**判定。只看「目录里有东西」不够: 上次入库后
+    留在目录里的视频/杂项会让同一本写真「永远已存在」—— 2026-11-03 P63
+    (`Cool Beauty vol.1-9 [181P 7V 1.89GB]`)就是这么被跳过的, 目录里只剩
+    上一轮跳过的 7 个视频。
     """
-    if not resumed and _album_has_content(album_dir):
+    if resumed:
+        return None
+    if files is not None:
+        known = _known_file_names(album_dir, existing)
+        if any(Path(str(f.rel or f.file_id or "")).name not in known for f in files):
+            return None                     # 还有没到手/没入库的 → 继续
+    if _album_has_content(album_dir):
         _settle_pending_files(s, job.id)
         return "→ 已存在,跳过"
     conf = settings_store.harvest_conf(s)
@@ -270,18 +359,26 @@ def _run_job(job_id: int) -> None:
         unsorted = str(conf["harvest.unsorted_dir"])
 
         album_dir = _album_root(s, job, library_root)
-        reason = _skip_if_imported(s, job, album_dir, resumed=resumed)
-        if reason:
-            _finish(s, job, "done", reason)
-            s.commit()
-            return
-
         files = s.scalars(select(PikPakFile).where(PikPakFile.job_id == job_id)
                           .order_by(PikPakFile.id)).all()
         if not files:
             _finish(s, job, "failed", "→ 推送的文件直链已丢失")
             s.commit()
             return
+
+        # 同一本写真已经入过库(模特+标题 → slug): 要么整包跳过, 要么这次推得更全
+        existing = _existing_collection(s, job, unsorted)
+        reason = _skip_if_imported(s, job, album_dir, resumed=resumed,
+                                   files=files, existing=existing)
+        if reason:
+            _finish(s, job, "done", reason)
+            s.commit()
+            return
+
+        if existing is not None and not resumed:
+            # 更全的一次推送: 旧照片已被 import 移进 /media, 先复制回写真目录,
+            # 这样只下真正缺的那几张(1.89GB 的整本重下能省掉)。
+            _restore_from_media(files, album_dir, existing)
 
         job.bytes_total = sum(f.size or 0 for f in files) or int(job.size or 0)
         s.commit()
@@ -324,6 +421,12 @@ def _run_job(job_id: int) -> None:
 
         _finish(s, job, "done")
         s.commit()
+
+        if existing is not None and not resumed:
+            # 这次推的是更全的一份: 先删掉张数不足的旧合集, 免得 import 把目录
+            # 改名 " (2)" 另立一本(同系列两本, 旧的不全)
+            _drop_stale_collection(s, existing)
+            existing = None
 
         # 导入平台(library → media + 建库), tag 由脚本推送
         _import_album(s, job, final_dir, library_root, unsorted, token)
@@ -539,6 +642,14 @@ def _download_files(s, job: PikPakJob, files: list[PikPakFile], album_dir: Path,
                 mark_file(f.id, "done", None)
                 complete_one()
                 continue
+            if is_video_rel(rel):
+                # 视频不入库(library_import 只收图片), 下了也是白下: 2026-11-03
+                # P63 里 7 个视频共 ~800MB, 下载排队还会把整个任务拖住。
+                f.status = "done"
+                f.error = "视频,不导入"
+                mark_file(f.id, "done", "视频,不导入")
+                complete_one()
+                continue
             last_err = ""
             downloaded = False
             for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
@@ -607,6 +718,15 @@ def _safe_join(root: Path, rel: str) -> Path | None:
     except ValueError:
         return None
     return dest
+
+
+def is_video_rel(rel: str) -> bool:
+    """推送清单里的这一项是视频?
+
+    平台只收图片(library_import 遇到视频记 `跳过 N 个视频`), 视频下下来
+    纯属浪费带宽 —— 2026-11-03 P63 里 7 个视频加起来 ~800MB。
+    """
+    return Path(str(rel or "").replace("\\", "/")).suffix.lower() in library_import.VIDEO_EXTS
 
 
 def _import_album(s, job: PikPakJob, final_dir: Path, library_root: Path,
