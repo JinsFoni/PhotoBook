@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.LocalThemeMode
+import dev.jinsfoni.photobook.core.design.PhotoSpacing
 import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.ui.components.BlurBackdrop
@@ -119,13 +120,13 @@ private fun ExploreSkeleton() {
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 15.dp),
+                .padding(horizontal = PhotoSpacing.Gutter, vertical = 15.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             SkeletonBox(Modifier.size(width = 110.dp, height = 26.dp), cornerRadius = 2)
             SkeletonBox(Modifier.size(width = 52.dp, height = 17.dp), cornerRadius = 2)
         }
-        Row(Modifier.padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+        Row(Modifier.padding(horizontal = PhotoSpacing.Gutter), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
             SkeletonBox(Modifier.weight(1f))
             SkeletonBox(Modifier.weight(1f))
         }
@@ -155,8 +156,8 @@ private fun ExploreContent(
         columns = GridCells.Fixed(2),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
-        // 与写真页一致:左右 18dp 留白,卡片不贴屏幕边
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
+        // 与写真页一致:左右 PhotoSpacing.Gutter 留白,卡片不贴屏幕边
+        contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, bottom = 112.dp + LocalGlassBarBottomInset.current),
         horizontalArrangement = Arrangement.spacedBy(13.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -299,7 +300,7 @@ private fun HeroCarousel(
         // 页码条(.pager:2dp 短条,激活 24dp accent)
         Row(
             horizontalArrangement = Arrangement.spacedBy(5.dp),
-            modifier = Modifier.padding(start = 18.dp, top = 15.dp),
+            modifier = Modifier.padding(start = PhotoSpacing.Gutter, top = 15.dp),
         ) {
             repeat(items.size) { i ->
                 Box(

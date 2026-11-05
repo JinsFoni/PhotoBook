@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
+import dev.jinsfoni.photobook.core.design.PhotoSpacing
 import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.FavoriteButton
@@ -182,7 +183,7 @@ private fun ModelDetailContent(
                 Column(
                     Modifier
                         .align(Alignment.BottomStart)
-                        .padding(horizontal = 18.dp),
+                        .padding(horizontal = PhotoSpacing.Gutter),
                 ) {
                     if (d.stage.isNotBlank()) {
                         Text(
@@ -204,7 +205,7 @@ private fun ModelDetailContent(
         }
         // 刊头:bio + meta(标签行)
         item(span = { GridItemSpan(2) }) {
-            Column(Modifier.padding(horizontal = 18.dp)) {
+            Column(Modifier.padding(horizontal = PhotoSpacing.Gutter)) {
                 if (d.bio.isNotBlank()) {
                     Text(
                         d.bio,
@@ -244,7 +245,7 @@ private fun ModelDetailContent(
         item(span = { GridItemSpan(2) }) {
             dev.jinsfoni.photobook.ui.components.SectionHeader(
                 title = "写真 ${d.count}",
-                modifier = Modifier.padding(horizontal = 18.dp),
+                modifier = Modifier.padding(horizontal = PhotoSpacing.Gutter),
             )
         }
         if (d.collections.isEmpty()) {
@@ -254,7 +255,7 @@ private fun ModelDetailContent(
                 }
             }
         }
-        // 卡片随列贴边加 18dp 页边距(与收藏/写真集一致);不能挂到 grid contentPadding 上——
+        // 卡片随列贴边加 PhotoSpacing.Gutter 页边距(与收藏/写真集一致);不能挂到 grid contentPadding 上——
         // hero 跨两列要全出血,会一起被内缩。i%2 即列号,Fixed(2) 逐行铺位恒成立。
         items(d.collections.size) { i ->
             val c = d.collections[i]
@@ -264,8 +265,8 @@ private fun ModelDetailContent(
                 imageUrl = c.imageUrl,
                 onClick = { onOpenCollection(c.slug) },
                 modifier = Modifier.padding(
-                    start = if (i % 2 == 0) 18.dp else 0.dp,
-                    end = if (i % 2 == 1) 18.dp else 0.dp,
+                    start = if (i % 2 == 0) PhotoSpacing.Gutter else 0.dp,
+                    end = if (i % 2 == 1) PhotoSpacing.Gutter else 0.dp,
                 ),
             )
         }
@@ -282,7 +283,7 @@ private fun DetailSkeleton() {
                 .statusBarsPadding(),
             cornerRadius = 0,
         )
-        Row(Modifier.padding(horizontal = 18.dp, vertical = 15.dp), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+        Row(Modifier.padding(horizontal = PhotoSpacing.Gutter, vertical = 15.dp), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
             SkeletonBox(Modifier.weight(1f))
             SkeletonBox(Modifier.weight(1f))
         }

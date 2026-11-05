@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
+import dev.jinsfoni.photobook.core.design.PhotoSpacing
 import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.EmptyState
@@ -116,7 +117,7 @@ fun DetailScreen(
                     columns = StaggeredGridCells.Fixed(2),
                     state = gridState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 132.dp),
+                    contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, bottom = 132.dp),
                     horizontalArrangement = Arrangement.spacedBy(11.dp),
                     verticalItemSpacing = 11.dp,
                 ) {
@@ -204,7 +205,7 @@ fun DetailScreen(
 @Composable
 private fun DetailSkeleton() {
     val colors = LocalPhotoColors.current
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = PhotoSpacing.Gutter)) {
         SkeletonBox(Modifier.fillMaxWidth().height(40.dp), cornerRadius = 2)
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(11.dp)) {

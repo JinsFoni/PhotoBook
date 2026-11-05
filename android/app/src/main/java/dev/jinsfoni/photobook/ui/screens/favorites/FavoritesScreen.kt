@@ -42,6 +42,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
 import dev.jinsfoni.photobook.core.design.PhotoColors
+import dev.jinsfoni.photobook.core.design.PhotoSpacing
 import dev.jinsfoni.photobook.core.design.PhotoSerif
 import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.ui.components.BlurBackdrop
@@ -87,7 +88,7 @@ fun FavoritesScreen(
             Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 18.dp, vertical = 12.dp),
+                .padding(horizontal = PhotoSpacing.Gutter, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -112,7 +113,7 @@ fun FavoritesScreen(
         }
 
         // 三段 Tab(原型 .seg:照片/写真/模特;内联计数;选中 2px accent 下划线)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = PhotoSpacing.Gutter)) {
             FavTab.entries.forEachIndexed { i, tab ->
                 val selected = tab == state.tab
                 Column(
@@ -180,7 +181,7 @@ fun FavoritesScreen(
                 FavTab.MODELS -> LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
+                    contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
                     horizontalArrangement = Arrangement.spacedBy(11.dp),
                     verticalArrangement = Arrangement.spacedBy(11.dp),
                 ) {
@@ -197,7 +198,7 @@ fun FavoritesScreen(
                 FavTab.COLLECTIONS -> LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
+                    contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
                     horizontalArrangement = Arrangement.spacedBy(11.dp),
                     verticalArrangement = Arrangement.spacedBy(11.dp),
                 ) {
@@ -240,7 +241,7 @@ private fun PhotosMasonry(
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Fixed(2),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
+        contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
         horizontalArrangement = Arrangement.spacedBy(11.dp),
         verticalItemSpacing = 11.dp,
     ) {
@@ -282,7 +283,7 @@ private fun PhotoCell(
 @Composable
 private fun TabSkeleton(tab: FavTab) {
     val span = if (tab == FavTab.PHOTOS) 3 else 2
-    Row(Modifier.padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+    Row(Modifier.padding(horizontal = PhotoSpacing.Gutter), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
         repeat(span) { SkeletonBox(Modifier.weight(1f)) }
     }
 }

@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
+import dev.jinsfoni.photobook.core.design.PhotoSpacing
 import dev.jinsfoni.photobook.core.design.PhotoSerif
 import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.ui.components.BlurBackdrop
@@ -58,7 +59,7 @@ fun ModelsScreen(
             Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 18.dp, vertical = 12.dp),
+                .padding(horizontal = PhotoSpacing.Gutter, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -72,7 +73,7 @@ fun ModelsScreen(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 2.dp)
+                .padding(horizontal = PhotoSpacing.Gutter, vertical = 2.dp)
                 .padding(bottom = 15.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -124,7 +125,7 @@ fun ModelsScreen(
             else -> LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
+                contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, bottom = 112.dp + LocalGlassBarBottomInset.current),
                 horizontalArrangement = Arrangement.spacedBy(13.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
@@ -146,7 +147,7 @@ fun ModelsScreen(
 
 @Composable
 private fun GridSkeleton() {
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = PhotoSpacing.Gutter)) {
         Row(horizontalArrangement = Arrangement.spacedBy(13.dp)) {
             SkeletonBox(Modifier.weight(1f))
             SkeletonBox(Modifier.weight(1f))

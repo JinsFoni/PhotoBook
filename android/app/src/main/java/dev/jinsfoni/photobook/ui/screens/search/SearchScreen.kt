@@ -36,6 +36,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
+import dev.jinsfoni.photobook.core.design.PhotoSpacing
 import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.ui.components.BlurBackdrop
 import dev.jinsfoni.photobook.ui.components.CollectionCard
@@ -75,7 +76,7 @@ fun SearchScreen(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 18.dp, top = 8.dp, bottom = 14.dp),
+                .padding(start = 12.dp, end = PhotoSpacing.Gutter, top = 8.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -139,7 +140,7 @@ fun SearchScreen(
             r != null -> LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 40.dp),
+                contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, bottom = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(13.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
@@ -147,7 +148,7 @@ fun SearchScreen(
                     item(span = { GridItemSpan(2) }) {
                         SectionHeader(
                             title = "模特 ${r.models.size}",
-                            modifier = Modifier.padding(horizontal = 18.dp),
+                            modifier = Modifier.padding(horizontal = PhotoSpacing.Gutter),
                         )
                     }
                     items(r.models.size) { i ->
@@ -164,7 +165,7 @@ fun SearchScreen(
                     item(span = { GridItemSpan(2) }) {
                         SectionHeader(
                             title = "写真 ${r.collections.size}",
-                            modifier = Modifier.padding(horizontal = 18.dp),
+                            modifier = Modifier.padding(horizontal = PhotoSpacing.Gutter),
                         )
                     }
                     items(r.collections.size) { i ->
@@ -181,7 +182,7 @@ fun SearchScreen(
                     item(span = { GridItemSpan(2) }) {
                         SectionHeader(
                             title = "标签 ${r.tags.size}",
-                            modifier = Modifier.padding(horizontal = 18.dp),
+                            modifier = Modifier.padding(horizontal = PhotoSpacing.Gutter),
                         )
                     }
                     item(span = { GridItemSpan(2) }) {
@@ -215,7 +216,7 @@ fun SearchScreen(
 
 @Composable
 private fun GridSkeleton() {
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = PhotoSpacing.Gutter)) {
         Row(horizontalArrangement = Arrangement.spacedBy(13.dp)) {
             SkeletonBox(Modifier.weight(1f))
             SkeletonBox(Modifier.weight(1f))

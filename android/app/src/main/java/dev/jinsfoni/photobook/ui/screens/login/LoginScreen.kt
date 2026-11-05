@@ -38,6 +38,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
+import dev.jinsfoni.photobook.core.design.PhotoSpacing
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import dev.jinsfoni.photobook.core.net.LocalNetworkAccess
@@ -150,7 +151,7 @@ fun LoginScreen(
                     color = colors.accent,
                     textAlign = TextAlign.Center,
                     modifier = Modifier
-                        .padding(start = 28.dp, end = 28.dp)
+                        .padding(start = PhotoSpacing.Form, end = PhotoSpacing.Form)
                         .photoClickable {
                             runCatching { localNetLauncher.launch(LocalNetworkAccess.PERMISSION) }
                         },
@@ -168,7 +169,7 @@ fun LoginScreen(
                 modifier = Modifier
                     .padding(top = 12.dp)
                     .fillMaxWidth()
-                    .padding(horizontal = 28.dp)
+                    .padding(horizontal = PhotoSpacing.Form)
                     .height(46.dp),
             ) {
                 Text(
@@ -194,7 +195,7 @@ fun LoginScreen(
                 color = colors.ink2,
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(top = 52.dp, start = 28.dp)
+                    .padding(top = 52.dp, start = PhotoSpacing.Form)
                     .photoClickable { onBack() },
             )
         }
@@ -241,6 +242,6 @@ private fun UnderlineField(
         textStyle = PhotoType.body.copy(color = colors.ink),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 28.dp, vertical = 4.dp),
+            .padding(horizontal = PhotoSpacing.Form, vertical = 4.dp),
     )
 }

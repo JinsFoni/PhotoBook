@@ -35,6 +35,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import dev.jinsfoni.photobook.core.design.FontPack
 import dev.jinsfoni.photobook.core.design.GlassMaterial
 import dev.jinsfoni.photobook.core.design.LocalPhotoColors
+import dev.jinsfoni.photobook.core.design.PhotoSpacing
 import dev.jinsfoni.photobook.core.design.PhotoType
 import dev.jinsfoni.photobook.core.design.ThemeMode
 import dev.jinsfoni.photobook.data.prefs.ServerProfile
@@ -176,7 +177,7 @@ fun SettingsScreen(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 28.dp, vertical = 12.dp),
+                .padding(horizontal = PhotoSpacing.Form, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -219,7 +220,7 @@ private fun SectionLabel(text: String) {
         text,
         style = PhotoType.micro,
         color = colors.ink3,
-        modifier = Modifier.padding(start = 28.dp, top = 28.dp, bottom = 6.dp),
+        modifier = Modifier.padding(start = PhotoSpacing.Form, top = 28.dp, bottom = 6.dp),
     )
 }
 
@@ -236,7 +237,7 @@ private fun ServerRow(
         Modifier
             .fillMaxWidth()
             .photoClickable(onActivate)
-            .padding(horizontal = 28.dp, vertical = 12.dp),
+            .padding(horizontal = PhotoSpacing.Form, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -285,7 +286,7 @@ private fun AddServerRow(onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .photoClickable(onClick)
-            .padding(horizontal = 28.dp, vertical = 14.dp),
+            .padding(horizontal = PhotoSpacing.Form, vertical = 14.dp),
     )
 }
 
@@ -297,7 +298,7 @@ private fun ThemeRow(label: String, selected: Boolean, onClick: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .photoClickable(onClick)
-            .padding(horizontal = 28.dp, vertical = 12.dp),
+            .padding(horizontal = PhotoSpacing.Form, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
