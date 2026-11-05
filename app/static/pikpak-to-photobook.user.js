@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PikPak to PhotoBook
 // @namespace    photobook.bridge
-// @version      1.3.1
+// @version      1.4.0
 // @description  在 mypikpak.com 勾选文件/文件夹,一键推送到 PhotoBook 任务队列下载入库。勾选的文件夹就是写真集(里面是写真图片),标签第一个作为模特名。修复原脚本分享页文件夹下载 100 条限制。
 // @author       PhotoBook
 // @match        https://mypikpak.com/*
@@ -291,6 +291,27 @@
       if (!fi.web_content_link) throw new Error("web_content_link 为空");
       return fi;
     });
+  }
+
+  // 当前所在目录的名字:把「在同一目录里勾了一堆散图」合成一个写真集时当标题。
+  // 取不到就返回空串(调用方回退成 "PikPak N 张")。
+  // 根目录(/drive/all)没有名字 → 空串;/drive/star/<id> 的最后一段就是目录 id。
+  function currentFolderName() {
+    if (isSharePage()) {
+      const d = getSharePageData();
+      const dd = (d && d.data) || null;
+      const nm = dd && (dd.share_name || (dd.file_info && dd.file_info.name));
+      return Promise.resolve(nm || "");
+    }
+    const segs = location.pathname.split("/").filter(Boolean);
+    const cur = segs[segs.length - 1];
+    if (!cur || cur === "all" || cur === "drive" || cur === "star" ||
+        cur === "shared" || cur === "recent" || cur === "trash") {
+      return Promise.resolve("");
+    }
+    return getEntryInfo(cur).then(function (fi) {
+      return (fi && fi.name) || "";
+    }).catch(function () { return ""; });
   }
 
   // 按 ID 直查条目信息(不依赖当前目录列表)。
@@ -657,8 +678,31 @@
           });
         }, Promise.resolve()).then(function () {
           if (!out.folders.length) {
-            // 勾的全是单个文件: 每个文件自成一个勾项(files 就是自己)
-            return { folders: [], files: out.files, unmatched: out.unmatched };
+            // 勾的全是单个文件(同一目录里的散图):
+            //   1 个文件 → 自成写真集(和以前一样);
+            //   多个文件 → **合并成 1 个写真集**, 名字取当前目录名。
+            // 以前是「每个文件各成一个勾项」→ 勾 106 张图就生成 106 个合集
+            // (2026-11-03 实测, 用户看到的就是「一张图片变成一个合集」)。
+            if (out.files.length <= 1) {
+              return { folders: [], files: out.files, unmatched: out.unmatched };
+            }
+            return currentFolderName().then(function (dirName) {
+              const size = out.files.reduce(function (n, f) {
+                return n + (parseInt(f.size) || 0);
+              }, 0);
+              return {
+                folders: [{
+                  id: "batch:" + (out.files[0] && out.files[0].id),
+                  kind: "drive#folder",   // 面板按📁显示, 推送走 _files 分支
+                  name: dirName || ("PikPak " + out.files.length + " 张"),
+                  size: size,
+                  _files: out.files.map(function (f) {
+                    return { id: f.id, name: f.name, size: f.size, rel: f.name };
+                  }),
+                }],
+                files: [], unmatched: out.unmatched,
+              };
+            });
           }
 
           // 逐个文件夹展开成它自己的 files[](一个勾选项一个写真集)。
