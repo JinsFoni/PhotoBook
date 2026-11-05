@@ -411,21 +411,14 @@ AVATAR_SEEDS = ["lens-brass", "lens-celadon", "lens-violet", "lens-amber", "lens
 async def profile_page(request: Request, s: Session = Depends(get_db)):
     user = request.state.user
     favs = _fav_keys(s, user.id)
-    cols = _published_collections(s)
-    counts = _photo_counts(s, cols)
-    recent_cols = [c for c in cols if c.slug in favs["collection"]][:3]
-    covers = load_covers(s, recent_cols)
-    recent = [_collection_card(s, c, counts, covers) for c in recent_cols]
+    counts = {k: len(v) for k, v in favs.items()}
     payload = {
         "user": {"name": user.username, "role": user.role},
-        "counts": {k: len(v) for k, v in favs.items()},
-        "recent": recent,
-        "recent_empty": not recent,
+        "counts": counts,
     }
     return templates.TemplateResponse(request, "profile.html", {
         "user": user, "page": "profile",
-        "counts": {k: len(v) for k, v in favs.items()},
-        "recent": recent, "recent_empty": not recent,
+        "counts": counts,
         "avatar_seeds": AVATAR_SEEDS,
         "data_json": json.dumps(payload, ensure_ascii=False),
     })

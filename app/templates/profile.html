@@ -34,35 +34,6 @@
           <div><p class="stat__v num" data-stat="collection">{{ counts.collection }}</p><p class="stat__k">{{ t('Collections saved') }}</p></div>
           <div><p class="stat__v num" data-stat="photo">{{ counts.photo }}</p><p class="stat__k">{{ t('Photos saved') }}</p></div>
         </div>
-
-        <div style="margin-top:var(--s8)">
-          <div class="section-head">
-            <h2 class="section-title">{{ t('Recently saved') }}</h2>
-            <a class="section-aside" href="/favorites">{{ t('All favourites') }}</a>
-          </div>
-          <div class="grid grid--collections" data-recent>
-            {% for c in recent %}
-            <article class="collection-card hoverable">
-              <div style="position:relative">
-                <a href="/collections/{{ c.slug }}">
-                  <div class="frame skeleton" style="aspect-ratio:2/3"><img src="/t/s900/{{ c.cover }}" alt="" loading="lazy"></div>
-                </a>
-              </div>
-              <div class="card__caption"><div class="card__caption-main">
-                <h3 class="card__title"><a href="/collections/{{ c.slug }}">{{ c.title }}</a></h3>
-                <p class="card__sub"><span>{{ t('{n} photos', n=c.count) }}</span></p>
-              </div></div>
-            </article>
-            {% endfor %}
-          </div>
-          {% if recent_empty %}
-          <div class="state">
-            <h2 class="state__title">{{ t('Nothing saved yet.') }}</h2>
-            <p class="state__text">{{ t('Favourites you keep while browsing show up here.') }}</p>
-            <a class="btn btn--ghost" href="/">{{ t('Browse the archive') }}</a>
-          </div>
-          {% endif %}
-        </div>
       </section>
 
       <section id="settings" style="margin-top:var(--s10)">
