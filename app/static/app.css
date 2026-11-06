@@ -62,7 +62,9 @@
   --track-head: 0.06em;
 
   /* layout */
-  --gutter: 24px;
+  --gutter: 24px;          /* 卡片网格横向间距(列间距) */
+  --row-gap: 24px;         /* 卡片网格纵向间距(桌面与横向同值, 手机窄屏收紧) */
+  --wall-gap: 14px;        /* 照片墙间距(justified 布局, 行列同值) */
   --pad: 64px;
   --header-h: 68px;
   --maxw: 1760px;
@@ -129,8 +131,17 @@
 @media (max-width: 1180px) {
   :root { --pad: 40px; --header-h: 64px; }
 }
+/* 手机窄屏(Web 移动端)的版心与间距,按 Android App 的 dp 值对齐
+   (App 侧: PhotoSpacing.Gutter 14dp / 卡片 13×18dp / 照片墙 11dp /
+   收藏页模特卡 11×11dp / 发现页 13×16dp): 同一台手机上看 Web 与 App 一致。 */
 @media (max-width: 760px) {
-  :root { --pad: 20px; --gutter: 12px; --header-h: 56px; --s9: 72px; --s10: 96px; }
+  :root {
+    --pad: 12px;           /* 页面左右留白 (App: PhotoSpacing.Gutter 12dp) */
+    --gutter: 12px;        /* 卡片列间距 (App: CardGap 12dp) */
+    --row-gap: 16px;       /* 卡片行间距 (App: CardGapY 16dp) */
+    --wall-gap: 10px;      /* 照片墙间距 (App: WallGap 10dp) */
+    --header-h: 56px; --s9: 72px; --s10: 96px;
+  }
 }
 
 /* ---------- 2. Reset ----------------------------------------------------- */
@@ -1033,7 +1044,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 
 .grid {
   display: grid;
-  gap: var(--gutter) var(--gutter);
+  gap: var(--row-gap) var(--gutter);
 }
 .grid--models { grid-template-columns: repeat(6, 1fr); }
 .grid--models-5 { grid-template-columns: repeat(6, 1fr); }
@@ -1046,7 +1057,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 .vm-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: var(--gutter) var(--gutter);
+  gap: var(--row-gap) var(--gutter);
   position: relative;
 }
 .vm-grid[data-vm="on"] {
@@ -1118,7 +1129,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
 /* editorial: 最新写真集一行 6 张等宽 */
 .grid--editorial {
   grid-template-columns: repeat(6, 1fr);
-  gap: var(--gutter);
+  gap: var(--row-gap) var(--gutter);
 }
 .span-4 { grid-column: span 4; }
 .span-5 { grid-column: span 5; }
@@ -1145,7 +1156,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 14px;
+  gap: var(--wall-gap);
 }
 .masonry--photos > * { margin-bottom: 0; }
 /* 写真集卡片: 全部统一 3:4 封面, 用 grid 行优先排列(01→02→03 横向走),
@@ -1155,7 +1166,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   column-gap: normal;
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: var(--gutter);
+  gap: var(--row-gap) var(--gutter);
 }
 .masonry--collections > * { margin-bottom: 0; }
 
@@ -1188,7 +1199,7 @@ html.is-scrolling .hoverable:focus-within .reveal { opacity: 0; }
   .vm-grid[data-vm="on"] { display: grid; height: auto; }
   .vm-grid[data-vm="on"] .vm-cell { position: static; transform: none !important; width: auto !important; }
 
-  .grid--editorial { grid-template-columns: repeat(2, 1fr); gap: var(--s5) var(--gutter); }
+  .grid--editorial { grid-template-columns: repeat(2, 1fr); }
   .span-4,
   .span-5,
   .span-6,
