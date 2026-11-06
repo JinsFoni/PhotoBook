@@ -118,8 +118,8 @@ fun DetailScreen(
                     state = gridState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, bottom = 132.dp),
-                    horizontalArrangement = Arrangement.spacedBy(11.dp),
-                    verticalItemSpacing = 11.dp,
+                    horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.WallGap),
+                    verticalItemSpacing = PhotoSpacing.WallGap,
                 ) {
                     // 刊头(跨两列)
                     item(span = StaggeredGridItemSpan.FullLine) {
@@ -208,7 +208,7 @@ private fun DetailSkeleton() {
     Column(Modifier.fillMaxSize().padding(horizontal = PhotoSpacing.Gutter)) {
         SkeletonBox(Modifier.fillMaxWidth().height(40.dp), cornerRadius = 2)
         Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.WallGap)) {
             SkeletonBox(Modifier.weight(1f))
             SkeletonBox(Modifier.weight(1f))
         }

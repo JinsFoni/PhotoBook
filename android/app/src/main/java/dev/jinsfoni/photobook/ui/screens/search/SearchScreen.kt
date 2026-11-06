@@ -141,8 +141,8 @@ fun SearchScreen(
                 columns = GridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, bottom = 40.dp),
-                horizontalArrangement = Arrangement.spacedBy(13.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGap),
+                verticalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGapY),
             ) {
                 if (r.models.isNotEmpty()) {
                     item(span = { GridItemSpan(2) }) {
@@ -217,7 +217,7 @@ fun SearchScreen(
 @Composable
 private fun GridSkeleton() {
     Column(Modifier.fillMaxSize().padding(horizontal = PhotoSpacing.Gutter)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGap)) {
             SkeletonBox(Modifier.weight(1f))
             SkeletonBox(Modifier.weight(1f))
         }

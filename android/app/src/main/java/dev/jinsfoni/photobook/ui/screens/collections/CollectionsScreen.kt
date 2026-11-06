@@ -170,8 +170,8 @@ fun CollectionsScreen(
                 state = gridState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, bottom = 112.dp + LocalGlassBarBottomInset.current),
-                horizontalArrangement = Arrangement.spacedBy(13.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGap),
+                verticalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGapY),
             ) {
                 items(state.items.size) { i ->
                     val c = state.items[i]
@@ -199,12 +199,12 @@ fun CollectionsScreen(
 @Composable
 private fun GridSkeleton() {
     Column(Modifier.fillMaxSize().padding(horizontal = PhotoSpacing.Gutter)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGap)) {
             SkeletonBox(Modifier.weight(1f))
             SkeletonBox(Modifier.weight(1f))
         }
-        Spacer(Modifier.height(18.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+        Spacer(Modifier.height(PhotoSpacing.CardGapY))
+        Row(horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGap)) {
             SkeletonBox(Modifier.weight(1f))
             SkeletonBox(Modifier.weight(1f))
         }

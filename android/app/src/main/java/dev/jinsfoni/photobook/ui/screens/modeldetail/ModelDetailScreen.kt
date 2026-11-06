@@ -111,8 +111,8 @@ private fun ModelDetailContent(
         // 透明:让根 Box 的虚化垫底透出来(同 DetailScreen 结构)
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 48.dp),
-        horizontalArrangement = Arrangement.spacedBy(13.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGap),
+        verticalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGapY),
     ) {
         // hero:跨两列,2:3 大图(高度约 0.66× 屏宽×2 …实际占满宽,高=宽×1.5)
         item(span = { GridItemSpan(2) }) {
@@ -283,7 +283,7 @@ private fun DetailSkeleton() {
                 .statusBarsPadding(),
             cornerRadius = 0,
         )
-        Row(Modifier.padding(horizontal = PhotoSpacing.Gutter, vertical = 15.dp), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+        Row(Modifier.padding(horizontal = PhotoSpacing.Gutter, vertical = 15.dp), horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGap)) {
             SkeletonBox(Modifier.weight(1f))
             SkeletonBox(Modifier.weight(1f))
         }

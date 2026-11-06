@@ -182,8 +182,8 @@ fun FavoritesScreen(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
-                    horizontalArrangement = Arrangement.spacedBy(11.dp),
-                    verticalArrangement = Arrangement.spacedBy(11.dp),
+                    horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGap),
+                    verticalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGapY),
                 ) {
                     items(state.models.size) { i ->
                         val m = state.models[i]
@@ -199,8 +199,8 @@ fun FavoritesScreen(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
-                    horizontalArrangement = Arrangement.spacedBy(11.dp),
-                    verticalArrangement = Arrangement.spacedBy(11.dp),
+                    horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGap),
+                    verticalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGapY),
                 ) {
                     items(state.collections.size) { i ->
                         val c = state.collections[i]
@@ -242,8 +242,8 @@ private fun PhotosMasonry(
         columns = StaggeredGridCells.Fixed(2),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, top = 10.dp, bottom = 112.dp + LocalGlassBarBottomInset.current),
-        horizontalArrangement = Arrangement.spacedBy(11.dp),
-        verticalItemSpacing = 11.dp,
+        horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.WallGap),
+        verticalItemSpacing = PhotoSpacing.WallGap,
     ) {
         items(
             count = wall.size,
@@ -283,7 +283,7 @@ private fun PhotoCell(
 @Composable
 private fun TabSkeleton(tab: FavTab) {
     val span = if (tab == FavTab.PHOTOS) 3 else 2
-    Row(Modifier.padding(horizontal = PhotoSpacing.Gutter), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+    Row(Modifier.padding(horizontal = PhotoSpacing.Gutter), horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGap)) {
         repeat(span) { SkeletonBox(Modifier.weight(1f)) }
     }
 }

@@ -126,7 +126,7 @@ private fun ExploreSkeleton() {
             SkeletonBox(Modifier.size(width = 110.dp, height = 26.dp), cornerRadius = 2)
             SkeletonBox(Modifier.size(width = 52.dp, height = 17.dp), cornerRadius = 2)
         }
-        Row(Modifier.padding(horizontal = PhotoSpacing.Gutter), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+        Row(Modifier.padding(horizontal = PhotoSpacing.Gutter), horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGap)) {
             SkeletonBox(Modifier.weight(1f))
             SkeletonBox(Modifier.weight(1f))
         }
@@ -158,8 +158,8 @@ private fun ExploreContent(
         modifier = Modifier.fillMaxSize(),
         // 与写真页一致:左右 PhotoSpacing.Gutter 留白,卡片不贴屏幕边
         contentPadding = PaddingValues(start = PhotoSpacing.Gutter, end = PhotoSpacing.Gutter, bottom = 112.dp + LocalGlassBarBottomInset.current),
-        horizontalArrangement = Arrangement.spacedBy(13.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGap),
+        verticalArrangement = Arrangement.spacedBy(PhotoSpacing.CardGapY),
     ) {
         // 顶栏:词标 + 设置入口(词标与 hero 重叠区由 hero 纱保证可读性;
         // blur 主题顶栏透明 —— 不透明 paper 底会把垫底虚化图整条盖死)
