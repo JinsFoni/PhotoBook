@@ -86,8 +86,8 @@
 
 - 圆角:卡片 **2dp**(近乎直角,editorial),按钮/输入框 2dp,Chip 全圆角(胶囊,同 Web 标签胶囊)
 - 无阴影 elevation=0;分层靠 hairline 边框(line)与 paper2 色阶
-- 间距基准 4dp:页面水平边距 **14dp**、表单页(登录/设置)**24dp**,卡片间距 12dp(2 列网格),区块间距 32dp
-  —— 两档留白收敛在 `core/design/Spacing.kt` 的 `PhotoSpacing.Gutter` / `PhotoSpacing.Form`,调间距只改那一处
+- 间距基准 4dp:页面水平边距 **12dp**、表单页(登录/设置)**24dp**;卡片网格 **横向 12dp / 纵向 16dp**(2 列),照片墙(瀑布流)**10dp**;区块间距 32dp
+  —— 全部收敛在 `core/design/Spacing.kt`(`PhotoSpacing.Gutter / CardGap / CardGapY / WallGap / Form`),与 Web 端手机窄屏的 `--pad / --gutter / --row-gap / --wall-gap` 一一对应,调间距只改这两处
 - 触控目标 ≥48dp;底部导航为悬浮胶囊(高 64dp,见 §4),列表底部预留 112dp
 
 ## 4. 导航结构
